@@ -1,0 +1,131 @@
+.rows {
+  padding-top: 24px;
+}
+
+/* Promo banner */
+.promo {
+  position: relative;
+  margin: 8px 40px 40px;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(135deg, #0d1f3c 0%, #1a4a8a 60%, #0d2d1f 100%);
+  padding: 32px 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  overflow: hidden;
+}
+
+.promoRing1 {
+  position: absolute;
+  right: 60px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.promoRing2 {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.promoText {
+  position: relative;
+  z-index: 1;
+}
+
+.promoEyebrow {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.promoHeading {
+  font-family: var(--font-display);
+  font-size: 28px;
+  color: var(--color-text);
+  margin-bottom: 8px;
+}
+
+.promoSub {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.55);
+  max-width: 320px;
+}
+
+.promoBtn {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.95);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 13px 24px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: #000;
+  cursor: pointer;
+  transition: transform var(--transition), opacity var(--transition);
+}
+
+.promoBtn:hover {
+  transform: translateY(-1px);
+  opacity: 0.92;
+}
+
+/* Footer */
+.footer {
+  border-top: 1px solid var(--color-border);
+  padding: 32px 40px;
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.footerLogo {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--color-accent), #fde68a);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.footerLinks {
+  display: flex;
+  gap: 24px;
+}
+
+.footerLink {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.35);
+  text-decoration: none;
+  transition: color var(--transition);
+}
+
+.footerLink:hover {
+  color: var(--color-text-muted);
+}
+
+.copyright {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.25);
+}

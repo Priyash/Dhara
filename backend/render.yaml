@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: dhara-api
+    env: node
+    region: singapore       # closest to India; also available: ohio, oregon, frankfurt
+    plan: starter           # $7/mo — always-on, no cold starts
+    # plan: free            # free tier works but has ~30s cold start on first request
+
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # All other secrets are set manually in the Render dashboard:
+      # MONGODB_URI, FIREBASE_SERVICE_ACCOUNT_BASE64,
+      # RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET,
+      # BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_API_KEY,
+      # BUNNY_CDN_PULL_ZONE, BUNNY_CDN_TOKEN_AUTH_KEY,
+      # CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
+      # FRONTEND_URL  ← set to your Vercel URL after deploying frontend

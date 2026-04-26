@@ -1,0 +1,163 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  max-width: 520px;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.header {
+  height: 200px;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  padding: 24px;
+}
+
+.headerFade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, var(--color-surface) 0%, transparent 60%);
+}
+
+.closeBtn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: rgba(0, 0, 0, 0.4);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-text);
+  transition: background var(--transition);
+}
+
+.closeBtn:hover {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.headerContent {
+  position: relative;
+  z-index: 1;
+}
+
+.proBadge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border-radius: 6px;
+  padding: 3px 10px;
+  margin-bottom: 8px;
+  width: fit-content;
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: #fff;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: 28px;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+/* Body */
+.body {
+  padding: 20px 24px 24px;
+}
+
+.desc {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--color-text-muted);
+  line-height: 1.65;
+  margin-bottom: 20px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.watchBtn,
+.subscribeBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 13px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition), transform var(--transition);
+}
+
+.watchBtn {
+  background: #fff;
+  color: #000;
+}
+
+.subscribeBtn {
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
+  color: #000;
+}
+
+.watchBtn:hover,
+.subscribeBtn:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.addBtn {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text);
+  flex-shrink: 0;
+  transition: background var(--transition);
+}
+
+.addBtn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}

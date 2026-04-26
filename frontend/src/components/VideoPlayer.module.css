@@ -1,0 +1,179 @@
+.player {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+  border-radius: var(--radius-lg, 12px);
+  font-family: var(--font-body, 'DM Sans', sans-serif);
+}
+
+.hideCursor {
+  cursor: none;
+}
+
+.video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.posterOverlay {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  pointer-events: none;
+}
+
+/* Controls overlay */
+.controls {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: linear-gradient(
+    to bottom,
+    rgba(0,0,0,0.55) 0%,
+    transparent 25%,
+    transparent 65%,
+    rgba(0,0,0,0.75) 100%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.controlsVisible {
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* Top bar */
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+
+.videoTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.2px;
+}
+
+/* Bottom bar */
+.bottomBar {
+  padding: 0 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Progress bar */
+.progressTrack {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  background: rgba(255,255,255,0.25);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: height 0.15s ease;
+}
+
+.progressTrack:hover {
+  height: 6px;
+}
+
+.progressBuffer {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  background: rgba(255,255,255,0.35);
+  border-radius: 2px;
+  transition: width 0.5s linear;
+}
+
+.progressFill {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  background: #f59e0b;
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+
+.progressThumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  width: 14px;
+  height: 14px;
+  background: #f59e0b;
+  border-radius: 50%;
+  transition: transform 0.15s ease, left 0.1s linear;
+}
+
+.progressTrack:hover .progressThumb {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* Control row */
+.controlRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.leftControls,
+.rightControls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Control buttons */
+.ctrlBtn {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.85);
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.ctrlBtn:hover {
+  color: #fff;
+  background: rgba(255,255,255,0.12);
+}
+
+/* Volume */
+.volumeGroup {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.volumeSlider {
+  width: 72px;
+  height: 4px;
+  accent-color: #f59e0b;
+  cursor: pointer;
+}
+
+/* Time */
+.timeDisplay {
+  font-size: 13px;
+  color: rgba(255,255,255,0.75);
+  white-space: nowrap;
+  padding-left: 8px;
+  font-variant-numeric: tabular-nums;
+}

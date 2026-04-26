@@ -1,0 +1,131 @@
+.card {
+  position: relative;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.card:hover,
+.hovered {
+  transform: scale(1.04);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* Size variants */
+.normal { width: 180px; }
+.small  { width: 140px; }
+.large  { width: 220px; }
+
+/* Poster area */
+.poster {
+  aspect-ratio: 2 / 3;
+  display: flex;
+  align-items: flex-end;
+  padding: 12px;
+  position: relative;
+}
+
+.gradient {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 65%;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.92), transparent);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+.meta {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.type {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: var(--font-body);
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  font-family: var(--font-body);
+  line-height: 1.2;
+}
+
+/* Badges */
+.proBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border-radius: 6px;
+  padding: 2px 7px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: #fff;
+  font-weight: 600;
+  font-family: var(--font-body);
+}
+
+.newBadge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: #e11d48;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 10px;
+  color: #fff;
+  font-weight: 700;
+  font-family: var(--font-body);
+}
+
+.ratingBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 6px;
+  padding: 2px 7px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: #fff;
+  font-family: var(--font-body);
+}
+
+/* Hover overlay */
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.playBtn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+
+.overlay:hover .playBtn {
+  transform: scale(1.1);
+}
