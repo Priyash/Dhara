@@ -55,4 +55,4 @@ yarn-error.log*
 pnpm-debug.log*
 
 config/**/secrets/*/.env.*
-config/**/secrets/*/.json
+config/**/secrets/*/*.json
