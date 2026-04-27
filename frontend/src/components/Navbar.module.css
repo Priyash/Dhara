@@ -29,6 +29,14 @@
   background-clip: text;
   flex-shrink: 0;
   text-decoration: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.logo:hover {
+  opacity: 0.85;
 }
 
 .links {
@@ -125,6 +133,33 @@
   transform: translateY(-1px);
 }
 
+.adminBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-accent);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.adminBtn:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.adminBtnActive,
+.adminBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .signInBtn {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -150,26 +185,26 @@
 }
 
 .profileBtn {
+  width: 38px;
   height: 38px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: var(--radius-sm);
-  padding: 0 10px 0 4px;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
   color: var(--color-text);
-  transition: background var(--transition), border-color var(--transition);
+  transition: transform var(--transition);
 }
 
 .profileBtn:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
 }
 
 .avatar {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
   display: flex;
@@ -184,15 +219,6 @@
   user-select: none;
 }
 
-.profileLabel {
-  max-width: 110px;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 @media (max-width: 900px) {
   .links {
     display: none;
@@ -203,17 +229,5 @@
     gap: 12px;
   }
 
-  .profileLabel {
-    display: none;
-  }
-
-  .profileBtn {
-    width: 38px;
-    padding: 0;
-    justify-content: center;
-  }
-
-  .profileBtn svg {
-    display: none;
-  }
+  .profileBtn { width: 38px; }
 }

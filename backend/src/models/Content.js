@@ -20,12 +20,16 @@ const contentSchema = new mongoose.Schema(
     desc:         String,
     palette:      String,                            // CSS gradient fallback when no poster
     bunnyVideoId: String,                            // Bunny Stream video GUID
-    posterUrl:    String,                            // Cloudinary image URL
+    posterUrl:    String,                            // Cloudinary portrait image (2:3)
+    backdropUrl:  String,                            // Cloudinary landscape image (16:9) for hero
     trailerVideoId: String,                          // optional Bunny trailer GUID
     episodes:     [episodeSchema],
     cast:         [String],
     director:     String,
     releaseYear:  Number,
+    contentLanguage: { type: String, default: 'Bengali' },
+    certification:   { type: String, enum: ['U', 'UA', 'A', null], default: null },
+    reviewCount:     { type: Number, default: 0 },
   },
   { timestamps: true }
 )

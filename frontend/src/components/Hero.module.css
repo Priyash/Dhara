@@ -90,10 +90,21 @@
 
 .heading {
   font-family: var(--font-display);
-  font-size: clamp(48px, 7vw, 80px);
+  font-size: clamp(32px, 5vw, 64px);
   color: var(--color-text);
-  line-height: 1.05;
+  line-height: 1.1;
   margin-bottom: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transform: scale(0.72);
+  transform-origin: left center;
+  transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.hero:hover .heading {
+  transform: scale(1);
 }
 
 .genre {

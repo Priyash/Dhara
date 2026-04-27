@@ -2,86 +2,207 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import Hls from 'hls.js'
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
-  SkipBack, SkipForward, Settings, X,
+  SkipBack, SkipForward, Settings, Loader2, RotateCcw, PictureInPicture2,
 } from 'lucide-react'
 import styles from './VideoPlayer.module.css'
 
 function formatTime(secs) {
-  if (!isFinite(secs)) return '0:00'
-  const m = Math.floor(secs / 60)
+  if (!isFinite(secs) || secs < 0) return '0:00'
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
   const s = Math.floor(secs % 60).toString().padStart(2, '0')
-  return `${m}:${s}`
+  return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s}` : `${m}:${s}`
 }
 
-/**
- * VideoPlayer — drop in a `src` (HLS .m3u8 or MP4) and a `title`.
- * For HLS, install hls.js: `npm install hls.js`
- * and uncomment the HLS block below.
- */
-export default function VideoPlayer({ src, title, onClose, poster }) {
-  const videoRef = useRef(null)
-  const containerRef = useRef(null)
-  const hideTimer = useRef(null)
+function formatRemaining(secs) {
+  if (!isFinite(secs) || secs <= 0) return ''
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  if (h > 0) return `${h}h ${m}m left`
+  if (m > 0) return `${m}m left`
+  return `${Math.floor(secs)}s left`
+}
 
-  const [playing, setPlaying] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [volume, setVolume] = useState(1)
-  const [muted, setMuted] = useState(false)
-  const [fullscreen, setFullscreen] = useState(false)
-  const [showControls, setShowControls] = useState(true)
-  const [buffered, setBuffered] = useState(0)
+export default function VideoPlayer({ src, title, poster, storageKey }) {
+  const videoRef    = useRef(null)
+  const containerRef= useRef(null)
+  const progressRef = useRef(null)
+  const fillRef     = useRef(null)
+  const thumbRef    = useRef(null)
+  const hlsRef      = useRef(null)
+  const saveTimer   = useRef(null)
+  const didSeek     = useRef(false)
 
-  // Attach HLS.js for adaptive streaming (.m3u8); fall back to native src for Safari.
+  const [playing,        setPlaying]        = useState(false)
+  const [currentTime,    setCurrentTime]    = useState(0)
+  const [duration,       setDuration]       = useState(0)
+  const [volume,         setVolume]         = useState(1)
+  const [muted,          setMuted]          = useState(false)
+  const [fullscreen,     setFullscreen]     = useState(false)
+  const [buffered,       setBuffered]       = useState(0)
+  const [buffering,      setBuffering]      = useState(false)
+  const [showSettings,   setShowSettings]   = useState(false)
+  const [playbackRate,   setPlaybackRate]   = useState(1)
+  const [qualityOptions, setQualityOptions] = useState([])
+  const [qualityValue,   setQualityValue]   = useState('auto')
+  const [playerError,    setPlayerError]    = useState('')
+  const [pipEnabled,     setPipEnabled]     = useState(false)
+  const [hoverTime,      setHoverTime]      = useState(null)
+  const [hoverPct,       setHoverPct]       = useState(0)
+  const [isDragging,     setIsDragging]     = useState(false)
+  const [videoHovered,   setVideoHovered]   = useState(false)
+
+  const progress  = duration ? (currentTime / duration) * 100 : 0
+  const bufferPct = duration ? (buffered  / duration) * 100 : 0
+  const remaining = duration - currentTime
+
+  const STORAGE_KEY = storageKey ? `dhara_progress_${storageKey}` : null
+
+  const saveProgress = useCallback(() => {
+    if (!STORAGE_KEY || !videoRef.current) return
+    const t = videoRef.current.currentTime
+    if (t > 5) localStorage.setItem(STORAGE_KEY, String(t))
+  }, [STORAGE_KEY])
+
+  const qualityLabel = (level) => {
+    const h    = level?.height ? `${level.height}p` : 'Auto'
+    const kbps = level?.bitrate ? Math.round(level.bitrate / 1000) : null
+    return kbps ? `${h} · ${kbps}kbps` : h
+  }
+
+  const cleanupHls = () => {
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
+  }
+
+  const autoPlayAndResume = useCallback(() => {
+    const v = videoRef.current
+    if (!v) return
+    if (STORAGE_KEY && !didSeek.current) {
+      const saved = parseFloat(localStorage.getItem(STORAGE_KEY) || '0')
+      if (saved > 5 && isFinite(saved)) v.currentTime = saved
+      didSeek.current = true
+    }
+    v.play().catch(() => {})
+  }, [STORAGE_KEY])
+
   useEffect(() => {
     const v = videoRef.current
     if (!src || !v) return
+    setPlayerError('')
+    setQualityOptions([])
+    setQualityValue('auto')
+    didSeek.current = false
+    cleanupHls()
 
     if (src.endsWith('.m3u8')) {
       if (Hls.isSupported()) {
-        const hls = new Hls()
+        const hls = new Hls({ enableWorker: true, lowLatencyMode: true, backBufferLength: 90 })
         hls.loadSource(src)
         hls.attachMedia(v)
-        return () => hls.destroy()
+        hlsRef.current = hls
+        hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+          setQualityOptions((data.levels || []).map((l, i) => ({ value: String(i), label: qualityLabel(l) })))
+          setQualityValue('auto')
+          autoPlayAndResume()
+        })
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (!data.fatal) return
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) { hls.startLoad(); return }
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR)   { hls.recoverMediaError(); return }
+          setPlayerError('Playback failed. Please retry.')
+        })
+        return cleanupHls
       }
-      // Safari has native HLS support
       if (v.canPlayType('application/vnd.apple.mpegurl')) {
         v.src = src
+        v.addEventListener('loadedmetadata', autoPlayAndResume, { once: true })
+        return undefined
       }
-    } else {
-      v.src = src
+      setPlayerError('This browser cannot play HLS streams.')
+      return undefined
     }
-  }, [src])
+    v.src = src
+    v.addEventListener('loadedmetadata', autoPlayAndResume, { once: true })
+    return undefined
+  }, [src, autoPlayAndResume])
 
-  const resetHideTimer = useCallback(() => {
-    setShowControls(true)
-    clearTimeout(hideTimer.current)
-    hideTimer.current = setTimeout(() => {
-      if (playing) setShowControls(false)
-    }, 3000)
-  }, [playing])
+  useEffect(() => {
+    if (playing) {
+      saveTimer.current = setInterval(saveProgress, 10_000)
+    } else {
+      clearInterval(saveTimer.current)
+      saveProgress()
+    }
+    return () => clearInterval(saveTimer.current)
+  }, [playing, saveProgress])
 
-  useEffect(() => () => clearTimeout(hideTimer.current), [])
+  useEffect(() => {
+    const onFs = () => setFullscreen(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', onFs)
+    return () => document.removeEventListener('fullscreenchange', onFs)
+  }, [])
 
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.playbackRate = playbackRate
+  }, [playbackRate])
+
+  // ── Seek / drag ─────────────────────────────────────────────────────────────
+  const seekFromClientX = useCallback((clientX) => {
+    const v    = videoRef.current
+    const rect = progressRef.current?.getBoundingClientRect()
+    if (!v || !duration || !rect) return
+
+    const pct     = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    const newTime = pct * duration
+    const pctStr  = `${pct * 100}%`
+
+    // Direct video seek — no wait for React
+    v.currentTime = newTime
+
+    // Direct DOM update for fill + thumb — zero re-renders during drag
+    if (fillRef.current)  fillRef.current.style.width = pctStr
+    if (thumbRef.current) thumbRef.current.style.left  = pctStr
+
+    // Tooltip only (lightweight, single state update)
+    setHoverPct(pct * 100)
+    setHoverTime(newTime)
+  }, [duration])
+
+  const handleProgressHover = (e) => {
+    if (isDragging) return
+    const rect = progressRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    setHoverPct(pct * 100)
+    setHoverTime(pct * duration)
+  }
+
+  const handleDragStart = (e) => {
+    e.preventDefault()
+    setIsDragging(true)
+    seekFromClientX('clientX' in e ? e.clientX : e.touches[0].clientX)
+
+    const onMove = (ev) => seekFromClientX(ev.touches ? ev.touches[0].clientX : ev.clientX)
+    const onUp   = () => {
+      setIsDragging(false)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup',   onUp)
+      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('touchend',  onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup',   onUp)
+    window.addEventListener('touchmove', onMove, { passive: true })
+    window.addEventListener('touchend',  onUp)
+  }
+
+  // ── Controls ─────────────────────────────────────────────────────────────────
   const togglePlay = () => {
     const v = videoRef.current
     if (!v) return
-    if (v.paused) { v.play(); setPlaying(true) }
+    setShowSettings(false)
+    if (v.paused) { v.play().catch(() => {}); setPlaying(true) }
     else          { v.pause(); setPlaying(false) }
-  }
-
-  const handleTimeUpdate = () => {
-    const v = videoRef.current
-    if (!v) return
-    setCurrentTime(v.currentTime)
-    if (v.buffered.length) setBuffered(v.buffered.end(v.buffered.length - 1))
-  }
-
-  const handleSeek = (e) => {
-    const v = videoRef.current
-    if (!v || !duration) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    v.currentTime = ((e.clientX - rect.left) / rect.width) * duration
   }
 
   const skip = (secs) => {
@@ -91,9 +212,8 @@ export default function VideoPlayer({ src, title, onClose, poster }) {
 
   const handleVolume = (e) => {
     const val = parseFloat(e.target.value)
-    setVolume(val)
+    setVolume(val); setMuted(val === 0)
     if (videoRef.current) videoRef.current.volume = val
-    setMuted(val === 0)
   }
 
   const toggleMute = () => {
@@ -106,111 +226,219 @@ export default function VideoPlayer({ src, title, onClose, poster }) {
   const toggleFullscreen = () => {
     const el = containerRef.current
     if (!el) return
-    if (!document.fullscreenElement) {
-      el.requestFullscreen?.()
-      setFullscreen(true)
-    } else {
-      document.exitFullscreen?.()
-      setFullscreen(false)
-    }
+    if (!document.fullscreenElement) el.requestFullscreen?.()
+    else document.exitFullscreen?.()
   }
 
-  const progress = duration ? (currentTime / duration) * 100 : 0
-  const bufferPct = duration ? (buffered / duration) * 100 : 0
+  const togglePip = async () => {
+    const v = videoRef.current
+    if (!v || !document.pictureInPictureEnabled) return
+    try {
+      if (document.pictureInPictureElement) { await document.exitPictureInPicture(); setPipEnabled(false) }
+      else                                  { await v.requestPictureInPicture();     setPipEnabled(true)  }
+    } catch { setPipEnabled(false) }
+  }
+
+  const handleQualityChange = (val) => {
+    setQualityValue(val)
+    if (hlsRef.current) hlsRef.current.currentLevel = val === 'auto' ? -1 : Number(val)
+  }
+
+  const handleEnded = () => {
+    setPlaying(false)
+    if (STORAGE_KEY) localStorage.removeItem(STORAGE_KEY)
+  }
+
+  const handleRetry = () => {
+    setPlayerError('')
+    didSeek.current = false
+    const v = videoRef.current
+    if (!v || !src) return
+    cleanupHls()
+    v.pause(); v.removeAttribute('src'); v.load()
+    setCurrentTime(0); setDuration(0); setBuffered(0)
+    setPlaying(false); setBuffering(false); setShowSettings(false)
+    queueMicrotask(() => {
+      if (src.endsWith('.m3u8') && Hls.isSupported()) {
+        const hls = new Hls({ enableWorker: true, lowLatencyMode: true, backBufferLength: 90 })
+        hls.loadSource(src); hls.attachMedia(v)
+        hlsRef.current = hls
+        hls.on(Hls.Events.MANIFEST_PARSED, () => autoPlayAndResume())
+      } else {
+        v.src = src
+        v.addEventListener('loadedmetadata', autoPlayAndResume, { once: true })
+      }
+    })
+  }
 
   return (
-    <div
-      ref={containerRef}
-      className={`${styles.player} ${!showControls && playing ? styles.hideCursor : ''}`}
-      onMouseMove={resetHideTimer}
-      onMouseLeave={() => playing && setShowControls(false)}
-      onClick={togglePlay}
-    >
-      {/* Video element */}
-      <video
-        ref={videoRef}
-        className={styles.video}
-        poster={poster}
-        onLoadedMetadata={(e) => setDuration(e.target.duration)}
-        onTimeUpdate={handleTimeUpdate}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)}
-        playsInline
-      />
-
-      {/* Poster overlay when paused at start */}
-      {!playing && currentTime === 0 && poster && (
-        <div className={styles.posterOverlay} style={{ backgroundImage: `url(${poster})` }} aria-hidden="true" />
-      )}
-
-      {/* Controls overlay */}
+    <div ref={containerRef} className={`${styles.wrapper} ${fullscreen ? styles.fullscreen : ''}`}>
+      {/* ── Video area ── */}
       <div
-        className={`${styles.controls} ${showControls ? styles.controlsVisible : ''}`}
-        onClick={(e) => e.stopPropagation()}
+        className={styles.videoArea}
+        onClick={togglePlay}
+        onMouseEnter={() => setVideoHovered(true)}
+        onMouseLeave={() => setVideoHovered(false)}
       >
-        {/* Top bar */}
-        <div className={styles.topBar}>
-          <h2 className={styles.videoTitle}>{title}</h2>
-          {onClose && (
-            <button className={styles.ctrlBtn} onClick={onClose} aria-label="Close player">
-              <X size={18} />
+        {title && (
+          <div className={`${styles.titleOverlay} ${videoHovered ? styles.titleOverlayVisible : ''}`}>
+            <p className={styles.titleOverlayText}>{title}</p>
+          </div>
+        )}
+        <video
+          ref={videoRef}
+          className={styles.video}
+          poster={poster}
+          onLoadedMetadata={(e) => setDuration(e.target.duration)}
+          onWaiting={() => setBuffering(true)}
+          onPlaying={() => setBuffering(false)}
+          onCanPlay={() => setBuffering(false)}
+          onTimeUpdate={(e) => {
+            setCurrentTime(e.target.currentTime)
+            if (e.target.buffered.length) setBuffered(e.target.buffered.end(e.target.buffered.length - 1))
+          }}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={handleEnded}
+          playsInline
+        />
+
+        {!playing && currentTime === 0 && poster && (
+          <div className={styles.posterOverlay} style={{ backgroundImage: `url(${poster})` }} aria-hidden="true" />
+        )}
+
+        {buffering && !playerError && (
+          <div className={styles.bufferingBadge}>
+            <Loader2 size={14} className={styles.spin} /> Buffering…
+          </div>
+        )}
+
+        {playerError && (
+          <div className={styles.errorOverlay}>
+            <p className={styles.errorTitle}>Playback Issue</p>
+            <p className={styles.errorSub}>{playerError}</p>
+            <button className={styles.retryBtn} onClick={(e) => { e.stopPropagation(); handleRetry() }}>
+              <RotateCcw size={14} /> Retry
             </button>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
 
-        {/* Bottom controls */}
-        <div className={styles.bottomBar}>
-          {/* Progress bar */}
-          <div className={styles.progressTrack} onClick={handleSeek} role="slider" aria-label="Seek" aria-valuenow={Math.round(progress)}>
+      {/* ── Controls bar — always below video ── */}
+      <div className={styles.controlsBar}>
+        {/* Progress row */}
+        <div className={styles.progressRow}>
+          <span className={styles.timeElapsed}>{formatTime(currentTime)}</span>
+
+          <div
+            ref={progressRef}
+            className={`${styles.progressTrack} ${isDragging ? styles.progressDragging : ''}`}
+            onMouseDown={handleDragStart}
+            onTouchStart={(e) => { e.preventDefault(); handleDragStart(e.touches[0]) }}
+            onMouseMove={handleProgressHover}
+            onMouseLeave={() => { if (!isDragging) setHoverTime(null) }}
+            onClick={(e) => seekFromClientX(e.clientX)}
+            role="slider"
+            aria-label="Seek"
+            aria-valuenow={Math.round(progress)}
+          >
             <div className={styles.progressBuffer} style={{ width: `${bufferPct}%` }} />
-            <div className={styles.progressFill}   style={{ width: `${progress}%` }} />
-            <div className={styles.progressThumb}  style={{ left:  `${progress}%` }} />
+            <div ref={fillRef}  className={styles.progressFill}  style={{ width: `${progress}%` }} />
+            <div ref={thumbRef} className={`${styles.progressThumb} ${isDragging ? styles.progressThumbDragging : ''}`} style={{ left: `${progress}%` }} />
+
+            {hoverTime !== null && (
+              <div className={styles.progressTooltip} style={{ left: `${hoverPct}%` }}>
+                {formatTime(hoverTime)}
+              </div>
+            )}
           </div>
 
-          {/* Control row */}
-          <div className={styles.controlRow}>
-            {/* Left: play, skip, volume */}
-            <div className={styles.leftControls}>
-              <button className={styles.ctrlBtn} onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
-                {playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" style={{ marginLeft: 2 }} />}
-              </button>
-              <button className={styles.ctrlBtn} onClick={() => skip(-10)} aria-label="Rewind 10s">
-                <SkipBack size={18} />
-              </button>
-              <button className={styles.ctrlBtn} onClick={() => skip(10)} aria-label="Forward 10s">
-                <SkipForward size={18} />
-              </button>
+          <span className={styles.timeRemaining}>{duration > 0 ? formatRemaining(remaining) : ''}</span>
+        </div>
 
-              <div className={styles.volumeGroup}>
-                <button className={styles.ctrlBtn} onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
-                  {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                </button>
-                <input
-                  type="range" min="0" max="1" step="0.05"
-                  value={muted ? 0 : volume}
-                  onChange={handleVolume}
-                  className={styles.volumeSlider}
-                  aria-label="Volume"
-                />
-              </div>
+        {/* Buttons row */}
+        <div className={styles.controlRow}>
+          {/* Left */}
+          <div className={styles.leftControls}>
+            <button className={styles.ctrlBtnPrimary} onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
+              {playing
+                ? <Pause size={22} fill="currentColor" />
+                : <Play  size={22} fill="currentColor" style={{ marginLeft: 2 }} />}
+            </button>
+            <button className={styles.ctrlBtn} onClick={() => skip(-10)} aria-label="Rewind 10s">
+              <SkipBack size={18} />
+            </button>
+            <button className={styles.ctrlBtn} onClick={() => skip(10)} aria-label="Forward 10s">
+              <SkipForward size={18} />
+            </button>
 
-              <span className={styles.timeDisplay}>
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </span>
+            <div className={styles.volumeGroup}>
+              <button className={styles.ctrlBtn} onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
+                {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              </button>
+              <input
+                type="range" min="0" max="1" step="0.05"
+                value={muted ? 0 : volume}
+                onChange={handleVolume}
+                className={styles.volumeSlider}
+                aria-label="Volume"
+              />
             </div>
+          </div>
 
-            {/* Right: settings, fullscreen */}
-            <div className={styles.rightControls}>
-              <button className={styles.ctrlBtn} aria-label="Settings">
-                <Settings size={18} />
+          {/* Right */}
+          <div className={styles.rightControls}>
+            {document.pictureInPictureEnabled && (
+              <button className={styles.ctrlBtn} onClick={togglePip} aria-label="Picture in Picture">
+                <PictureInPicture2 size={18} color={pipEnabled ? '#f59e0b' : undefined} />
               </button>
-              <button className={styles.ctrlBtn} onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
-                {fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
-              </button>
-            </div>
+            )}
+            <button className={styles.ctrlBtn} onClick={() => setShowSettings((s) => !s)} aria-label="Settings">
+              <Settings size={18} />
+            </button>
+            <button className={styles.ctrlBtn} onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+              {fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+            </button>
           </div>
         </div>
+
+        {/* Settings panel */}
+        {showSettings && (
+          <div className={styles.settingsPanel}>
+            <div className={styles.settingsGroup}>
+              <p className={styles.settingsLabel}>Speed</p>
+              <div className={styles.settingsChips}>
+                {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
+                  <button
+                    key={rate}
+                    className={`${styles.chipBtn} ${playbackRate === rate ? styles.chipBtnActive : ''}`}
+                    onClick={() => setPlaybackRate(rate)}
+                  >
+                    {rate}×
+                  </button>
+                ))}
+              </div>
+            </div>
+            {qualityOptions.length > 0 && (
+              <div className={styles.settingsGroup}>
+                <p className={styles.settingsLabel}>Quality</p>
+                <div className={styles.settingsChips}>
+                  <button
+                    className={`${styles.chipBtn} ${qualityValue === 'auto' ? styles.chipBtnActive : ''}`}
+                    onClick={() => handleQualityChange('auto')}
+                  >Auto</button>
+                  {qualityOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={`${styles.chipBtn} ${qualityValue === opt.value ? styles.chipBtnActive : ''}`}
+                      onClick={() => handleQualityChange(opt.value)}
+                    >{opt.label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

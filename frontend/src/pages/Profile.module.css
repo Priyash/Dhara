@@ -17,7 +17,7 @@
 
 .hero {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr;
   align-items: center;
   gap: 22px;
   padding: 24px;
@@ -84,11 +84,74 @@
   color: rgba(255, 255, 255, 0.8);
 }
 
+.metaPillVerified {
+  border-color: rgba(74, 222, 128, 0.4);
+  color: rgba(187, 247, 208, 0.95);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.metaPillUnverified {
+  border-color: rgba(251, 191, 36, 0.35);
+  color: rgba(254, 240, 138, 0.95);
+  background: rgba(234, 179, 8, 0.12);
+}
+
 .statsBand {
   margin-top: 18px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.accountActions {
+  margin-top: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.accountHeader {
+  min-width: 0;
+}
+
+.accountEyebrow {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.accountTitle {
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.accountButtons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sessionNotice,
+.sessionError {
+  margin-top: 7px;
+  font-size: 12px;
+}
+
+.sessionNotice {
+  color: rgba(134, 239, 172, 0.92);
+}
+
+.sessionError {
+  color: #fda4af;
 }
 
 .statBlock {
@@ -174,7 +237,9 @@
 
 .primaryBtn,
 .ghostBtn,
-.linkBtn {
+.linkBtn,
+.secondaryBtn,
+.signOutBtn {
   border: none;
   border-radius: var(--radius-sm);
   display: inline-flex;
@@ -203,6 +268,20 @@
   color: var(--color-text);
 }
 
+.secondaryBtn {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.36);
+  color: #fcd38d;
+  padding: 10px 14px;
+}
+
+.signOutBtn {
+  background: rgba(225, 29, 72, 0.14);
+  border: 1px solid rgba(225, 29, 72, 0.38);
+  color: #fda4af;
+  padding: 10px 14px;
+}
+
 .ghostBtn {
   padding: 10px 13px;
 }
@@ -215,6 +294,29 @@
 .linkBtn:hover {
   background: rgba(255, 255, 255, 0.13);
   border-color: rgba(255, 255, 255, 0.2);
+}
+
+.secondaryBtn:hover {
+  background: rgba(245, 158, 11, 0.19);
+  border-color: rgba(245, 158, 11, 0.48);
+}
+
+.signOutBtn:hover {
+  background: rgba(225, 29, 72, 0.22);
+  border-color: rgba(225, 29, 72, 0.55);
+}
+
+.ghostBtn:disabled,
+.secondaryBtn:disabled,
+.signOutBtn:disabled,
+.primaryBtn:disabled,
+.linkBtn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.refreshIconSpinning {
+  animation: spin 0.9s linear infinite;
 }
 
 .authPrompt {
@@ -235,6 +337,85 @@
 .authPromptSub {
   color: var(--color-text-muted);
   max-width: 520px;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modalCard {
+  width: min(420px, 100%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(130deg, #17171d, #101014);
+  padding: 18px;
+}
+
+.modalTitle {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.modalSub {
+  margin-top: 6px;
+  color: var(--color-text-muted);
+}
+
+.modalActions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.modalCancelBtn,
+.modalConfirmBtn {
+  border: none;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 14px;
+}
+
+.modalCancelBtn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--color-text);
+}
+
+.modalCancelBtn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.modalConfirmBtn {
+  background: rgba(225, 29, 72, 0.14);
+  border: 1px solid rgba(225, 29, 72, 0.45);
+  color: #fda4af;
+}
+
+.modalConfirmBtn:hover {
+  background: rgba(225, 29, 72, 0.24);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 900px) {
@@ -259,6 +440,16 @@
   .upsell {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .accountActions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .accountButtons {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .sectionTitle {

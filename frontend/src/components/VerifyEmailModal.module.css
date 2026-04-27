@@ -1,0 +1,139 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(3px);
+}
+
+.modal {
+  position: relative;
+  width: min(460px, 100%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  background: linear-gradient(140deg, #18181f, #101015);
+}
+
+.closeBtn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.34);
+  background: rgba(234, 179, 8, 0.12);
+  color: rgba(254, 240, 138, 0.96);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 6px 10px;
+}
+
+.title {
+  margin-top: 14px;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.sub {
+  margin-top: 8px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.emailRow {
+  margin-top: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 10px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.88);
+  max-width: 100%;
+}
+
+.emailRow span {
+  overflow-wrap: anywhere;
+}
+
+.notice,
+.error {
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.notice {
+  color: rgba(134, 239, 172, 0.95);
+}
+
+.error {
+  color: #fda4af;
+}
+
+.actions {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ghostBtn,
+.primaryBtn {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ghostBtn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--color-text);
+}
+
+.primaryBtn {
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
+  color: #141414;
+}
+
+.ghostBtn:disabled,
+.primaryBtn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: spin 0.85s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

@@ -1,9 +1,21 @@
 import { useState } from 'react'
 import { Play, Crown, Star } from 'lucide-react'
+import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './PosterCard.module.css'
+
+function stripExtension(name = '') {
+  return name.replace(/\.(mp4|mkv|mov|avi|webm|m4v|flv|wmv|ts|mts|3gp)$/i, '').trim()
+}
 
 export default function PosterCard({ item, onClick, size = 'normal' }) {
   const [hovered, setHovered] = useState(false)
+  const [imgError, setImgError] = useState(false)
+
+  const posterSrc = item.posterUrl && !imgError
+    ? cloudinaryTransform(item.posterUrl, 'w_400,h_600,c_fill,g_auto,f_auto,q_auto')
+    : null
+
+  const cleanTitle = stripExtension(item.title)
 
   return (
     <article
@@ -13,17 +25,28 @@ export default function PosterCard({ item, onClick, size = 'normal' }) {
       onMouseLeave={() => setHovered(false)}
       role="button"
       tabIndex={0}
-      aria-label={`${item.title}, ${item.type}`}
+      aria-label={`${cleanTitle}, ${item.type}`}
       onKeyDown={(e) => e.key === 'Enter' && onClick?.(item)}
     >
       {/* Poster art */}
-      <div className={styles.poster} style={{ background: item.palette }}>
+      <div
+        className={styles.poster}
+        style={posterSrc ? undefined : { background: item.palette }}
+      >
+        {posterSrc && (
+          <img
+            src={posterSrc}
+            alt={cleanTitle}
+            className={styles.posterImg}
+            onError={() => setImgError(true)}
+          />
+        )}
         <div className={styles.gradient} />
 
         {/* Meta below */}
         <div className={styles.meta}>
           <span className={styles.type}>{item.type}</span>
-          <span className={styles.title}>{item.title}</span>
+          <span className={styles.title}>{cleanTitle}</span>
         </div>
       </div>
 

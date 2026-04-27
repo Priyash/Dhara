@@ -11,22 +11,46 @@ router.use(requireAuth)
  * GET /api/user/me
  * Returns the current user's profile and subscription status.
  */
-router.get('/me', (req, res) => {
-  const u = req.user
-  if (!u) return res.status(404).json({ error: 'User not found' })
-  res.json({
-    id:                    u._id,
-    firebaseUid:           u.firebaseUid,
-    email:                 u.email,
-    displayName:           u.displayName,
-    photoURL:              u.photoURL,
-    isSubscribed:          u.isSubscriptionActive,
-    subscriptionPlan:      u.subscriptionPlan,
-    subscriptionExpiresAt: u.subscriptionExpiresAt,
-    watchlist:             u.watchlist,
-    createdAt:             u.createdAt,
-    updatedAt:             u.updatedAt,
-  })
+router.get('/me', async (req, res, next) => {
+  try {
+    const firebaseUser = req.firebaseUser || {}
+    const tokenAuthTime = firebaseUser.auth_time ? new Date(firebaseUser.auth_time * 1000) : null
+    const tokenEmailVerified = typeof firebaseUser.email_verified === 'boolean'
+      ? firebaseUser.email_verified
+      : null
+
+    const updates = {}
+    if (tokenEmailVerified !== null && req.user.emailVerified !== tokenEmailVerified) {
+      updates.emailVerified = tokenEmailVerified
+    }
+    if (tokenAuthTime && (!req.user.lastLoginAt || tokenAuthTime > req.user.lastLoginAt)) {
+      updates.lastLoginAt = tokenAuthTime
+    }
+
+    const u = Object.keys(updates).length > 0
+      ? await User.findByIdAndUpdate(req.user._id, { $set: updates }, { new: true })
+      : req.user
+
+    if (!u) return res.status(404).json({ error: 'User not found' })
+
+    res.json({
+      id:                    u._id,
+      firebaseUid:           u.firebaseUid,
+      email:                 u.email,
+      emailVerified:         u.emailVerified,
+      displayName:           u.displayName,
+      photoURL:              u.photoURL,
+      lastLoginAt:           u.lastLoginAt,
+      isSubscribed:          u.isSubscriptionActive,
+      subscriptionPlan:      u.subscriptionPlan,
+      subscriptionExpiresAt: u.subscriptionExpiresAt,
+      watchlist:             u.watchlist,
+      createdAt:             u.createdAt,
+      updatedAt:             u.updatedAt,
+    })
+  } catch (err) {
+    next(err)
+  }
 })
 
 /**

@@ -1,15 +1,30 @@
-.player {
-  position: relative;
-  width: 100%;
-  height: 100%;
+/* ── Wrapper ─────────────────────────────────────────────────────────────────*/
+.wrapper {
+  display: flex;
+  flex-direction: column;
   background: #000;
-  overflow: hidden;
-  border-radius: var(--radius-lg, 12px);
-  font-family: var(--font-body, 'DM Sans', sans-serif);
+  width: 100%;
 }
 
-.hideCursor {
-  cursor: none;
+.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+}
+
+/* ── Video area ──────────────────────────────────────────────────────────────*/
+.videoArea {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.fullscreen .videoArea {
+  flex: 1;
+  aspect-ratio: unset;
 }
 
 .video {
@@ -27,72 +42,144 @@
   pointer-events: none;
 }
 
-/* Controls overlay */
-.controls {
+/* ── Buffering / error overlays ──────────────────────────────────────────────*/
+.bufferingBadge {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px;
+  background: rgba(10,10,14,0.75);
+  color: rgba(255,255,255,0.85);
+  font-size: 12px;
+  backdrop-filter: blur(8px);
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg) }
+  to   { transform: rotate(360deg) }
+}
+
+.errorOverlay {
   position: absolute;
   inset: 0;
+  z-index: 8;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  background: linear-gradient(
-    to bottom,
-    rgba(0,0,0,0.55) 0%,
-    transparent 25%,
-    transparent 65%,
-    rgba(0,0,0,0.75) 100%
-  );
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-}
-
-.controlsVisible {
-  opacity: 1;
-  pointer-events: all;
-}
-
-/* Top bar */
-.topBar {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(0,0,0,0.7);
+  text-align: center;
+  padding: 24px;
 }
 
-.videoTitle {
-  font-size: 16px;
-  font-weight: 600;
+.errorTitle {
+  font-size: 20px;
+  font-weight: 700;
   color: #fff;
-  letter-spacing: 0.2px;
 }
 
-/* Bottom bar */
-.bottomBar {
-  padding: 0 20px 16px;
+.errorSub {
+  font-size: 14px;
+  color: rgba(255,255,255,0.6);
+  max-width: 400px;
+}
+
+.retryBtn {
+  margin-top: 8px;
+  border: 1px solid rgba(245,158,11,0.4);
+  border-radius: 8px;
+  background: rgba(245,158,11,0.14);
+  color: #fcd38d;
+  padding: 9px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.retryBtn:hover {
+  background: rgba(245,158,11,0.22);
+}
+
+/* ── Controls bar — always below video ───────────────────────────────────────*/
+.controlsBar {
+  background: #0d0d10;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding: 12px 24px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
 }
 
-/* Progress bar */
+.fullscreen .controlsBar {
+  flex-shrink: 0;
+}
+
+/* ── Progress row ────────────────────────────────────────────────────────────*/
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.timeElapsed,
+.timeRemaining {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.timeElapsed {
+  color: rgba(255,255,255,0.8);
+  min-width: 44px;
+}
+
+.timeRemaining {
+  color: rgba(255,255,255,0.38);
+  min-width: 72px;
+  text-align: right;
+}
+
+/* Progress track */
 .progressTrack {
+  flex: 1;
   position: relative;
-  width: 100%;
   height: 4px;
-  background: rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.15);
   border-radius: 2px;
   cursor: pointer;
   transition: height 0.15s ease;
 }
 
-.progressTrack:hover {
+.progressTrack:hover,
+.progressDragging {
   height: 6px;
+}
+
+.progressDragging {
+  cursor: grabbing !important;
 }
 
 .progressBuffer {
   position: absolute;
   top: 0; left: 0; bottom: 0;
-  background: rgba(255,255,255,0.35);
+  background: rgba(255,255,255,0.25);
   border-radius: 2px;
   transition: width 0.5s linear;
 }
@@ -100,9 +187,9 @@
 .progressFill {
   position: absolute;
   top: 0; left: 0; bottom: 0;
-  background: #f59e0b;
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
   border-radius: 2px;
-  transition: width 0.1s linear;
+  /* no transition — direct DOM updates during drag must be instant */
 }
 
 .progressThumb {
@@ -113,14 +200,41 @@
   height: 14px;
   background: #f59e0b;
   border-radius: 50%;
-  transition: transform 0.15s ease, left 0.1s linear;
+  box-shadow: 0 0 0 3px rgba(245,158,11,0.2);
+  transition: transform 0.15s ease; /* only scale, not position */
+  pointer-events: none;
 }
 
-.progressTrack:hover .progressThumb {
-  transform: translate(-50%, -50%) scale(1);
+.progressTrack:hover .progressThumb,
+.progressThumbDragging {
+  transform: translate(-50%, -50%) scale(1) !important;
 }
 
-/* Control row */
+.progressThumbDragging {
+  transform: translate(-50%, -50%) scale(1.35) !important;
+  box-shadow: 0 0 0 6px rgba(245,158,11,0.2);
+}
+
+/* Hover tooltip */
+.progressTooltip {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  transform: translateX(-50%);
+  background: rgba(9,9,11,0.95);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* ── Control row ─────────────────────────────────────────────────────────────*/
 .controlRow {
   display: flex;
   align-items: center;
@@ -131,28 +245,51 @@
 .rightControls {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
-/* Control buttons */
+/* Standard control button */
 .ctrlBtn {
   background: none;
   border: none;
-  color: rgba(255,255,255,0.85);
+  color: rgba(255,255,255,0.7);
   cursor: pointer;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 8px;
   transition: color 0.15s, background 0.15s;
   flex-shrink: 0;
 }
 
 .ctrlBtn:hover {
   color: #fff;
-  background: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.08);
+}
+
+/* Play / pause — larger, accent coloured */
+.ctrlBtnPrimary {
+  background: rgba(245,158,11,0.12);
+  border: 1px solid rgba(245,158,11,0.2);
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f59e0b;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.ctrlBtnPrimary:hover {
+  background: rgba(245,158,11,0.2);
+  border-color: rgba(245,158,11,0.4);
+  transform: scale(1.06);
 }
 
 /* Volume */
@@ -160,20 +297,101 @@
   display: flex;
   align-items: center;
   gap: 2px;
+  margin-left: 4px;
 }
 
 .volumeSlider {
-  width: 72px;
-  height: 4px;
+  width: 68px;
+  height: 3px;
   accent-color: #f59e0b;
   cursor: pointer;
 }
 
-/* Time */
-.timeDisplay {
-  font-size: 13px;
-  color: rgba(255,255,255,0.75);
+/* Top-left title overlay inside the video area */
+.titleOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  padding: 32px 20px 48px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 100%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.titleOverlayVisible {
+  opacity: 1;
+}
+
+.titleOverlayText {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.85);
   white-space: nowrap;
-  padding-left: 8px;
-  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+  letter-spacing: 0.1px;
+}
+
+/* ── Settings panel ──────────────────────────────────────────────────────────*/
+.settingsPanel {
+  position: absolute;
+  right: 24px;
+  bottom: calc(100% + 8px);
+  z-index: 9;
+  width: min(320px, calc(100% - 48px));
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  background: rgba(13,13,16,0.97);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+.settingsGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settingsLabel {
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.settingsChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chipBtn {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.75);
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.chipBtn:hover {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+
+.chipBtnActive {
+  border-color: rgba(245,158,11,0.55);
+  background: rgba(245,158,11,0.14);
+  color: #fcd38d;
 }
