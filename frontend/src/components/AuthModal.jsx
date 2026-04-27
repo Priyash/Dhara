@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { X, Mail, Lock, Eye, EyeOff } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import styles from './AuthModal.module.css'
@@ -21,7 +22,8 @@ function friendlyError(code) {
 }
 
 export default function AuthModal() {
-  const { authMode, closeAuth, signIn, signUp, setAuthMode } = useStore()
+  const { authMode, closeAuth, signIn, signUp, setAuthMode, runScreenTransition } = useStore()
+  const navigate = useNavigate()
 
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
@@ -41,7 +43,14 @@ export default function AuthModal() {
       } else {
         await signIn(email, password)
       }
-      closeAuth()
+
+      await runScreenTransition(
+        isSignUp ? 'Setting up your profile...' : 'Signing you in...',
+        async () => {
+          closeAuth()
+          navigate('/', { replace: true })
+        }
+      )
     } catch (err) {
       setError(friendlyError(err.code))
     } finally {

@@ -56,3 +56,8 @@ pnpm-debug.log*
 
 config/**/secrets/*/.env.*
 config/**/secrets/*/*.json
+
+*.claude/
+
+
+

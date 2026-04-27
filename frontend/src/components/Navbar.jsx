@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Search, Bell, Crown, LogOut, UserRound } from 'lucide-react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { Search, Crown, Clapperboard } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { useScrolled } from '../hooks/useScrolled'
 import { NAV_LINKS } from '../data/content'
@@ -17,8 +17,10 @@ const NAV_ROUTES = {
 export default function Navbar() {
   const scrolled = useScrolled(60)
   const [activeLink, setActiveLink] = useState('Home')
-  const { setShowSearch, openPaywall, openAuth, signOut, isLoggedIn, isSubscribed, user } = useStore()
+  const { setShowSearch, openPaywall, openAuth, isLoggedIn, isSubscribed, isAdmin, user } = useStore()
   const navigate = useNavigate()
+  const location = useLocation()
+  const onAdminPage = location.pathname === '/admin'
 
   const avatarLetter = user?.displayName?.[0] || user?.email?.[0] || '?'
 
@@ -29,9 +31,13 @@ export default function Navbar() {
       aria-label="Main navigation"
     >
       {/* Logo */}
-      <a href="/" className={styles.logo} aria-label="Dhara home">
+      <button
+        className={styles.logo}
+        aria-label="Dhara home"
+        onClick={() => { setActiveLink('Home'); navigate('/') }}
+      >
         ধারা
-      </a>
+      </button>
 
       {/* Nav links */}
       <ul className={styles.links} role="list">
@@ -57,12 +63,20 @@ export default function Navbar() {
           <Search size={16} />
         </button>
 
-        <button className={styles.iconBtn} aria-label="Notifications">
-          <Bell size={16} />
-        </button>
-
         {isLoggedIn ? (
           <>
+            {isAdmin && (
+              <button
+                className={`${styles.adminBtn} ${onAdminPage ? styles.adminBtnActive : ''}`}
+                onClick={() => { if (!onAdminPage) navigate('/admin') }}
+                disabled={onAdminPage}
+                title={onAdminPage ? 'You are in Admin Studio' : 'Admin Studio'}
+              >
+                <Clapperboard size={13} />
+                Studio
+              </button>
+            )}
+
             {!isSubscribed && (
               <button className={styles.subscribeBtn} onClick={openPaywall}>
                 <Crown size={13} />
@@ -80,18 +94,6 @@ export default function Navbar() {
                 <div className={styles.avatar}>
                   {avatarLetter.toUpperCase()}
                 </div>
-                <span className={styles.profileLabel}>
-                  {user?.displayName || 'My Profile'}
-                </span>
-                <UserRound size={14} />
-              </button>
-              <button
-                className={styles.iconBtn}
-                onClick={signOut}
-                aria-label="Sign out"
-                title="Sign out"
-              >
-                <LogOut size={16} />
               </button>
             </div>
           </>

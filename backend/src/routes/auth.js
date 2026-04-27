@@ -15,15 +15,22 @@ router.post('/login', async (req, res, next) => {
     if (!idToken) return res.status(400).json({ error: 'idToken is required' })
 
     const decoded = await admin.auth().verifyIdToken(idToken)
+
+    const adminEmails = (process.env.ADMIN_EMAILS || '')
+      .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)
+    const isAdmin = decoded.admin === true || adminEmails.includes((decoded.email || '').toLowerCase())
     const userAlreadyExists = await User.exists({ firebaseUid: decoded.uid })
+    const tokenAuthTime = decoded.auth_time ? new Date(decoded.auth_time * 1000) : null
 
     const user = await User.findOneAndUpdate(
       { firebaseUid: decoded.uid },
       {
         $set: {
-          email:       decoded.email || '',
-          displayName: decoded.name  || decoded.email?.split('@')[0] || '',
-          photoURL:    decoded.picture || '',
+          email:         decoded.email || '',
+          emailVerified: Boolean(decoded.email_verified),
+          displayName:   decoded.name  || decoded.email?.split('@')[0] || '',
+          photoURL:      decoded.picture || '',
+          ...(tokenAuthTime ? { lastLoginAt: tokenAuthTime } : {}),
         },
         $setOnInsert: { firebaseUid: decoded.uid },
       },
@@ -35,8 +42,11 @@ router.post('/login', async (req, res, next) => {
         id:           user._id,
         firebaseUid:  user.firebaseUid,
         email:        user.email,
+        emailVerified: user.emailVerified,
         displayName:  user.displayName,
         photoURL:     user.photoURL,
+        lastLoginAt:  user.lastLoginAt,
+        isAdmin:      isAdmin,
         isSubscribed: user.isSubscriptionActive,
         subscriptionPlan: user.subscriptionPlan,
         watchlist:    user.watchlist,
