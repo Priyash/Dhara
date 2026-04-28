@@ -11,15 +11,12 @@ dist-ssr/
 *.local
 
 # ─── Secrets ──────────────────────────────────────────────────────────────────
-# The .env.* files in config/secrets/ contain placeholder values and are
-# committed so the team knows what vars are required.
-# Once you fill in real credentials, add your profile file to a local
-# .gitignore_personal or use git-crypt / a secrets manager.
+# .env.{profile} files contain only ${PLACEHOLDER} markers — safe to commit.
+# Real values live in .secrets.{profile} vault files, which are gitignored.
 #
-# Files you should NEVER commit with real values:
-#   config/secrets/dev/.env.dev
-#   config/secrets/prod/.env.prod
-#   config/secrets/staging/.env.staging
+# Pattern overview:
+#   config/secrets/dev/.env.dev       ← committed (placeholders only, safe)
+#   config/secrets/dev/.secrets.dev   ← gitignored (real values)
 #
 # Old-style root .env files (not used in this project — kept as safety net)
 .env
@@ -54,7 +51,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-config/**/secrets/*/.env.*
+# Vault files with real credentials — never commit
+config/**/secrets/*/.secrets.*
 config/**/secrets/*/*.json
 
 *.claude/
