@@ -1,12 +1,53 @@
+/* ── Entrance animations ─────────────────────────────────────────────────── */
+
+@keyframes backdropIn {
+  from { opacity: 0 }
+  to   { opacity: 1 }
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(32px) scale(0.97) }
+  to   { opacity: 1; transform: translateY(0)    scale(1)    }
+}
+
+@keyframes planIn {
+  from { opacity: 0; transform: translateX(-10px) }
+  to   { opacity: 1; transform: translateX(0)     }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center }
+  100% { background-position:  200% center }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg) }
+}
+
+@keyframes successBloom {
+  0%   { transform: scale(0.85); opacity: 0 }
+  60%  { transform: scale(1.04) }
+  100% { transform: scale(1);    opacity: 1 }
+}
+
+@keyframes successIconPop {
+  0%   { transform: scale(0) }
+  70%  { transform: scale(1.25) }
+  100% { transform: scale(1) }
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.88);
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
+  animation: backdropIn 0.2s ease;
 }
 
 .modal {
@@ -16,7 +57,14 @@
   width: 100%;
   overflow: hidden;
   border: 1px solid var(--color-border);
+  animation: modalIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+.modalSuccess {
+  animation: successBloom 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
 
 .header {
   background: linear-gradient(135deg, #1a0533, #4a0e8f);
@@ -41,8 +89,13 @@
   transition: background var(--transition);
 }
 
-.closeBtn:hover {
+.closeBtn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.18);
+}
+
+.closeBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .eyebrow {
@@ -71,12 +124,39 @@
   color: var(--color-text-muted);
 }
 
-/* Body */
+/* ── Success state ───────────────────────────────────────────────────────── */
+
+.successHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 16px 0 8px;
+  gap: 12px;
+}
+
+.successIcon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: #000;
+  font-size: 26px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: successIconPop 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
+
 .body {
   padding: 24px 32px;
 }
 
-/* Plans */
+/* ── Plans ───────────────────────────────────────────────────────────────── */
+
 .plans {
   display: flex;
   flex-direction: column;
@@ -96,10 +176,17 @@
   color: var(--color-text);
   text-align: left;
   transition: border-color 0.2s, background 0.2s;
+  /* Stagger each card using a CSS custom property set inline */
+  animation: planIn 0.3s ease calc(var(--stagger, 0) * 80ms) both;
 }
 
-.plan:hover {
-  border-color: rgba(255, 255, 255, 0.2);
+.plan:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.plan:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .planSelected {
@@ -171,7 +258,8 @@
   color: var(--color-text);
 }
 
-/* Features */
+/* ── Features ────────────────────────────────────────────────────────────── */
+
 .features {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -188,10 +276,18 @@
   color: var(--color-text-muted);
 }
 
-/* CTA */
+/* ── CTA ─────────────────────────────────────────────────────────────────── */
+
 .cta {
   width: 100%;
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
+  background: linear-gradient(
+    90deg,
+    var(--color-accent),
+    var(--color-accent-dark) 40%,
+    var(--color-accent) 60%,
+    var(--color-accent-dark)
+  );
+  background-size: 200% auto;
   border: none;
   border-radius: var(--radius-md);
   padding: 15px;
@@ -201,12 +297,44 @@
   color: #000;
   cursor: pointer;
   letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   transition: opacity var(--transition), transform var(--transition);
+  animation: shimmer 2.5s linear infinite;
 }
 
-.cta:hover {
+.cta:hover:not(:disabled) {
   opacity: 0.92;
   transform: translateY(-1px);
+}
+
+.ctaBusy {
+  animation: none;
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.ctaError {
+  background: linear-gradient(135deg, #7f1d1d, #b91c1c);
+  animation: none;
+  color: #fff;
+}
+
+.spinner {
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ── Error + fine print ──────────────────────────────────────────────────── */
+
+.errorMsg {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: #f87171;
+  margin-bottom: 12px;
+  text-align: center;
 }
 
 .fine {

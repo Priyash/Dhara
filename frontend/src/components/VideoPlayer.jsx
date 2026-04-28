@@ -28,10 +28,12 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
   const containerRef= useRef(null)
   const progressRef = useRef(null)
   const fillRef     = useRef(null)
-  const thumbRef    = useRef(null)
-  const hlsRef      = useRef(null)
-  const saveTimer   = useRef(null)
-  const didSeek     = useRef(false)
+  const thumbRef      = useRef(null)
+  const hlsRef        = useRef(null)
+  const saveTimer     = useRef(null)
+  const didSeek       = useRef(false)
+  const thumbnailRef  = useRef(null)
+  const captureAnimRef= useRef(null)
 
   const [playing,        setPlaying]        = useState(false)
   const [currentTime,    setCurrentTime]    = useState(0)
@@ -69,6 +71,15 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
     const kbps = level?.bitrate ? Math.round(level.bitrate / 1000) : null
     return kbps ? `${h} · ${kbps}kbps` : h
   }
+
+  const captureFrame = useCallback(() => {
+    const canvas = thumbnailRef.current
+    const video  = videoRef.current
+    if (!canvas || !video || video.readyState < 2) return
+    try {
+      canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+    } catch { /* cross-origin taint — keep previous frame */ }
+  }, [])
 
   const cleanupHls = () => {
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
@@ -163,10 +174,12 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
     if (fillRef.current)  fillRef.current.style.width = pctStr
     if (thumbRef.current) thumbRef.current.style.left  = pctStr
 
-    // Tooltip only (lightweight, single state update)
+    // Tooltip + thumbnail capture
     setHoverPct(pct * 100)
     setHoverTime(newTime)
-  }, [duration])
+    cancelAnimationFrame(captureAnimRef.current)
+    captureAnimRef.current = requestAnimationFrame(captureFrame)
+  }, [duration, captureFrame])
 
   const handleProgressHover = (e) => {
     if (isDragging) return
@@ -175,6 +188,8 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
     setHoverPct(pct * 100)
     setHoverTime(pct * duration)
+    cancelAnimationFrame(captureAnimRef.current)
+    captureAnimRef.current = requestAnimationFrame(captureFrame)
   }
 
   const handleDragStart = (e) => {
@@ -347,8 +362,12 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
             <div ref={thumbRef} className={`${styles.progressThumb} ${isDragging ? styles.progressThumbDragging : ''}`} style={{ left: `${progress}%` }} />
 
             {hoverTime !== null && (
-              <div className={styles.progressTooltip} style={{ left: `${hoverPct}%` }}>
-                {formatTime(hoverTime)}
+              <div
+                className={styles.progressTooltip}
+                style={{ left: `clamp(80px, ${hoverPct}%, calc(100% - 80px))` }}
+              >
+                <canvas ref={thumbnailRef} className={styles.thumbnailCanvas} width={160} height={90} />
+                <span className={styles.tooltipTime}>{formatTime(hoverTime)}</span>
               </div>
             )}
           </div>

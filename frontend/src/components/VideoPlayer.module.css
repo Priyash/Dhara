@@ -215,23 +215,39 @@
   box-shadow: 0 0 0 6px rgba(245,158,11,0.2);
 }
 
-/* Hover tooltip */
+/* Hover tooltip — now contains canvas + time */
 .progressTooltip {
   position: absolute;
-  bottom: calc(100% + 12px);
+  bottom: calc(100% + 14px);
   transform: translateX(-50%);
-  background: rgba(9,9,11,0.95);
+  background: rgba(9,9,11,0.97);
   border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 6px;
-  padding: 4px 9px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #fff;
-  white-space: nowrap;
+  border-radius: 8px;
+  padding: 4px 4px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
   pointer-events: none;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+}
+
+.thumbnailCanvas {
+  width: 160px;
+  height: 90px;
+  border-radius: 5px;
+  display: block;
+  background: #0d0d10;
+}
+
+.tooltipTime {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
   font-variant-numeric: tabular-nums;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  letter-spacing: 0.2px;
+  font-family: var(--font-body, sans-serif);
 }
 
 /* ── Control row ─────────────────────────────────────────────────────────────*/

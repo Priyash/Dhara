@@ -3,13 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { Filter } from 'lucide-react'
 import PosterCard from '../components/PosterCard'
 import { fetchContent } from '../services/api'
+import { useStore } from '../store/useStore'
 import styles from './Browse.module.css'
 
 const TYPES   = ['All', 'Film', 'Series']
 const FILTERS = ['All', 'Free', 'Premium', 'New']
 
 export default function Browse() {
-  const navigate = useNavigate()
+  const navigate     = useNavigate()
+  const { isSubscribed, openItem, openPaywall, isLoggedIn } = useStore()
   const [content,      setContent]      = useState([])
   const [activeType,   setActiveType]   = useState('All')
   const [activeFilter, setActiveFilter] = useState('All')
@@ -100,7 +102,14 @@ export default function Browse() {
               key={item.id}
               item={item}
               size="large"
-              onClick={() => navigate(`/watch/${item.id}`)}
+              isSubscribed={isSubscribed}
+              onClick={(clickedItem) => {
+                if (clickedItem.isPremium && !isSubscribed) {
+                  openItem(clickedItem)   // show detail modal → "Subscribe to Watch" CTA
+                } else {
+                  navigate(`/watch/${clickedItem.id}`)
+                }
+              }}
             />
           ))}
         </div>

@@ -91,6 +91,14 @@ export async function fetchStreamUrl(contentId) {
   return request(`/api/content/${contentId}/stream`)
 }
 
+export async function likeContent(contentId) {
+  return request(`/api/content/${contentId}/like`, { method: 'POST' })
+}
+
+export async function dislikeContent(contentId) {
+  return request(`/api/content/${contentId}/dislike`, { method: 'POST' })
+}
+
 // ── Search ────────────────────────────────────────────────────────────────────
 
 export async function searchContent(q) {
@@ -107,10 +115,35 @@ export async function createOrder(plan) {
   })
 }
 
+export async function verifyPayment({ razorpay_order_id, razorpay_payment_id, razorpay_signature, plan }) {
+  return request('/api/payments/verify', {
+    method: 'POST',
+    body: JSON.stringify({ razorpay_order_id, razorpay_payment_id, razorpay_signature, plan }),
+  })
+}
+
+export async function createSubscription(plan) {
+  return request('/api/payments/create-subscription', {
+    method: 'POST',
+    body: JSON.stringify({ plan }),
+  })
+}
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export async function getAdminSession() {
   return request('/api/admin/session')
+}
+
+export async function getPaymentConfig() {
+  return request('/api/admin/payment-config')
+}
+
+export async function updatePaymentConfig(payload) {
+  return request('/api/admin/payment-config', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
 }
 
 export async function listAdminCollections() {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Play, Crown, Star } from 'lucide-react'
+import { Play, Crown, Star, Lock } from 'lucide-react'
 import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './PosterCard.module.css'
 
@@ -7,9 +7,11 @@ function stripExtension(name = '') {
   return name.replace(/\.(mp4|mkv|mov|avi|webm|m4v|flv|wmv|ts|mts|3gp)$/i, '').trim()
 }
 
-export default function PosterCard({ item, onClick, size = 'normal' }) {
+export default function PosterCard({ item, onClick, size = 'normal', isSubscribed = false }) {
   const [hovered, setHovered] = useState(false)
   const [imgError, setImgError] = useState(false)
+
+  const isLocked = item.isPremium && !isSubscribed
 
   const posterSrc = item.posterUrl && !imgError
     ? cloudinaryTransform(item.posterUrl, 'w_400,h_600,c_fill,g_auto,f_auto,q_auto')
@@ -19,7 +21,7 @@ export default function PosterCard({ item, onClick, size = 'normal' }) {
 
   return (
     <article
-      className={`${styles.card} ${styles[size]} ${hovered ? styles.hovered : ''}`}
+      className={`${styles.card} ${styles[size]} ${hovered ? styles.hovered : ''} ${isLocked ? styles.premiumCard : ''}`}
       onClick={() => onClick?.(item)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -71,12 +73,21 @@ export default function PosterCard({ item, onClick, size = 'normal' }) {
         </div>
       )}
 
-      {/* Play overlay */}
+      {/* Hover overlay — lock for ungated premium, play for everything else */}
       {hovered && (
-        <div className={styles.overlay} aria-hidden="true">
-          <div className={styles.playBtn}>
-            <Play size={18} color="#09090b" fill="#09090b" style={{ marginLeft: 2 }} />
-          </div>
+        <div className={`${styles.overlay} ${isLocked ? styles.overlayLocked : ''}`} aria-hidden="true">
+          {isLocked ? (
+            <div className={styles.lockContent}>
+              <div className={styles.lockIcon}>
+                <Lock size={22} strokeWidth={2} />
+              </div>
+              <span className={styles.lockLabel}>Subscribe to Watch</span>
+            </div>
+          ) : (
+            <div className={styles.playBtn}>
+              <Play size={18} color="#09090b" fill="#09090b" style={{ marginLeft: 2 }} />
+            </div>
+          )}
         </div>
       )}
     </article>

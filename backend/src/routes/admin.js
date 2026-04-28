@@ -2,6 +2,8 @@ import express, { Router } from 'express'
 import { Content } from '../models/Content.js'
 import { StreamCollection } from '../models/StreamCollection.js'
 import { UploadJob } from '../models/UploadJob.js'
+import { PaymentConfig } from '../models/PaymentConfig.js'
+import { SUPPORTED_PROVIDERS, getProviderStatus } from '../providers/index.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 
 const router = Router()
@@ -151,6 +153,72 @@ router.get('/session', (req, res) => {
     displayName: req.user?.displayName || '',
     isAdmin: true,
   })
+})
+
+/**
+ * GET /api/admin/payment-config
+ * Returns the active provider, mode, and status of each installed adapter.
+ * Secret keys are never exposed — only masked public key hints and booleans.
+ */
+router.get('/payment-config', async (req, res, next) => {
+  try {
+    const config = await PaymentConfig.getConfig()
+    const backendUrl = process.env.BACKEND_URL || ''
+    res.json({
+      activeProvider:     config.activeProvider,
+      mode:               config.mode,
+      supportedProviders: SUPPORTED_PROVIDERS,
+      providerStatus:     getProviderStatus(backendUrl),
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/admin/payment-config
+ * Switches the active provider or toggles between test/live mode.
+ * Only accepts fields: activeProvider, mode.
+ */
+router.patch('/payment-config', async (req, res, next) => {
+  try {
+    const { activeProvider, mode } = req.body
+    const updates = {}
+
+    if (activeProvider !== undefined) {
+      if (!SUPPORTED_PROVIDERS.includes(activeProvider)) {
+        return res.status(400).json({
+          error: `Unsupported provider. Installed: ${SUPPORTED_PROVIDERS.join(', ')}`,
+        })
+      }
+      updates.activeProvider = activeProvider
+    }
+
+    if (mode !== undefined) {
+      if (!['test', 'live'].includes(mode)) {
+        return res.status(400).json({ error: 'mode must be "test" or "live"' })
+      }
+      updates.mode = mode
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided' })
+    }
+
+    const config = await PaymentConfig.findOneAndUpdate(
+      { _id: 'singleton' },
+      { $set: updates },
+      { upsert: true, new: true }
+    )
+
+    res.json({
+      success:        true,
+      activeProvider: config.activeProvider,
+      mode:           config.mode,
+    })
+  } catch (err) {
+    next(err)
+  }
 })
 
 router.get('/collections', async (req, res, next) => {

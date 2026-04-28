@@ -6,7 +6,7 @@ import { fetchContent } from '../services/api'
 import styles from './Home.module.css'
 
 export default function Home() {
-  const { openItem } = useStore()
+  const { openItem, isSubscribed } = useStore()
   const [content, setContent] = useState([])
 
   useEffect(() => {
@@ -23,8 +23,8 @@ export default function Home() {
       <Hero />
 
       <div className={styles.rows}>
-        <ContentRow title="Trending Now"           items={trending}    onCardClick={openItem} />
-        <ContentRow title="New Releases"           items={newReleases} onCardClick={openItem} />
+        <ContentRow title="Trending Now"           items={trending}    onCardClick={openItem} isSubscribed={isSubscribed} />
+        <ContentRow title="New Releases"           items={newReleases} onCardClick={openItem} isSubscribed={isSubscribed} />
 
         {/* Category promo banner */}
         <div className={styles.promo}>
@@ -38,7 +38,7 @@ export default function Home() {
           <button className={styles.promoBtn}>Browse Collection →</button>
         </div>
 
-        <ContentRow title="Award-Winning Films"    items={topFilms}    onCardClick={openItem} />
+        <ContentRow title="Award-Winning Films"    items={topFilms}    onCardClick={openItem} isSubscribed={isSubscribed} />
       </div>
 
       {/* Footer */}

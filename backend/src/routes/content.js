@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { createHash } from 'crypto'
 import { Content } from '../models/Content.js'
+import { User } from '../models/User.js'
 import { requireAuth, requireSubscription } from '../middleware/auth.js'
 
 const router = Router()
@@ -113,6 +114,89 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
     }
 
     res.json({ hlsUrl: buildHlsUrl(item.bunnyVideoId, false) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/content/:id/like
+ * Auth required. Toggles the current user's like on a piece of content.
+ * Switching from dislike → like decrements dislikeCount atomically.
+ * Returns updated counts and the caller's new like/dislike state.
+ */
+router.post('/:id/like', requireAuth, async (req, res, next) => {
+  try {
+    const contentId = String(req.params.id)
+    const userId    = req.user._id
+
+    const alreadyLiked    = (req.user.likedContent    ?? []).includes(contentId)
+    const alreadyDisliked = (req.user.dislikedContent ?? []).includes(contentId)
+
+    const contentInc = alreadyLiked
+      ? { likeCount: -1 }
+      : { likeCount: 1, ...(alreadyDisliked ? { dislikeCount: -1 } : {}) }
+
+    const userOp = alreadyLiked
+      ? { $pull: { likedContent: contentId } }
+      : { $addToSet: { likedContent: contentId }, $pull: { dislikedContent: contentId } }
+
+    const [content, user] = await Promise.all([
+      Content.findByIdAndUpdate(contentId, { $inc: contentInc }, { new: true })
+        .select('likeCount dislikeCount').lean(),
+      User.findByIdAndUpdate(userId, userOp, { new: true })
+        .select('likedContent dislikedContent').lean(),
+    ])
+
+    if (!content) return res.status(404).json({ error: 'Content not found' })
+
+    res.json({
+      likeCount:    Math.max(0, content.likeCount),
+      dislikeCount: Math.max(0, content.dislikeCount),
+      liked:        (user.likedContent    ?? []).includes(contentId),
+      disliked:     (user.dislikedContent ?? []).includes(contentId),
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/content/:id/dislike
+ * Auth required. Toggles the current user's dislike on a piece of content.
+ * Switching from like → dislike decrements likeCount atomically.
+ */
+router.post('/:id/dislike', requireAuth, async (req, res, next) => {
+  try {
+    const contentId = String(req.params.id)
+    const userId    = req.user._id
+
+    const alreadyLiked    = (req.user.likedContent    ?? []).includes(contentId)
+    const alreadyDisliked = (req.user.dislikedContent ?? []).includes(contentId)
+
+    const contentInc = alreadyDisliked
+      ? { dislikeCount: -1 }
+      : { dislikeCount: 1, ...(alreadyLiked ? { likeCount: -1 } : {}) }
+
+    const userOp = alreadyDisliked
+      ? { $pull: { dislikedContent: contentId } }
+      : { $addToSet: { dislikedContent: contentId }, $pull: { likedContent: contentId } }
+
+    const [content, user] = await Promise.all([
+      Content.findByIdAndUpdate(contentId, { $inc: contentInc }, { new: true })
+        .select('likeCount dislikeCount').lean(),
+      User.findByIdAndUpdate(userId, userOp, { new: true })
+        .select('likedContent dislikedContent').lean(),
+    ])
+
+    if (!content) return res.status(404).json({ error: 'Content not found' })
+
+    res.json({
+      likeCount:    Math.max(0, content.likeCount),
+      dislikeCount: Math.max(0, content.dislikeCount),
+      liked:        (user.likedContent    ?? []).includes(contentId),
+      disliked:     (user.dislikedContent ?? []).includes(contentId),
+    })
   } catch (err) {
     next(err)
   }

@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { User } from '../models/User.js'
 import { requireAuth } from '../middleware/auth.js'
+import { serializeUser } from './auth.js'
 
 const router = Router()
 
@@ -33,21 +34,7 @@ router.get('/me', async (req, res, next) => {
 
     if (!u) return res.status(404).json({ error: 'User not found' })
 
-    res.json({
-      id:                    u._id,
-      firebaseUid:           u.firebaseUid,
-      email:                 u.email,
-      emailVerified:         u.emailVerified,
-      displayName:           u.displayName,
-      photoURL:              u.photoURL,
-      lastLoginAt:           u.lastLoginAt,
-      isSubscribed:          u.isSubscriptionActive,
-      subscriptionPlan:      u.subscriptionPlan,
-      subscriptionExpiresAt: u.subscriptionExpiresAt,
-      watchlist:             u.watchlist,
-      createdAt:             u.createdAt,
-      updatedAt:             u.updatedAt,
-    })
+    res.json(serializeUser(u))
   } catch (err) {
     next(err)
   }

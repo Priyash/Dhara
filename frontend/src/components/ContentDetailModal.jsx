@@ -1,7 +1,9 @@
-import { X, Play, Plus, Check, Star, Crown, Globe, Clapperboard, Users, BadgeCheck } from 'lucide-react'
+import { useState } from 'react'
+import { X, Play, Plus, Check, ThumbsUp, ThumbsDown, Crown, Globe, Star, Clapperboard, Users } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
-import { addToWatchlist, removeFromWatchlist } from '../services/api'
+import { addToWatchlist, removeFromWatchlist, likeContent, dislikeContent } from '../services/api'
+import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './ContentDetailModal.module.css'
 
 function stripExtension(name = '') {
@@ -28,22 +30,27 @@ export default function ContentDetailModal() {
     refreshProfile,
   } = useStore()
 
+  const [liked,        setLiked]        = useState(() => Boolean(user?.likedContent?.includes(item?.id)))
+  const [disliked,     setDisliked]     = useState(() => Boolean(user?.dislikedContent?.includes(item?.id)))
+  const [likeCount,    setLikeCount]    = useState(item?.likeCount    ?? 0)
+  const [dislikeCount, setDislikeCount] = useState(item?.dislikeCount ?? 0)
+
   if (!item) return null
 
   const cleanTitle   = stripExtension(item.title)
   const inWatchlist  = user?.watchlist?.includes(item.id)
   const rating       = item.rating ?? 0
-  const fullStars    = Math.floor(rating)
-  const halfStar     = rating - fullStars >= 0.5
   const reviewCount  = formatReviewCount(item.reviewCount)
   const hasGenre     = item.genre?.length > 0
   const hasCast      = item.cast?.length > 0
   const hasDirector  = Boolean(item.director)
   const episodeCount = Array.isArray(item.episodes) ? item.episodes.length : 0
 
-  const headerBg = item.posterUrl
-    ? { backgroundImage: `url(${item.posterUrl})` }
-    : { background: item.palette }
+  // Prefer wide backdrop for the hero; fall back to poster
+  const heroUrl = item.backdropUrl || item.posterUrl
+  const heroTransformed = heroUrl
+    ? cloudinaryTransform(heroUrl, 'w_1200,h_675,c_fill,g_auto,f_auto,q_auto')
+    : null
 
   const handleWatch = () => {
     if (!isLoggedIn) { openAuth('signin'); return }
@@ -61,6 +68,44 @@ export default function ContentDetailModal() {
     } catch { /* non-critical */ }
   }
 
+  const handleLike = async () => {
+    if (!isLoggedIn) { openAuth('signin'); return }
+    // Optimistic update
+    const prevLiked = liked; const prevDisliked = disliked
+    setLiked(!prevLiked); setDisliked(false)
+    setLikeCount((c) => prevLiked ? c - 1 : c + 1)
+    if (prevDisliked) setDislikeCount((c) => c - 1)
+    try {
+      const r = await likeContent(item.id)
+      setLiked(r.liked); setDisliked(r.disliked)
+      setLikeCount(r.likeCount); setDislikeCount(r.dislikeCount)
+    } catch {
+      // revert
+      setLiked(prevLiked); setDisliked(prevDisliked)
+      setLikeCount((c) => prevLiked ? c + 1 : c - 1)
+      if (prevDisliked) setDislikeCount((c) => c + 1)
+    }
+  }
+
+  const handleDislike = async () => {
+    if (!isLoggedIn) { openAuth('signin'); return }
+    // Optimistic update
+    const prevLiked = liked; const prevDisliked = disliked
+    setDisliked(!prevDisliked); setLiked(false)
+    setDislikeCount((c) => prevDisliked ? c - 1 : c + 1)
+    if (prevLiked) setLikeCount((c) => c - 1)
+    try {
+      const r = await dislikeContent(item.id)
+      setLiked(r.liked); setDisliked(r.disliked)
+      setLikeCount(r.likeCount); setDislikeCount(r.dislikeCount)
+    } catch {
+      // revert
+      setLiked(prevLiked); setDisliked(prevDisliked)
+      setDislikeCount((c) => prevDisliked ? c + 1 : c - 1)
+      if (prevLiked) setLikeCount((c) => c + 1)
+    }
+  }
+
   return (
     <div
       className={styles.backdrop}
@@ -71,124 +116,132 @@ export default function ContentDetailModal() {
     >
       <div className={styles.modal}>
 
-        {/* ── Header ── */}
-        <div className={styles.header} style={headerBg}>
-          <div className={styles.headerScrim} />
+        {/* ── Hero ── */}
+        <div
+          className={styles.hero}
+          style={heroTransformed
+            ? { backgroundImage: `url(${heroTransformed})` }
+            : { background: item.palette || '#1a1a22' }
+          }
+        >
+          <div className={styles.heroScrim} />
 
           <button className={styles.closeBtn} onClick={() => setSelectedItem(null)} aria-label="Close">
-            <X size={15} />
+            <X size={16} />
           </button>
 
-          <div className={styles.headerContent}>
-            {/* Badge row */}
+          <div className={styles.heroFooter}>
             <div className={styles.badgeRow}>
               {item.isPremium && (
-                <span className={styles.proBadge}>
-                  <Crown size={10} color="#fff" /> PRO
-                </span>
+                <span className={styles.proBadge}><Crown size={10} /> PRO</span>
               )}
               {item.certification && (
                 <span className={styles.certBadge}>{item.certification}</span>
               )}
               {item.contentLanguage && (
-                <span className={styles.langBadge}>
-                  <Globe size={10} /> {item.contentLanguage}
-                </span>
+                <span className={styles.langBadge}><Globe size={10} /> {item.contentLanguage}</span>
               )}
             </div>
-
             <h2 className={styles.title}>{cleanTitle}</h2>
-
-            {/* Quick facts */}
-            <div className={styles.facts}>
-              {item.releaseYear && <span className={styles.fact}>{item.releaseYear}</span>}
-              <span className={styles.fact}>{episodeCount > 0 ? `${episodeCount} Episodes` : item.type}</span>
-              {rating > 0 && (
-                <span className={styles.factRating}>
-                  {Array.from({ length: 5 }, (_, i) => (
-                    <Star
-                      key={i}
-                      size={11}
-                      color="#f59e0b"
-                      fill={
-                        i < fullStars ? '#f59e0b'
-                        : (!fullStars && halfStar && i === fullStars) || (halfStar && i === fullStars)
-                          ? 'rgba(245,158,11,0.5)'
-                          : 'rgba(245,158,11,0.15)'
-                      }
-                    />
-                  ))}
-                  <span>{rating.toFixed(1)}{reviewCount && ` · ${reviewCount} reviews`}</span>
-                </span>
-              )}
-            </div>
+            {item.subtitle && <p className={styles.subtitle}>{item.subtitle}</p>}
           </div>
         </div>
 
-        {/* ── Body ── */}
-        <div className={styles.body}>
+        {/* ── Actions bar ── */}
+        <div className={styles.actionsBar}>
+          <div className={styles.actionsLeft}>
+            <button className={styles.playBtn} onClick={handleWatch}>
+              {item.isPremium && !isSubscribed
+                ? <><Crown size={16} color="#000" /> Subscribe to Watch</>
+                : !isLoggedIn
+                ? <><Play size={16} color="#000" fill="#000" /> Sign In to Watch</>
+                : <><Play size={16} color="#000" fill="#000" /> Play</>
+              }
+            </button>
 
-          {/* Synopsis */}
-          {item.desc && <p className={styles.desc}>{item.desc}</p>}
+            <button
+              className={`${styles.circleBtn} ${inWatchlist ? styles.circleBtnSaved : ''}`}
+              onClick={handleWatchlist}
+              aria-label={inWatchlist ? 'Remove from My List' : 'Add to My List'}
+              title={inWatchlist ? 'Remove from My List' : 'Add to My List'}
+            >
+              {inWatchlist ? <Check size={18} /> : <Plus size={18} />}
+            </button>
 
-          {/* Genre chips */}
-          {hasGenre && (
-            <div className={styles.section}>
+            <button
+              className={`${styles.circleBtn} ${liked ? styles.circleBtnLiked : ''}`}
+              onClick={handleLike}
+              aria-label="Like"
+              title="I like this"
+            >
+              <ThumbsUp size={17} />
+            </button>
+            {likeCount > 0 && (
+              <span className={styles.voteCount}>{formatReviewCount(likeCount)}</span>
+            )}
+
+            <button
+              className={`${styles.circleBtn} ${disliked ? styles.circleBtnDisliked : ''}`}
+              onClick={handleDislike}
+              aria-label="Not for me"
+              title="Not for me"
+            >
+              <ThumbsDown size={17} />
+            </button>
+            {dislikeCount > 0 && (
+              <span className={styles.voteCount}>{formatReviewCount(dislikeCount)}</span>
+            )}
+          </div>
+
+          <div className={styles.factsPill}>
+            {item.releaseYear && <span className={styles.fact}>{item.releaseYear}</span>}
+            <span className={styles.fact}>
+              {episodeCount > 0 ? `${episodeCount} Episodes` : item.type}
+            </span>
+            {rating > 0 && (
+              <span className={styles.factRating}>
+                <Star size={11} fill="#f59e0b" color="#f59e0b" />
+                {rating.toFixed(1)}
+                {reviewCount && <> · {reviewCount}</>}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* ── Details — two-column ── */}
+        <div className={styles.details}>
+          <div className={styles.detailsMain}>
+            {item.desc && <p className={styles.desc}>{item.desc}</p>}
+            {hasGenre && (
               <div className={styles.genreRow}>
                 {item.genre.map((g) => (
                   <span key={g} className={styles.genreChip}>{g}</span>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Crew */}
           {(hasDirector || hasCast) && (
-            <div className={styles.crew}>
+            <div className={styles.detailsSide}>
               {hasDirector && (
-                <div className={styles.crewRow}>
-                  <span className={styles.crewLabel}>
-                    <Clapperboard size={12} /> Director
-                  </span>
-                  <span className={styles.crewValue}>{item.director}</span>
-                </div>
+                <p className={styles.crewLine}>
+                  <span className={styles.crewKey}><Clapperboard size={11} /> Director</span>
+                  <span className={styles.crewVal}>{item.director}</span>
+                </p>
               )}
               {hasCast && (
-                <div className={styles.crewRow}>
-                  <span className={styles.crewLabel}>
-                    <Users size={12} /> Cast
+                <p className={styles.crewLine}>
+                  <span className={styles.crewKey}><Users size={11} /> Cast</span>
+                  <span className={styles.crewVal}>
+                    {item.cast.slice(0, 4).join(', ')}
+                    {item.cast.length > 4 ? ' and more' : ''}
                   </span>
-                  <div className={styles.castChips}>
-                    {item.cast.map((name) => (
-                      <span key={name} className={styles.castChip}>{name}</span>
-                    ))}
-                  </div>
-                </div>
+                </p>
               )}
             </div>
           )}
-
-          {/* Actions */}
-          <div className={styles.actions}>
-            <button className={styles.watchBtn} onClick={handleWatch}>
-              {item.isPremium && !isSubscribed
-                ? <><Crown size={15} color="#000" /> Subscribe to Watch</>
-                : !isLoggedIn
-                ? <><Play size={15} color="#000" fill="#000" /> Sign In to Watch</>
-                : <><Play size={15} color="#000" fill="#000" /> Watch Now</>
-              }
-            </button>
-
-            <button
-              className={`${styles.iconBtn} ${inWatchlist ? styles.iconBtnActive : ''}`}
-              onClick={handleWatchlist}
-              aria-label={inWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
-              title={inWatchlist ? 'In your watchlist' : 'Add to watchlist'}
-            >
-              {inWatchlist ? <Check size={18} /> : <Plus size={18} />}
-            </button>
-          </div>
         </div>
+
       </div>
     </div>
   )

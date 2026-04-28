@@ -1,5 +1,7 @@
 # ধারা — Dhara Streaming Platform
 
+[![Node.js CI](https://github.com/Priyash/Dhara/actions/workflows/node-ci.yml/badge.svg?branch=development)](https://github.com/Priyash/Dhara/actions/workflows/node-ci.yml)
+
 বাংলার গল্প, সারা বিশ্বের পর্দায় — For every Bengali heart, wherever the world has carried you.
 
 ---
