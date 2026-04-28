@@ -19,6 +19,9 @@ export const useStore = create((set, get) => ({
   isLoggedIn: false,
   isSubscribed: false,
   isAdmin: false,
+  subscriptionStatus: 'free',   // free | trial | active | grace | lapsed
+  trialEndsAt: null,
+  graceEndsAt: null,
   user: null,          // MongoDB user profile
   authLoading: true,   // true while Firebase resolves the initial session
 
@@ -51,9 +54,18 @@ export const useStore = create((set, get) => ({
 
         const idToken = await firebaseUser.getIdToken(forceFreshToken)
         const { user } = await loginWithBackend(idToken) // upsert in MongoDB
-        set({ isLoggedIn: true, isAdmin: Boolean(user.isAdmin), isSubscribed: user.isSubscribed, user, authLoading: false })
+        set({
+          isLoggedIn:         true,
+          isAdmin:            Boolean(user.isAdmin),
+          isSubscribed:       user.isSubscribed,
+          subscriptionStatus: user.subscriptionStatus ?? 'free',
+          trialEndsAt:        user.trialEndsAt ?? null,
+          graceEndsAt:        user.graceEndsAt ?? null,
+          user,
+          authLoading:        false,
+        })
       } catch {
-        set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, user: null, authLoading: false })
+        set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, subscriptionStatus: 'free', trialEndsAt: null, graceEndsAt: null, user: null, authLoading: false })
       }
     }
 
@@ -111,7 +123,15 @@ export const useStore = create((set, get) => ({
     const credential = await signInWithEmailAndPassword(auth, email, password)
     const idToken    = await credential.user.getIdToken()
     const { user }   = await loginWithBackend(idToken)
-    set({ isLoggedIn: true, isAdmin: Boolean(user.isAdmin), isSubscribed: user.isSubscribed, user })
+    set({
+      isLoggedIn:         true,
+      isAdmin:            Boolean(user.isAdmin),
+      isSubscribed:       user.isSubscribed,
+      subscriptionStatus: user.subscriptionStatus ?? 'free',
+      trialEndsAt:        user.trialEndsAt ?? null,
+      graceEndsAt:        user.graceEndsAt ?? null,
+      user,
+    })
   },
 
   signUp: async (email, password) => {
@@ -126,12 +146,20 @@ export const useStore = create((set, get) => ({
     }
     const idToken    = await credential.user.getIdToken()
     const { user }   = await loginWithBackend(idToken)
-    set({ isLoggedIn: true, isAdmin: Boolean(user.isAdmin), isSubscribed: user.isSubscribed, user })
+    set({
+      isLoggedIn:         true,
+      isAdmin:            Boolean(user.isAdmin),
+      isSubscribed:       user.isSubscribed,
+      subscriptionStatus: user.subscriptionStatus ?? 'free',
+      trialEndsAt:        user.trialEndsAt ?? null,
+      graceEndsAt:        user.graceEndsAt ?? null,
+      user,
+    })
   },
 
   signOut: async () => {
     await firebaseSignOut(auth)
-    set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, user: null })
+    set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, subscriptionStatus: 'free', trialEndsAt: null, graceEndsAt: null, user: null })
   },
 
   refreshProfile: async () => {
@@ -140,7 +168,13 @@ export const useStore = create((set, get) => ({
     refreshProfileInFlight = (async () => {
       try {
         const user = await getMe()
-        set({ isSubscribed: user.isSubscribed, user })
+        set({
+          isSubscribed:       user.isSubscribed,
+          subscriptionStatus: user.subscriptionStatus ?? 'free',
+          trialEndsAt:        user.trialEndsAt ?? null,
+          graceEndsAt:        user.graceEndsAt ?? null,
+          user,
+        })
       } catch { /* session expired — ignore */ }
     })()
 
@@ -222,7 +256,13 @@ export const useStore = create((set, get) => ({
     await firebaseUser.reload()
     const idToken = await firebaseUser.getIdToken(true)
     const { user } = await loginWithBackend(idToken)
-    set({ isSubscribed: user.isSubscribed, user })
+    set({
+      isSubscribed:       user.isSubscribed,
+      subscriptionStatus: user.subscriptionStatus ?? 'free',
+      trialEndsAt:        user.trialEndsAt ?? null,
+      graceEndsAt:        user.graceEndsAt ?? null,
+      user,
+    })
     return user.emailVerified
   },
 

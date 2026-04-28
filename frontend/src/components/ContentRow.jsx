@@ -3,7 +3,7 @@ import { ChevronRight, ChevronLeft } from 'lucide-react'
 import PosterCard from './PosterCard'
 import styles from './ContentRow.module.css'
 
-export default function ContentRow({ title, items, onCardClick }) {
+export default function ContentRow({ title, items, onCardClick, isSubscribed = false }) {
   const rowRef = useRef(null)
 
   const scroll = (dir) => {
@@ -33,7 +33,7 @@ export default function ContentRow({ title, items, onCardClick }) {
 
         <div ref={rowRef} className={styles.row}>
           {items.map((item) => (
-            <PosterCard key={item.id} item={item} onClick={onCardClick} />
+            <PosterCard key={item.id} item={item} onClick={onCardClick} isSubscribed={isSubscribed} />
           ))}
         </div>
 

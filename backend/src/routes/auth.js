@@ -4,10 +4,37 @@ import { User } from '../models/User.js'
 
 const router = Router()
 
+const TRIAL_DAYS = 7
+
+function serializeUser(u, { isAdmin = false } = {}) {
+  return {
+    id:                    u._id,
+    firebaseUid:           u.firebaseUid,
+    email:                 u.email,
+    emailVerified:         u.emailVerified,
+    displayName:           u.displayName,
+    photoURL:              u.photoURL,
+    lastLoginAt:           u.lastLoginAt,
+    isAdmin,
+    isSubscribed:          u.isSubscriptionActive,
+    subscriptionStatus:    u.subscriptionStatus,
+    subscriptionPlan:      u.subscriptionPlan,
+    subscriptionExpiresAt: u.subscriptionExpiresAt,
+    trialEndsAt:           u.trialEndsAt,
+    graceEndsAt:           u.graceEndsAt,
+    watchlist:             u.watchlist,
+    likedContent:          u.likedContent    ?? [],
+    dislikedContent:       u.dislikedContent ?? [],
+    createdAt:             u.createdAt,
+    updatedAt:             u.updatedAt,
+  }
+}
+
 /**
  * POST /api/auth/login
- * Body: { idToken: string }  — Firebase ID token from the client
- * Verifies the token, then upserts the user in MongoDB.
+ * Body: { idToken: string } — Firebase ID token from the client.
+ * Verifies the token, upserts the user in MongoDB, and starts a free trial
+ * for brand-new accounts.
  */
 router.post('/login', async (req, res, next) => {
   try {
@@ -19,8 +46,11 @@ router.post('/login', async (req, res, next) => {
     const adminEmails = (process.env.ADMIN_EMAILS || '')
       .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean)
     const isAdmin = decoded.admin === true || adminEmails.includes((decoded.email || '').toLowerCase())
+
     const userAlreadyExists = await User.exists({ firebaseUid: decoded.uid })
     const tokenAuthTime = decoded.auth_time ? new Date(decoded.auth_time * 1000) : null
+
+    const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 86_400_000)
 
     const user = await User.findOneAndUpdate(
       { firebaseUid: decoded.uid },
@@ -32,27 +62,17 @@ router.post('/login', async (req, res, next) => {
           photoURL:      decoded.picture || '',
           ...(tokenAuthTime ? { lastLoginAt: tokenAuthTime } : {}),
         },
-        $setOnInsert: { firebaseUid: decoded.uid },
+        $setOnInsert: {
+          firebaseUid:        decoded.uid,
+          subscriptionStatus: 'trial',
+          trialEndsAt,
+        },
       },
       { upsert: true, new: true }
     )
 
     res.json({
-      user: {
-        id:           user._id,
-        firebaseUid:  user.firebaseUid,
-        email:        user.email,
-        emailVerified: user.emailVerified,
-        displayName:  user.displayName,
-        photoURL:     user.photoURL,
-        lastLoginAt:  user.lastLoginAt,
-        isAdmin:      isAdmin,
-        isSubscribed: user.isSubscriptionActive,
-        subscriptionPlan: user.subscriptionPlan,
-        watchlist:    user.watchlist,
-        createdAt:    user.createdAt,
-        updatedAt:    user.updatedAt,
-      },
+      user:           serializeUser(user, { isAdmin }),
       profileCreated: !userAlreadyExists,
     })
   } catch (err) {
@@ -60,4 +80,5 @@ router.post('/login', async (req, res, next) => {
   }
 })
 
+export { serializeUser }
 export default router

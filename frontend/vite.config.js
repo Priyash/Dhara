@@ -60,5 +60,10 @@ export default defineConfig(({ mode }) => {
     },
     // No envDir — resolved VITE_* vars are in process.env; Vite picks them up via loadEnv.
     // On Vercel, the platform injects them directly into process.env before build.
+    test: {
+      environment: 'jsdom',
+      globals: true,
+      setupFiles: ['./src/__tests__/setup.js'],
+    },
   }
 })

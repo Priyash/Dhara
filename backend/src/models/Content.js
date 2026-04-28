@@ -30,6 +30,8 @@ const contentSchema = new mongoose.Schema(
     contentLanguage: { type: String, default: 'Bengali' },
     certification:   { type: String, enum: ['U', 'UA', 'A', null], default: null },
     reviewCount:     { type: Number, default: 0 },
+    likeCount:       { type: Number, default: 0, min: 0 },
+    dislikeCount:    { type: Number, default: 0, min: 0 },
   },
   { timestamps: true }
 )

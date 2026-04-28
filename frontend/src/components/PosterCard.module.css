@@ -114,6 +114,15 @@
   font-family: var(--font-body);
 }
 
+/* Premium card — subtle amber edge always visible */
+.premiumCard {
+  box-shadow: inset 0 0 0 1.5px rgba(245, 158, 11, 0.35);
+}
+
+.premiumCard.hovered {
+  box-shadow: inset 0 0 0 1.5px rgba(245, 158, 11, 0.6), 0 20px 40px rgba(0, 0, 0, 0.6);
+}
+
 /* Hover overlay */
 .overlay {
   position: absolute;
@@ -122,6 +131,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Amber-tinted overlay for locked premium content */
+.overlayLocked {
+  background: rgba(0, 0, 0, 0.55);
 }
 
 .playBtn {
@@ -137,4 +151,35 @@
 
 .overlay:hover .playBtn {
   transform: scale(1.1);
+}
+
+/* Lock content shown on premium cards when not subscribed */
+.lockContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.lockIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1.5px solid rgba(245, 158, 11, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f59e0b;
+}
+
+.lockLabel {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 8px;
 }
