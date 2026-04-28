@@ -1,17 +1,15 @@
 /**
- * Profile-based env loader.
+ * Profile-based env loader with template + vault resolution.
  *
- * Selects the right secrets file based on APP_PROFILE:
- *   dev      → config/secrets/dev/.env.dev
- *   staging  → config/secrets/staging/.env.staging
- *   prod     → config/secrets/prod/.env.prod
+ * Lookup order:
+ *   1. .env.{profile}.template  (committed)  — structure + safe literal defaults
+ *      + .secrets.{profile}     (gitignored)  — real KEY=value pairs
+ *      → resolves ${PLACEHOLDER} → injects into process.env
  *
- * On Render (production), APP_PROFILE=prod is set as a dashboard env var.
- * If no file exists (e.g. on Render where secrets are injected directly),
- * this module does nothing — process.env already contains the right values.
+ *   2. No template found (Render / cloud) — process.env already populated
+ *      by the platform; this module does nothing.
  *
- * Import this as the FIRST statement in server.js before any other imports
- * that read from process.env.
+ * Import this as the FIRST statement in server.js before anything reads process.env.
  */
 import dotenv from 'dotenv'
 import path from 'path'
@@ -29,17 +27,53 @@ if (!VALID_PROFILES.includes(profile)) {
   console.warn(`[env] Unknown profile "${profile}". Expected: dev | staging | prod.`)
 }
 
-const envFile = path.resolve(
-  __dirname,
-  `../../../config/secrets/${profile}/.env.${profile}`
-)
+const secretsDir = path.resolve(__dirname, `../../../config/secrets/${profile}`)
+const envFile    = path.join(secretsDir, `.env.${profile}`)
+const vaultFile  = path.join(secretsDir, `.secrets.${profile}`)
+
+/** Parse a KEY=value file into a plain object. Splits on the first '=' only. */
+function parseKeyValueFile(content) {
+  const map = {}
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq === -1) continue
+    map[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1)
+  }
+  return map
+}
 
 if (fs.existsSync(envFile)) {
-  dotenv.config({ path: envFile })
+  const vault = fs.existsSync(vaultFile)
+    ? parseKeyValueFile(fs.readFileSync(vaultFile, 'utf8'))
+    : {}
+
+  if (fs.existsSync(vaultFile)) {
+    console.log(`[env] Vault loaded for profile "${profile}"`)
+  } else {
+    console.log(`[env] Profile "${profile}" — no vault file, resolving placeholders from platform env`)
+  }
+
+  const template = fs.readFileSync(envFile, 'utf8')
+
+  const resolved = template.replace(/\$\{([^}]+)\}/g, (match, key) => {
+    const value = vault[key] ?? process.env[key]
+    if (value === undefined) {
+      console.warn(`[env] Unresolved placeholder: ${match}`)
+      return ''
+    }
+    return value
+  })
+
+  const parsed = dotenv.parse(resolved)
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!(key in process.env)) process.env[key] = value
+  }
+
   console.log(`[env] Loaded profile "${profile}" ← ${envFile}`)
 } else {
-  // Normal on Render/cloud — env vars are injected by the platform
-  console.log(`[env] Profile "${profile}" — using platform-injected environment (no file found at ${envFile})`)
+  console.log(`[env] Profile "${profile}" — using platform-injected environment (no file at ${envFile})`)
 }
 
 export const PROFILE = profile
