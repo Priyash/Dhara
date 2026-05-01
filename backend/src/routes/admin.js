@@ -239,6 +239,33 @@ router.get('/bunny/collections', async (req, res, next) => {
   }
 })
 
+router.post('/bunny/collections', async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || '').trim()
+    if (!name) return res.status(400).json({ error: 'name is required' })
+
+    const created = await bunnyRequest(`/library/${libraryId}/collections`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+
+    const bunnyCollectionId = String(created.guid || '').trim()
+    if (!bunnyCollectionId) throw new Error('Bunny did not return a collection GUID')
+
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    const collection = await StreamCollection.findOneAndUpdate(
+      { bunnyCollectionId },
+      { $set: { name, slug, bunnyCollectionId, isActive: true } },
+      { upsert: true, new: true }
+    ).lean()
+
+    res.status(201).json(collection)
+  } catch (err) {
+    next(err)
+  }
+})
+
 router.post('/bunny/sync-collections', async (req, res, next) => {
   try {
     const bunnyCollections = await listAllBunnyCollections()
@@ -409,7 +436,8 @@ const ALLOWED_METADATA_FIELDS = [
   'title', 'subtitle', 'desc', 'type', 'genre', 'cast', 'director',
   'releaseYear', 'rating', 'isPremium', 'isFeatured', 'badge',
   'posterUrl', 'backdropUrl', 'palette',
-  'contentLanguage', 'certification', 'reviewCount',
+  'contentLanguage', 'certification', 'contentWarnings', 'moodTags', 'reviewCount',
+  'episodes',
 ]
 
 router.patch('/content/:id', async (req, res, next) => {

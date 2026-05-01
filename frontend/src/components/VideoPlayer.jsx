@@ -34,6 +34,8 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
   const didSeek       = useRef(false)
   const thumbnailRef  = useRef(null)
   const captureAnimRef= useRef(null)
+  const thumbVideoRef = useRef(null)
+  const thumbHlsRef   = useRef(null)
 
   const [playing,        setPlaying]        = useState(false)
   const [currentTime,    setCurrentTime]    = useState(0)
@@ -53,6 +55,8 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
   const [hoverPct,       setHoverPct]       = useState(0)
   const [isDragging,     setIsDragging]     = useState(false)
   const [videoHovered,   setVideoHovered]   = useState(false)
+  const [showControls,   setShowControls]   = useState(true)
+  const idleTimerRef     = useRef(null)
 
   const progress  = duration ? (currentTime / duration) * 100 : 0
   const bufferPct = duration ? (buffered  / duration) * 100 : 0
@@ -72,13 +76,13 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
     return kbps ? `${h} · ${kbps}kbps` : h
   }
 
-  const captureFrame = useCallback(() => {
+  const captureFrame = useCallback((source) => {
     const canvas = thumbnailRef.current
-    const video  = videoRef.current
-    if (!canvas || !video || video.readyState < 2) return
+    const vid    = source ?? thumbVideoRef.current
+    if (!canvas || !vid || vid.readyState < 2) return
     try {
-      canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
-    } catch { /* cross-origin taint — keep previous frame */ }
+      canvas.getContext('2d').drawImage(vid, 0, 0, canvas.width, canvas.height)
+    } catch { /* ignore */ }
   }, [])
 
   const cleanupHls = () => {
@@ -137,6 +141,23 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
     return undefined
   }, [src, autoPlayAndResume])
 
+  // Load src into the hidden thumbnail video (crossOrigin allows canvas capture)
+  useEffect(() => {
+    const tv = thumbVideoRef.current
+    if (!tv || !src) return
+    if (thumbHlsRef.current) { thumbHlsRef.current.destroy(); thumbHlsRef.current = null }
+
+    if (src.endsWith('.m3u8') && Hls.isSupported()) {
+      const hls = new Hls({ enableWorker: false, maxBufferLength: 10, backBufferLength: 0 })
+      hls.loadSource(src)
+      hls.attachMedia(tv)
+      thumbHlsRef.current = hls
+    } else {
+      tv.src = src
+    }
+    return () => { if (thumbHlsRef.current) { thumbHlsRef.current.destroy(); thumbHlsRef.current = null } }
+  }, [src])
+
   useEffect(() => {
     if (playing) {
       saveTimer.current = setInterval(saveProgress, 10_000)
@@ -158,6 +179,13 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
   }, [playbackRate])
 
   // ── Seek / drag ─────────────────────────────────────────────────────────────
+  const seekThumbTo = useCallback((time) => {
+    const tv = thumbVideoRef.current
+    if (!tv) return
+    tv.currentTime = time
+    tv.addEventListener('seeked', () => captureFrame(tv), { once: true })
+  }, [captureFrame])
+
   const seekFromClientX = useCallback((clientX) => {
     const v    = videoRef.current
     const rect = progressRef.current?.getBoundingClientRect()
@@ -167,18 +195,16 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
     const newTime = pct * duration
     const pctStr  = `${pct * 100}%`
 
-    // Direct video seek — no wait for React
     v.currentTime = newTime
 
-    // Direct DOM update for fill + thumb — zero re-renders during drag
     if (fillRef.current)  fillRef.current.style.width = pctStr
     if (thumbRef.current) thumbRef.current.style.left  = pctStr
 
-    // Tooltip + thumbnail capture
     setHoverPct(pct * 100)
     setHoverTime(newTime)
     cancelAnimationFrame(captureAnimRef.current)
-    captureAnimRef.current = requestAnimationFrame(captureFrame)
+    // Capture from the main video — already seeking, already buffered → instant
+    v.addEventListener('seeked', () => captureFrame(v), { once: true })
   }, [duration, captureFrame])
 
   const handleProgressHover = (e) => {
@@ -189,7 +215,8 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
     setHoverPct(pct * 100)
     setHoverTime(pct * duration)
     cancelAnimationFrame(captureAnimRef.current)
-    captureAnimRef.current = requestAnimationFrame(captureFrame)
+    // Hover (no drag): seek thumb video so main playback isn't interrupted
+    seekThumbTo(pct * duration)
   }
 
   const handleDragStart = (e) => {
@@ -264,6 +291,16 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
     if (STORAGE_KEY) localStorage.removeItem(STORAGE_KEY)
   }
 
+  const resetIdleTimer = useCallback(() => {
+    setShowControls(true)
+    clearTimeout(idleTimerRef.current)
+    idleTimerRef.current = setTimeout(() => {
+      if (videoRef.current && !videoRef.current.paused) setShowControls(false)
+    }, 3000)
+  }, [])
+
+  useEffect(() => () => clearTimeout(idleTimerRef.current), [])
+
   const handleRetry = () => {
     setPlayerError('')
     didSeek.current = false
@@ -286,14 +323,20 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
     })
   }
 
+  const controlsVisible = showControls || !playing || isDragging
+
   return (
     <div ref={containerRef} className={`${styles.wrapper} ${fullscreen ? styles.fullscreen : ''}`}>
+      {/* Hidden video used only for cross-origin thumbnail capture */}
+      <video ref={thumbVideoRef} style={{ display: 'none' }} crossOrigin="anonymous" muted playsInline preload="auto" />
+
       {/* ── Video area ── */}
       <div
         className={styles.videoArea}
         onClick={togglePlay}
-        onMouseEnter={() => setVideoHovered(true)}
-        onMouseLeave={() => setVideoHovered(false)}
+        onMouseEnter={() => { setVideoHovered(true); resetIdleTimer() }}
+        onMouseLeave={() => { setVideoHovered(false); setShowControls(true); clearTimeout(idleTimerRef.current) }}
+        onMouseMove={resetIdleTimer}
       >
         {title && (
           <div className={`${styles.titleOverlay} ${videoHovered ? styles.titleOverlayVisible : ''}`}>
@@ -303,6 +346,7 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
         <video
           ref={videoRef}
           className={styles.video}
+          crossOrigin="anonymous"
           poster={poster}
           onLoadedMetadata={(e) => setDuration(e.target.duration)}
           onWaiting={() => setBuffering(true)}
@@ -337,10 +381,12 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
             </button>
           </div>
         )}
-      </div>
 
-      {/* ── Controls bar — always below video ── */}
-      <div className={styles.controlsBar}>
+        {/* ── Controls overlay — inside video area ── */}
+        <div
+          className={`${styles.controlsBar} ${controlsVisible ? styles.controlsVisible : styles.controlsHidden}`}
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Progress row */}
         <div className={styles.progressRow}>
           <span className={styles.timeElapsed}>{formatTime(currentTime)}</span>
@@ -458,7 +504,8 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
             )}
           </div>
         )}
-      </div>
+        </div>{/* end controlsBar */}
+      </div>{/* end videoArea */}
     </div>
   )
 }

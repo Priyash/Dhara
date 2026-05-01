@@ -8,7 +8,7 @@ import { uploadToCloudinary } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
 import { useUploadNotifier } from '../hooks/useUploadNotifier'
 import {
-  createAdminCollection, createUploadJob, fetchAdminContentById,
+  createAdminCollection, createBunnyCollection, createUploadJob, fetchAdminContentById,
   getAdminSession, importFromCdn, listBunnyCollections, listBunnyVideos,
   listAdminCollections, listAdminContent, listUploadJobs,
   mapExistingBunnyVideo, syncBunnyCollections, updateAdminContent,
@@ -46,14 +46,17 @@ export default function Admin() {
   const [jobs, setJobs]                     = useState([])
 
   // ── Upload form ───────────────────────────────────────────────────────────
+  const [collectionMode, setCollectionMode] = useState('pick') // 'pick' | 'create'
   const [collectionName, setCollectionName] = useState('')
   const [bunnyCollectionId, setBunnyCollectionId] = useState('')
+  const [newCollectionName, setNewCollectionName] = useState('')
   const [title, setTitle]                   = useState('')
   const [selectedCollectionId, setSelectedCollectionId] = useState('')
   const [selectedContentId, setSelectedContentId]       = useState('')
   const [mapCollectionId, setMapCollectionId] = useState('')
   const [mapVideoId, setMapVideoId]           = useState('')
   const [mapContentId, setMapContentId]       = useState('')
+  const [mapVideoError, setMapVideoError]     = useState('')
   const [file, setFile]                       = useState(null)
   const [busy, setBusy]                       = useState(false)
   const [notice, setNotice]                   = useState('')
@@ -109,13 +112,14 @@ export default function Admin() {
   }
 
   const loadBunnyVideos = async (collectionId) => {
+    setMapVideoError('')
     if (!collectionId) { setBunnyVideos([]); return }
     try {
       const items = await listBunnyVideos({ collectionId })
       setBunnyVideos(items)
-      if (!items.length) setError('No videos found in this collection.')
+      if (!items.length) setMapVideoError('No videos found in this collection.')
     } catch (err) {
-      setError(err?.message || 'Could not load videos.')
+      setMapVideoError(err?.message || 'Could not load videos.')
     }
   }
 
@@ -346,9 +350,40 @@ export default function Admin() {
     } finally { setBusy(false) }
   }
 
+  const handleCreateNewBunnyCollection = async (e) => {
+    e.preventDefault(); setNotice(''); setError(''); setBusy(true)
+    try {
+      const created = await createBunnyCollection(newCollectionName.trim())
+      setCollections((prev) => [created, ...prev.filter((c) => c._id !== created._id)])
+      setBunnyCollections((prev) => [...prev, { guid: created.bunnyCollectionId, name: created.name }])
+      setNewCollectionName('')
+      setCollectionMode('pick')
+      setNotice(`Collection "${created.name}" created in CDN and saved.`)
+    } catch (err) {
+      setError(err?.message || 'Could not create collection.')
+    } finally { setBusy(false) }
+  }
+
+  const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'video/webm']
+  const MAX_FILE_SIZE = 1024 * 1024 * 1024 // 1 GB — server limit
+
+  const validateVideoFile = (f) => {
+    if (!f) return 'Please choose a video file.'
+    if (!ALLOWED_VIDEO_TYPES.includes(f.type)) return `Unsupported file type "${f.type}". Use MP4, MOV, or MKV.`
+    if (f.size > MAX_FILE_SIZE) return `File is too large (${(f.size / 1024 / 1024).toFixed(0)} MB). Maximum is 1 GB.`
+    return null
+  }
+
+  const handleFileChange = (f) => {
+    const err = validateVideoFile(f)
+    if (err) { setError(err); return }
+    setError(''); setFile(f)
+  }
+
   const handleUpload = async (e) => {
     e.preventDefault()
-    if (!file) return setError('Please choose a video file.')
+    const fileErr = validateVideoFile(file)
+    if (fileErr) return setError(fileErr)
     if (!selectedCollectionId) return setError('Please select a mapped collection.')
     setNotice(''); setError(''); setBusy(true)
     try {
@@ -552,11 +587,11 @@ export default function Admin() {
                     aria-label={item.isPremium ? 'Mark as free' : 'Mark as premium'}
                   >
                     <Crown size={11} />
-                    {item.isPremium ? 'PRO' : 'Free'}
+                    {item.isPremium ? 'Free' : 'Premium'}
                   </button>
                   <button
                     className={styles.editBtn}
-                    onClick={() => openEditModal(item)}
+                    onClick={(e) => { e.currentTarget.blur(); openEditModal(item) }}
                     disabled={editBusy && editingId === item._id}
                   >
                     <Pencil size={12} /> Edit
@@ -574,22 +609,82 @@ export default function Admin() {
           <section className={styles.grid}>
             <article className={styles.card}>
               <h2 className={styles.cardTitle}><FolderPlus size={16} /> Collection Mapping</h2>
-              <form className={styles.form} onSubmit={handleCreateCollection}>
-                <label className={styles.label}>
-                  Dhara Collection Name
-                  <input className={styles.input} value={collectionName} onChange={(e) => setCollectionName(e.target.value)} placeholder="Bengali Classics" required />
-                </label>
-                <label className={styles.label}>
-                  CDN Collection ID
-                  <input className={styles.input} value={bunnyCollectionId} onChange={(e) => setBunnyCollectionId(e.target.value)} placeholder="Collection GUID" required />
-                </label>
-                <button className={styles.primaryBtn} type="submit" disabled={busy}>Save Collection</button>
-              </form>
+
+              {/* mode toggle */}
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                <button
+                  type="button"
+                  className={collectionMode === 'pick' ? styles.primaryBtn : styles.secondaryBtn}
+                  onClick={() => setCollectionMode('pick')}
+                  style={{ flex: 1, padding: '0.4rem' }}
+                >
+                  Pick Existing
+                </button>
+                <button
+                  type="button"
+                  className={collectionMode === 'create' ? styles.primaryBtn : styles.secondaryBtn}
+                  onClick={() => setCollectionMode('create')}
+                  style={{ flex: 1, padding: '0.4rem' }}
+                >
+                  + Create New
+                </button>
+              </div>
+
+              {collectionMode === 'pick' ? (
+                <form className={styles.form} onSubmit={handleCreateCollection}>
+                  <label className={styles.label}>
+                    Dhara Collection Name
+                    <input className={styles.input} value={collectionName} onChange={(e) => setCollectionName(e.target.value)} placeholder="Bengali Classics" required />
+                  </label>
+                  <label className={styles.label}>
+                    CDN Collection
+                    <select
+                      className={styles.select}
+                      value={bunnyCollectionId}
+                      onChange={(e) => {
+                        setBunnyCollectionId(e.target.value)
+                        const picked = bunnyCollections.find((c) => c.guid === e.target.value)
+                        if (picked && !collectionName) setCollectionName(picked.name)
+                      }}
+                      required
+                    >
+                      <option value="">Select CDN collection</option>
+                      {bunnyCollections.map((c) => (
+                        <option key={c.guid} value={c.guid}>{c.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button className={styles.primaryBtn} type="submit" disabled={busy}>Save Mapping</button>
+                </form>
+              ) : (
+                <form className={styles.form} onSubmit={handleCreateNewBunnyCollection}>
+                  <label className={styles.label}>
+                    New Collection Name
+                    <input
+                      className={styles.input}
+                      value={newCollectionName}
+                      onChange={(e) => setNewCollectionName(e.target.value)}
+                      placeholder="e.g. Bengali Classics"
+                      required
+                    />
+                  </label>
+                  <p style={{ fontSize: '0.75rem', color: '#888', margin: '-0.5rem 0 0.5rem' }}>
+                    This will create the collection in the CDN and save the mapping.
+                  </p>
+                  <button className={styles.primaryBtn} type="submit" disabled={busy || !newCollectionName.trim()}>
+                    {busy ? 'Creating…' : 'Create Collection'}
+                  </button>
+                </form>
+              )}
             </article>
 
             <article className={styles.card}>
               <h2 className={styles.cardTitle}><UploadCloud size={16} /> Upload Video</h2>
               <form className={styles.form} onSubmit={handleUpload}>
+
+                <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-accent)', marginBottom: '0.5rem' }}>
+                  STEP 1 — NAME & ORGANISE
+                </p>
                 <label className={styles.label}>
                   Video Title
                   <input className={styles.input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Movie title" required />
@@ -598,34 +693,47 @@ export default function Admin() {
                   Collection
                   <select className={styles.select} value={selectedCollectionId} onChange={(e) => setSelectedCollectionId(e.target.value)} required>
                     <option value="">Select collection</option>
-                    {collections.map((c) => <option key={c._id} value={c._id}>{c.name} ({c.bunnyCollectionId})</option>)}
+                    {collections.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
                   </select>
                 </label>
+
+                <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-accent)', margin: '1rem 0 0.5rem' }}>
+                  STEP 2 — LINK TO CONTENT (OPTIONAL)
+                </p>
                 <label className={styles.label}>
-                  Existing Content (optional)
+                  Content Item
                   <select className={styles.select} value={selectedContentId} onChange={(e) => setSelectedContentId(e.target.value)}>
                     <option value="">Create without mapping</option>
                     {contentItems.map((item) => <option key={item._id} value={item._id}>{item.title} ({item.type})</option>)}
                   </select>
+                  {!selectedContentId && (
+                    <span style={{ fontSize: '0.72rem', color: '#b45309', marginTop: '0.3rem', display: 'block' }}>
+                      No content selected — the video will upload to CDN but won't appear in the app until mapped manually.
+                    </span>
+                  )}
                 </label>
+
+                <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-accent)', margin: '1rem 0 0.5rem' }}>
+                  STEP 3 — UPLOAD FILE
+                </p>
                 <div className={styles.label}>
-                  Video File
                   <div
                     className={`${styles.dropZone} ${dragOver ? styles.dropZoneActive : ''}`}
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
                     onDragLeave={() => setDragOver(false)}
-                    onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) setFile(f) }}
+                    onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) handleFileChange(f) }}
                   >
                     <Film size={22} className={styles.dropZoneIcon} />
                     {file
-                      ? <span className={styles.dropZoneFile}>{file.name}</span>
-                      : <><span className={styles.dropZoneText}>Drop video file here</span><span className={styles.dropZoneHint}>or click to browse · MP4, MOV, MKV</span></>
+                      ? <><span className={styles.dropZoneFile}>{file.name}</span><span className={styles.dropZoneHint}>{(file.size / 1024 / 1024).toFixed(1)} MB</span></>
+                      : <><span className={styles.dropZoneText}>Drop video file here</span><span className={styles.dropZoneHint}>or click to browse · MP4, MOV, MKV · max 1 GB</span></>
                     }
-                    <input className={styles.fileInput} type="file" accept="video/*" onChange={(e) => setFile(e.target.files?.[0] || null)} required />
+                    <input className={styles.fileInput} type="file" accept=".mp4,.mov,.mkv,video/mp4,video/quicktime,video/x-matroska" onChange={(e) => handleFileChange(e.target.files?.[0] || null)} required />
                   </div>
                 </div>
+
                 <button className={styles.primaryBtn} type="submit" disabled={busy || !selectedCollection}>
-                  {busy ? 'Uploading...' : 'Start Async Upload'}
+                  {busy ? 'Uploading...' : 'Upload Video'}
                 </button>
               </form>
             </article>
@@ -633,29 +741,44 @@ export default function Admin() {
 
           <section className={styles.jobsCard}>
             <h2 className={styles.cardTitle}><Link2 size={16} /> Map Existing Video</h2>
+            <p style={{ fontSize: '0.78rem', color: '#888', margin: '-0.25rem 0 1.25rem' }}>
+              Use this when a video already exists in the CDN but hasn't been linked to a Dhara content item yet.
+            </p>
             <form className={styles.form} onSubmit={handleMapExisting}>
+
+              <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-accent)', marginBottom: '0.5rem' }}>
+                STEP 1 — FIND THE CDN VIDEO
+              </p>
               <label className={styles.label}>
-                Stream Collection
+                Collection
                 <select className={styles.select} value={mapCollectionId} onChange={(e) => { setMapCollectionId(e.target.value); setMapVideoId(''); void loadBunnyVideos(e.target.value) }}>
                   <option value="">Select collection</option>
                   {bunnyCollections.map((c) => <option key={c.guid} value={c.guid}>{c.name} ({c.videoCount} videos)</option>)}
                 </select>
               </label>
               <label className={styles.label}>
-                Stream Video
+                Video
                 <select className={styles.select} value={mapVideoId} onChange={(e) => setMapVideoId(e.target.value)} disabled={!mapCollectionId}>
-                  <option value="">Select video</option>
+                  <option value="">{mapCollectionId ? 'Select video' : 'Select a collection first'}</option>
                   {bunnyVideos.map((v) => <option key={v.guid} value={v.guid}>{v.title} ({Math.round((v.length || 0) / 60)} min)</option>)}
                 </select>
+                {mapVideoError && <span style={{ fontSize: '0.72rem', color: '#b45309', marginTop: '0.3rem', display: 'block' }}>{mapVideoError}</span>}
               </label>
+
+              <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-accent)', margin: '1rem 0 0.5rem' }}>
+                STEP 2 — CHOOSE THE DHARA CONTENT TO LINK IT TO
+              </p>
               <label className={styles.label}>
-                Dhara Content Item
+                Content Item
                 <select className={styles.select} value={mapContentId} onChange={(e) => setMapContentId(e.target.value)}>
-                  <option value="">Select Dhara content</option>
+                  <option value="">Select content</option>
                   {contentItems.map((item) => <option key={item._id} value={item._id}>{item.title} ({item.type})</option>)}
                 </select>
               </label>
-              <button className={styles.primaryBtn} type="submit" disabled={busy || !mapVideoId || !mapContentId}>Map Existing Video</button>
+
+              <button className={styles.primaryBtn} type="submit" disabled={busy || !mapVideoId || !mapContentId}>
+                Link Video to Content
+              </button>
             </form>
           </section>
 

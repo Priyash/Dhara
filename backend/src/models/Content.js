@@ -11,7 +11,7 @@ const contentSchema = new mongoose.Schema(
   {
     title:        { type: String, required: true },
     subtitle:     String,
-    type:         { type: String, enum: ['Film', 'Series'], required: true },
+    type:         { type: String, enum: ['Film', 'Series', 'Documentary'], required: true },
     genre:        [String],
     rating:       { type: Number, min: 0, max: 5, default: 0 },
     isPremium:    { type: Boolean, default: false },
@@ -27,9 +27,11 @@ const contentSchema = new mongoose.Schema(
     cast:         [String],
     director:     String,
     releaseYear:  Number,
-    contentLanguage: { type: String, default: 'Bengali' },
-    certification:   { type: String, enum: ['U', 'UA', 'A', null], default: null },
-    reviewCount:     { type: Number, default: 0 },
+    contentLanguage:   { type: String, default: 'Bengali' },
+    certification:     { type: String, enum: ['U', 'UA', 'A', null], default: null },
+    contentWarnings:   { type: String, default: '' },   // e.g. "violence, language"
+    moodTags:          { type: [String], default: [] },  // e.g. ["Quirky", "Romantic"]
+    reviewCount:       { type: Number, default: 0 },
     likeCount:       { type: Number, default: 0, min: 0 },
     dislikeCount:    { type: Number, default: 0, min: 0 },
   },

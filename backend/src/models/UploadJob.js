@@ -8,6 +8,7 @@ const uploadJobSchema = new mongoose.Schema(
     collectionName: { type: String, default: '' },
     bunnyCollectionId: { type: String, required: true, trim: true },
     contentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Content', default: null },
+    episodeNumber: { type: Number, default: null },
     bunnyVideoId: { type: String, default: '' },
     fileName: { type: String, default: '' },
     status: {

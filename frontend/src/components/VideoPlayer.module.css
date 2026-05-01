@@ -1,9 +1,8 @@
 /* ── Wrapper ─────────────────────────────────────────────────────────────────*/
 .wrapper {
-  display: flex;
-  flex-direction: column;
   background: #000;
   width: 100%;
+  position: relative;
 }
 
 .fullscreen {
@@ -18,13 +17,13 @@
   width: 100%;
   aspect-ratio: 16 / 9;
   background: #000;
-  cursor: pointer;
+  cursor: none;
   overflow: hidden;
 }
 
 .fullscreen .videoArea {
-  flex: 1;
   aspect-ratio: unset;
+  height: 100vh;
 }
 
 .video {
@@ -115,20 +114,26 @@
   background: rgba(245,158,11,0.22);
 }
 
-/* ── Controls bar — always below video ───────────────────────────────────────*/
+/* ── Controls bar — overlaid at bottom of video ──────────────────────────────*/
 .controlsBar {
-  background: #0d0d10;
-  border-top: 1px solid rgba(255,255,255,0.06);
-  padding: 12px 24px 16px;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 48px 24px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  position: relative;
+  background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 60%, transparent 100%);
+  transition: opacity 0.25s ease;
+  z-index: 5;
 }
 
-.fullscreen .controlsBar {
-  flex-shrink: 0;
-}
+.controlsVisible { opacity: 1; pointer-events: auto; }
+.controlsHidden  { opacity: 0; pointer-events: none; }
+
+.wrapper:has(.controlsVisible) .videoArea { cursor: default; }
+.wrapper:has(.controlsHidden)  .videoArea { cursor: none; }
 
 /* ── Progress row ────────────────────────────────────────────────────────────*/
 .progressRow {
