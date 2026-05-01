@@ -1,41 +1,41 @@
-/* ── Backdrop ────────────────────────────────────────────────────────────────*/
-.backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.78);
-  backdrop-filter: blur(6px);
-  z-index: 950;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  animation: backdropIn 200ms ease both;
-  overflow-y: auto;
-}
-
 @keyframes backdropIn {
   from { opacity: 0 }
   to   { opacity: 1 }
 }
 
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.93) translateY(28px) }
+  to   { opacity: 1; transform: scale(1)    translateY(0)    }
+}
+
+/* ── Backdrop ────────────────────────────────────────────────────────────────*/
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: backdropIn 220ms ease both;
+  overflow-y: auto;
+}
+
 /* ── Modal shell ─────────────────────────────────────────────────────────────*/
 .modal {
   background: #141414;
-  border-radius: 12px;
-  width: min(900px, 100%);
+  border-radius: 8px;
+  width: min(880px, 100%);
   max-height: calc(100vh - 48px);
   overflow-y: auto;
   overflow-x: hidden;
-  border: 1px solid rgba(255,255,255,0.08);
-  box-shadow: 0 40px 100px rgba(0,0,0,0.75);
-  animation: modalIn 260ms cubic-bezier(0.22,1,0.36,1) both;
+  box-shadow: 0 48px 120px rgba(0, 0, 0, 0.9);
+  animation: modalIn 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.1) transparent;
-}
-
-@keyframes modalIn {
-  from { opacity: 0; transform: scale(0.94) translateY(24px) }
-  to   { opacity: 1; transform: scale(1)    translateY(0) }
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
 }
 
 /* ── Hero ────────────────────────────────────────────────────────────────────*/
@@ -49,23 +49,31 @@
   flex-shrink: 0;
 }
 
+/* Heavy bottom gradient — behind title + buttons */
 .heroScrim {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(to top,  #141414 0%,  rgba(20,20,20,0.5) 45%, transparent 100%),
-    linear-gradient(to right, rgba(0,0,0,0.45) 0%, transparent 55%);
+    linear-gradient(to bottom,
+      rgba(0, 0, 0, 0.05) 0%,
+      rgba(0, 0, 0, 0.1)  30%,
+      rgba(0, 0, 0, 0.55) 58%,
+      rgba(0, 0, 0, 0.85) 80%,
+      #141414 100%
+    ),
+    linear-gradient(to right, rgba(0, 0, 0, 0.4) 0%, transparent 65%);
 }
 
 /* Close button */
 .closeBtn {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 14px;
+  right: 14px;
   z-index: 2;
-  background: rgba(0,0,0,0.65);
+  background: rgba(20, 20, 20, 0.7);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255,255,255,0.15);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 50%;
   width: 36px;
   height: 36px;
@@ -73,23 +81,23 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: rgba(255,255,255,0.9);
-  transition: background 0.15s, color 0.15s;
+  color: rgba(255, 255, 255, 0.9);
+  transition: background 0.15s;
 }
-.closeBtn:hover { background: rgba(0,0,0,0.9); color: #fff; }
+.closeBtn:hover { background: rgba(30, 30, 30, 0.95); }
 
-/* Title / badge area overlaid at the hero bottom */
-.heroFooter {
+/* Title + buttons at bottom of hero */
+.heroContent {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   z-index: 1;
-  padding: 0 32px 28px;
+  padding: 0 28px 24px;
 }
 
 /* ── Badges ──────────────────────────────────────────────────────────────────*/
-.badgeRow {
+.heroBadges {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -115,73 +123,62 @@
 .certBadge {
   font-size: 10px;
   font-weight: 700;
-  color: rgba(255,255,255,0.75);
-  border: 1px solid rgba(255,255,255,0.35);
+  color: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 3px;
   padding: 2px 7px;
   font-family: var(--font-body);
-  letter-spacing: 0.3px;
 }
 
 .langBadge {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 10px;
-  color: rgba(255,255,255,0.5);
+  gap: 4px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
   font-family: var(--font-body);
 }
 
-/* ── Title / subtitle ────────────────────────────────────────────────────────*/
+/* ── Title + subtitle ────────────────────────────────────────────────────────*/
 .title {
   font-family: var(--font-display);
-  font-size: clamp(26px, 4.5vw, 44px);
+  font-size: clamp(24px, 3.8vw, 44px);
   font-weight: 700;
   color: #fff;
   line-height: 1.1;
-  text-shadow: 0 2px 16px rgba(0,0,0,0.6);
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.7);
+  margin: 0 0 6px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  margin-bottom: 4px;
 }
 
 .subtitle {
   font-family: var(--font-body);
-  font-size: 14px;
-  color: rgba(255,255,255,0.55);
-  margin: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0 0 14px;
   font-style: italic;
 }
 
-/* ── Actions bar ─────────────────────────────────────────────────────────────*/
-.actionsBar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 14px;
-  padding: 22px 32px 18px;
-}
-
-.actionsLeft {
+/* ── Action buttons (inside hero) ────────────────────────────────────────────*/
+.actionsRow {
   display: flex;
   align-items: center;
   gap: 10px;
+  margin-top: 16px;
 }
 
-/* Primary Play button */
 .playBtn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
   background: #fff;
   color: #000;
   border: none;
-  border-radius: 6px;
-  padding: 11px 24px;
+  border-radius: 5px;
+  padding: 10px 24px;
   font-family: var(--font-body);
   font-size: 15px;
   font-weight: 700;
@@ -191,14 +188,13 @@
 }
 .playBtn:hover { opacity: 0.88; transform: scale(1.02); }
 
-/* Circle icon buttons (watchlist, like, dislike) */
 .circleBtn {
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: transparent;
-  border: 2px solid rgba(255,255,255,0.45);
-  color: rgba(255,255,255,0.85);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.88);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -207,146 +203,289 @@
   transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
 }
 .circleBtn:hover {
-  background: rgba(255,255,255,0.12);
+  background: rgba(255, 255, 255, 0.1);
   border-color: #fff;
   color: #fff;
   transform: scale(1.08);
 }
 
 .circleBtnSaved {
-  background: rgba(245,158,11,0.12);
-  border-color: rgba(245,158,11,0.55);
+  background: rgba(245, 158, 11, 0.15);
+  border-color: #f59e0b;
   color: #f59e0b;
 }
-.circleBtnSaved:hover { background: rgba(245,158,11,0.22); }
+.circleBtnSaved:hover { background: rgba(245, 158, 11, 0.25); }
 
 .circleBtnLiked {
-  background: rgba(74,222,128,0.12);
-  border-color: rgba(74,222,128,0.55);
+  background: rgba(74, 222, 128, 0.12);
+  border-color: rgba(74, 222, 128, 0.65);
   color: #4ade80;
 }
-.circleBtnLiked:hover { background: rgba(74,222,128,0.22); }
+.circleBtnLiked:hover { background: rgba(74, 222, 128, 0.22); }
 
 .circleBtnDisliked {
-  background: rgba(248,113,113,0.12);
-  border-color: rgba(248,113,113,0.5);
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.55);
   color: #f87171;
 }
-.circleBtnDisliked:hover { background: rgba(248,113,113,0.22); }
+.circleBtnDisliked:hover { background: rgba(248, 113, 113, 0.22); }
 
-/* Vote count label next to like/dislike buttons */
-.voteCount {
-  font-family: var(--font-body);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: rgba(255,255,255,0.45);
-  margin-right: 4px;
-  min-width: 20px;
+/* ── Info section — two column ───────────────────────────────────────────────*/
+.info {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 24px;
+  padding: 20px 28px 28px;
 }
 
-/* Metadata fact pills on the right */
-.factsPill {
+/* Left col */
+.infoLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.metaRow {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
 }
 
-.fact {
-  font-size: 12px;
-  color: rgba(255,255,255,0.55);
+.metaMuted {
   font-family: var(--font-body);
-  background: rgba(255,255,255,0.07);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 4px;
-  padding: 3px 9px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.55);
 }
 
-.factRating {
+.metaDot {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.metaRating {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
-  color: rgba(255,255,255,0.6);
   font-family: var(--font-body);
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.55);
 }
 
-/* ── Details — two-column ────────────────────────────────────────────────────*/
-.details {
-  display: grid;
-  grid-template-columns: 1.6fr 1fr;
-  gap: 28px;
-  padding: 0 32px 36px;
+.metaReviewCount {
+  color: rgba(255, 255, 255, 0.32);
+  font-size: 13px;
 }
 
-.detailsMain {
+/* Cert box + content warnings row */
+.certRow {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.certWarnings {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.48);
 }
 
 .desc {
   font-family: var(--font-body);
   font-size: 14px;
-  color: rgba(255,255,255,0.68);
+  color: rgba(255, 255, 255, 0.75);
   line-height: 1.72;
   margin: 0;
 }
 
-/* Genre chips */
-.genreRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.genreChip {
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(255,255,255,0.5);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 999px;
-  padding: 3px 12px;
-  background: rgba(255,255,255,0.04);
-  font-family: var(--font-body);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-
-/* Crew sidebar */
-.detailsSide {
+/* Right col */
+.infoRight {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding-top: 1px;
+  gap: 10px;
+  padding-top: 2px;
 }
 
-.crewLine {
+.infoLine {
   font-family: var(--font-body);
   font-size: 13px;
   margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.crewKey {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: rgba(255,255,255,0.3);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.7px;
-}
-
-.crewVal {
-  color: rgba(255,255,255,0.72);
   line-height: 1.5;
 }
 
-/* ── Responsive ──────────────────────────────────────────────────────────────*/
+.infoKey {
+  color: rgba(255, 255, 255, 0.35);
+  margin-right: 5px;
+}
+
+.infoVal {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.moreLink {
+  color: rgba(255, 255, 255, 0.45);
+  font-style: normal;
+  cursor: pointer;
+}
+.moreLink:hover { color: rgba(255, 255, 255, 0.7); }
+
+/* ── Episodes — series ───────────────────────────────────────────────────────*/
+.episodes {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 24px 28px 32px;
+}
+
+.episodesHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.episodesTitle {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.episodesType {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.episodeList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.episode {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: #fff;
+  transition: background 0.15s;
+  width: 100%;
+}
+.episode:hover { background: rgba(255, 255, 255, 0.06); }
+
+.epNumber {
+  font-family: var(--font-display);
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.3);
+  min-width: 32px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.epThumb {
+  width: 120px;
+  height: 68px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.epMeta {
+  flex: 1;
+  min-width: 0;
+}
+
+.epTitle {
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.epDuration {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0;
+}
+
+/* ── About section — movies ──────────────────────────────────────────────────*/
+.about {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 24px 28px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.aboutTitle {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+  color: #fff;
+  margin: 0 0 6px;
+}
+
+.aboutTitle strong {
+  font-weight: 700;
+}
+
+.aboutLine {
+  font-family: var(--font-body);
+  font-size: 14px;
+  margin: 0;
+  line-height: 1.65;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.aboutKey {
+  color: rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.aboutVal {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+/* Cert + warnings on the same row */
+.certGroup {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.certBox {
+  display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 3px;
+  padding: 1px 9px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.8);
+  flex-shrink: 0;
+}
+
+/* ── Mobile ──────────────────────────────────────────────────────────────────*/
 @media (max-width: 680px) {
   .backdrop {
     padding: 0;
@@ -359,20 +498,22 @@
     border-radius: 16px 16px 0 0;
   }
 
-  .heroFooter,
-  .actionsBar,
-  .details {
-    padding-left: 20px;
-    padding-right: 20px;
-  }
+  .hero { aspect-ratio: 16 / 9; }
 
-  .actionsBar {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-  }
+  .heroContent { padding: 0 18px 20px; }
 
-  .details {
+  .title { font-size: clamp(20px, 6vw, 30px); }
+
+  .info {
     grid-template-columns: 1fr;
+    padding: 16px 18px 22px;
   }
+
+  .episodes,
+  .about {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .epThumb { width: 90px; height: 52px; }
 }

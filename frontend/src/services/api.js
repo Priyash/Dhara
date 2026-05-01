@@ -199,6 +199,13 @@ export async function listBunnyCollections() {
   return request('/api/admin/bunny/collections')
 }
 
+export async function createBunnyCollection(name) {
+  return request('/api/admin/bunny/collections', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+}
+
 export async function syncBunnyCollections() {
   return request('/api/admin/bunny/sync-collections', { method: 'POST' })
 }
