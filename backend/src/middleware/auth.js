@@ -49,6 +49,13 @@ export async function requireSubscription(req, res, next) {
   next()
 }
 
+export function requireCreator(req, res, next) {
+  if (!req.user?.isCreator || req.user?.creatorStatus !== 'approved') {
+    return res.status(403).json({ error: 'Creator access required' })
+  }
+  next()
+}
+
 export function requireAdmin(req, res, next) {
   const allowlist = (process.env.ADMIN_EMAILS || '')
     .split(',')

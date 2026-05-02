@@ -34,6 +34,12 @@ const contentSchema = new mongoose.Schema(
     reviewCount:       { type: Number, default: 0 },
     likeCount:       { type: Number, default: 0, min: 0 },
     dislikeCount:    { type: Number, default: 0, min: 0 },
+
+    // Creator Studio
+    creatorId:        { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    submissionStatus: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved' },
+    rejectionReason:  { type: String, default: '' },
+    revisionCount:    { type: Number, default: 0 },
   },
   { timestamps: true }
 )

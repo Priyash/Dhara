@@ -22,6 +22,9 @@ export const useStore = create((set, get) => ({
   subscriptionStatus: 'free',   // free | trial | active | grace | lapsed
   trialEndsAt: null,
   graceEndsAt: null,
+  creatorStatus:  'none',   // none | applied | approved | rejected
+  isCreator:      false,
+  creatorProfile: null,
   user: null,          // MongoDB user profile
   authLoading: true,   // true while Firebase resolves the initial session
 
@@ -61,11 +64,14 @@ export const useStore = create((set, get) => ({
           subscriptionStatus: user.subscriptionStatus ?? 'free',
           trialEndsAt:        user.trialEndsAt ?? null,
           graceEndsAt:        user.graceEndsAt ?? null,
+          creatorStatus:      user.creatorStatus  ?? 'none',
+          isCreator:          Boolean(user.isCreator),
+          creatorProfile:     user.creatorProfile ?? null,
           user,
           authLoading:        false,
         })
       } catch {
-        set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, subscriptionStatus: 'free', trialEndsAt: null, graceEndsAt: null, user: null, authLoading: false })
+        set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, subscriptionStatus: 'free', trialEndsAt: null, graceEndsAt: null, creatorStatus: 'none', isCreator: false, creatorProfile: null, user: null, authLoading: false })
       }
     }
 
@@ -130,6 +136,9 @@ export const useStore = create((set, get) => ({
       subscriptionStatus: user.subscriptionStatus ?? 'free',
       trialEndsAt:        user.trialEndsAt ?? null,
       graceEndsAt:        user.graceEndsAt ?? null,
+      creatorStatus:      user.creatorStatus  ?? 'none',
+      isCreator:          Boolean(user.isCreator),
+      creatorProfile:     user.creatorProfile ?? null,
       user,
     })
   },
@@ -153,13 +162,16 @@ export const useStore = create((set, get) => ({
       subscriptionStatus: user.subscriptionStatus ?? 'free',
       trialEndsAt:        user.trialEndsAt ?? null,
       graceEndsAt:        user.graceEndsAt ?? null,
+      creatorStatus:      user.creatorStatus  ?? 'none',
+      isCreator:          Boolean(user.isCreator),
+      creatorProfile:     user.creatorProfile ?? null,
       user,
     })
   },
 
   signOut: async () => {
     await firebaseSignOut(auth)
-    set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, subscriptionStatus: 'free', trialEndsAt: null, graceEndsAt: null, user: null })
+    set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, subscriptionStatus: 'free', trialEndsAt: null, graceEndsAt: null, creatorStatus: 'none', isCreator: false, creatorProfile: null, user: null })
   },
 
   refreshProfile: async () => {
@@ -173,6 +185,9 @@ export const useStore = create((set, get) => ({
           subscriptionStatus: user.subscriptionStatus ?? 'free',
           trialEndsAt:        user.trialEndsAt ?? null,
           graceEndsAt:        user.graceEndsAt ?? null,
+          creatorStatus:      user.creatorStatus  ?? 'none',
+          isCreator:          Boolean(user.isCreator),
+          creatorProfile:     user.creatorProfile ?? null,
           user,
         })
       } catch { /* session expired — ignore */ }
@@ -261,6 +276,9 @@ export const useStore = create((set, get) => ({
       subscriptionStatus: user.subscriptionStatus ?? 'free',
       trialEndsAt:        user.trialEndsAt ?? null,
       graceEndsAt:        user.graceEndsAt ?? null,
+      creatorStatus:      user.creatorStatus  ?? 'none',
+      isCreator:          Boolean(user.isCreator),
+      creatorProfile:     user.creatorProfile ?? null,
       user,
     })
     return user.emailVerified
@@ -279,6 +297,7 @@ export const useStore = create((set, get) => ({
 
   // ── UI actions ─────────────────────────────────────────────────────────────
 
+  setCreatorStatus: (status) => set({ creatorStatus: status }),
   setShowPaywall: (val) => set({ showPaywall: val }),
   setShowSearch:  (val) => set({ showSearch: val }),
   setSelectedItem:(item) => set({ selectedItem: item }),

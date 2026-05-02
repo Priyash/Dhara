@@ -18,16 +18,20 @@ router.get('/', async (req, res, next) => {
 
     let results
 
+    // Hide pending/rejected creator submissions from search.
+    // Existing admin content has no submissionStatus field and must remain visible.
+    const approvedOnly = { submissionStatus: { $nin: ['pending', 'rejected'] } }
+
     if (q.length < 4) {
       results = await Content
-        .find({ title: { $regex: `^${q}`, $options: 'i' } })
+        .find({ ...approvedOnly, title: { $regex: `^${q}`, $options: 'i' } })
         .sort({ rating: -1 })
         .limit(20)
         .select(HIDE_STREAM)
         .lean()
     } else {
       results = await Content
-        .find({ $text: { $search: q } }, { score: { $meta: 'textScore' } })
+        .find({ ...approvedOnly, $text: { $search: q } }, { score: { $meta: 'textScore' } })
         .sort({ score: { $meta: 'textScore' } })
         .limit(20)
         .select(HIDE_STREAM)
@@ -36,7 +40,7 @@ router.get('/', async (req, res, next) => {
       // Regex fallback if text index hasn't built yet (new Atlas cluster)
       if (results.length === 0) {
         results = await Content
-          .find({ title: { $regex: q, $options: 'i' } })
+          .find({ ...approvedOnly, title: { $regex: q, $options: 'i' } })
           .sort({ rating: -1 })
           .limit(20)
           .select(HIDE_STREAM)

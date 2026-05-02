@@ -7,6 +7,7 @@ import Browse from './pages/Browse'
 import Watch from './pages/Watch'
 import Profile from './pages/Profile'
 import Admin from './pages/Admin'
+import CreatorStudio from './pages/CreatorStudio'
 import NotFound from './pages/NotFound'
 import SearchOverlay from './components/SearchOverlay'
 import PaywallModal from './components/PaywallModal'
@@ -24,9 +25,10 @@ function AnimatedRoutes() {
         <Route path="/"          element={<Home />} />
         <Route path="/browse"    element={<Browse />} />
         <Route path="/watch/:id" element={<Watch />} />
-        <Route path="/profile"   element={<Profile />} />
-        <Route path="/admin"     element={<Admin />} />
-        <Route path="*"          element={<NotFound />} />
+        <Route path="/profile"         element={<Profile />} />
+        <Route path="/admin"           element={<Admin />} />
+        <Route path="/creator-studio"  element={<CreatorStudio />} />
+        <Route path="*"                element={<NotFound />} />
       </Routes>
     </div>
   )

@@ -160,6 +160,34 @@
   cursor: default;
 }
 
+/* Creator Studio button — purple/violet identity, distinct from admin amber */
+.creatorBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(167, 139, 250, 0.1);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: #a78bfa;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.creatorBtn:hover:not(:disabled) {
+  background: rgba(167, 139, 250, 0.18);
+  border-color: rgba(167, 139, 250, 0.5);
+}
+
+.creatorBtnActive,
+.creatorBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .signInBtn {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
