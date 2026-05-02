@@ -179,6 +179,87 @@
   font-size: 13px;
 }
 
+/* ── Creator Studio card ──────────────────────────────────────────────────── */
+.creatorCard {
+  margin-top: 18px;
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: var(--radius-md);
+  background: linear-gradient(120deg, rgba(167,139,250,0.08), rgba(124,58,237,0.04));
+  padding: 20px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.creatorCardLeft {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.creatorCardIcon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: rgba(167,139,250,0.15);
+  border: 1px solid rgba(167,139,250,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a78bfa;
+  flex-shrink: 0;
+}
+
+.creatorCardEyebrow {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #a78bfa;
+  margin: 0 0 3px;
+}
+
+.creatorCardTitle {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.creatorCardRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.creatorCardDesc {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.creatorStatusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid;
+}
+
 .upsell {
   margin-top: 18px;
   border: 1px solid rgba(245, 158, 11, 0.35);

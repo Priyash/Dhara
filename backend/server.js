@@ -15,6 +15,7 @@ import userRoutes    from './src/routes/user.js'
 import paymentRoutes from './src/routes/payments.js'
 import searchRoutes  from './src/routes/search.js'
 import adminRoutes   from './src/routes/admin.js'
+import creatorRoutes from './src/routes/creator.js'
 import { errorHandler } from './src/middleware/errorHandler.js'
 
 const app  = express()
@@ -51,6 +52,7 @@ app.use('/api/user',     userRoutes)
 app.use('/api/payments', paymentRoutes)
 app.use('/api/search',   searchRoutes)
 app.use('/api/admin',    adminRoutes)
+app.use('/api/creator',  creatorRoutes)
 
 app.get('/health', (_, res) =>
   res.json({ status: 'ok', ts: new Date().toISOString() })

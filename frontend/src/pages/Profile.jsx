@@ -11,9 +11,10 @@ import {
   MailCheck,
   RefreshCw,
   Sparkles,
+  Clapperboard,
 } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { fetchContent } from '../services/api'
+import { fetchContent, applyAsCreator, getPaymentHistory } from '../services/api'
 import PosterCard from '../components/PosterCard'
 import styles from './Profile.module.css'
 
@@ -60,6 +61,9 @@ export default function Profile() {
     sendPasswordReset,
     signOut,
     runScreenTransition,
+    creatorStatus,
+    isCreator,
+    setCreatorStatus,
   } = useStore()
 
   const [watchlistItems, setWatchlistItems] = useState([])
@@ -71,6 +75,15 @@ export default function Profile() {
   const [resettingPassword, setResettingPassword] = useState(false)
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+
+  // Creator Studio application state
+  const [showCreatorModal, setShowCreatorModal] = useState(false)
+  const [creatorForm, setCreatorForm] = useState({ studioName: '', bio: '', portfolioUrl: '' })
+  const [creatorApplying, setCreatorApplying] = useState(false)
+  const [creatorApplyError, setCreatorApplyError] = useState('')
+
+  const [paymentHistory, setPaymentHistory]   = useState([])
+  const [loadingHistory, setLoadingHistory]   = useState(false)
 
   const avatarLetter = user?.displayName?.[0] || user?.email?.[0] || '?'
   const watchlistIds = user?.watchlist || []
@@ -109,6 +122,15 @@ export default function Profile() {
       cancelled = true
     }
   }, [isLoggedIn, watchlistIds])
+
+  useEffect(() => {
+    if (!isLoggedIn) return
+    setLoadingHistory(true)
+    getPaymentHistory()
+      .then((data) => setPaymentHistory(data || []))
+      .catch(() => setPaymentHistory([]))
+      .finally(() => setLoadingHistory(false))
+  }, [isLoggedIn])
 
   const planLabel = useMemo(() => {
     if (!user?.subscriptionPlan) return 'Free'
@@ -160,6 +182,22 @@ export default function Profile() {
       setSessionError('Could not sign out right now.')
     } finally {
       setSigningOut(false)
+    }
+  }
+
+  const handleCreatorApply = async () => {
+    if (!creatorForm.studioName.trim()) { setCreatorApplyError('Studio name is required.'); return }
+    setCreatorApplying(true)
+    setCreatorApplyError('')
+    try {
+      await applyAsCreator(creatorForm)
+      setCreatorStatus('applied')
+      setShowCreatorModal(false)
+      setCreatorForm({ studioName: '', bio: '', portfolioUrl: '' })
+    } catch (err) {
+      setCreatorApplyError(err?.message || 'Could not submit application.')
+    } finally {
+      setCreatorApplying(false)
     }
   }
 
@@ -286,6 +324,175 @@ export default function Profile() {
           <button className={styles.primaryBtn} onClick={openPaywall}>
             Upgrade Plan
           </button>
+        </section>
+      )}
+
+      {/* ── Creator Studio section ──────────────────────────────────────── */}
+      <section className={styles.creatorCard}>
+        <div className={styles.creatorCardLeft}>
+          <div className={styles.creatorCardIcon}>
+            <Clapperboard size={20} />
+          </div>
+          <div>
+            <p className={styles.creatorCardEyebrow}>Creator Studio</p>
+            <h2 className={styles.creatorCardTitle}>Share your work on Dhara</h2>
+          </div>
+        </div>
+
+        <div className={styles.creatorCardRight}>
+          {creatorStatus === 'none' && (
+            <>
+              <p className={styles.creatorCardDesc}>
+                Upload films, documentaries & series. Submit for review — once approved, they stream to all subscribers.
+              </p>
+              <button className={styles.primaryBtn} onClick={() => { setCreatorApplyError(''); setShowCreatorModal(true) }}>
+                <Clapperboard size={14} /> Become a Creator
+              </button>
+            </>
+          )}
+
+          {creatorStatus === 'applied' && (
+            <>
+              <span className={styles.creatorStatusPill} style={{ color: '#fbbf24', background: 'rgba(251,191,36,0.1)', borderColor: 'rgba(251,191,36,0.25)' }}>
+                ● Application under review
+              </span>
+              <p className={styles.creatorCardDesc}>We'll update your status once an admin reviews your application.</p>
+            </>
+          )}
+
+          {creatorStatus === 'rejected' && (
+            <>
+              <span className={styles.creatorStatusPill} style={{ color: '#f87171', background: 'rgba(248,113,113,0.1)', borderColor: 'rgba(248,113,113,0.25)' }}>
+                ✕ Application rejected
+              </span>
+              {user?.creatorRejectionReason && (
+                <p className={styles.creatorCardDesc} style={{ color: '#f87171' }}>
+                  Reason: {user.creatorRejectionReason}
+                </p>
+              )}
+              <button className={styles.ghostBtn} onClick={() => { setCreatorApplyError(''); setShowCreatorModal(true) }}>
+                <Clapperboard size={14} /> Reapply
+              </button>
+            </>
+          )}
+
+          {creatorStatus === 'approved' && isCreator && (
+            <>
+              <span className={styles.creatorStatusPill} style={{ color: '#4ade80', background: 'rgba(74,222,128,0.1)', borderColor: 'rgba(74,222,128,0.25)' }}>
+                ✓ Approved Creator
+              </span>
+              <button className={styles.primaryBtn} onClick={() => navigate('/creator-studio')} style={{ background: 'linear-gradient(135deg,#a78bfa,#7c3aed)', color: '#fff' }}>
+                <Clapperboard size={14} /> Open Creator Studio
+              </button>
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* Creator application modal */}
+      {showCreatorModal && (
+        <div className={styles.modalBackdrop} role="dialog" aria-modal="true">
+          <div className={styles.modalCard} style={{ maxWidth: 460 }}>
+            <h3 className={styles.modalTitle}>Apply as Creator</h3>
+            <p className={styles.modalSub}>
+              Tell us about your studio. An admin will review your application.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px' }}>
+                Studio Name *
+                <input
+                  style={{ padding: '9px 12px', fontSize: 13, color: 'var(--color-text)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', outline: 'none', fontFamily: 'var(--font-body)' }}
+                  value={creatorForm.studioName}
+                  onChange={(e) => setCreatorForm((p) => ({ ...p, studioName: e.target.value }))}
+                  placeholder="e.g. Kolkata Frames"
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px' }}>
+                Bio
+                <textarea
+                  rows={3}
+                  style={{ padding: '9px 12px', fontSize: 13, color: 'var(--color-text)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', outline: 'none', fontFamily: 'var(--font-body)', resize: 'vertical' }}
+                  value={creatorForm.bio}
+                  onChange={(e) => setCreatorForm((p) => ({ ...p, bio: e.target.value }))}
+                  placeholder="Tell us about your work and what you plan to create…"
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px' }}>
+                Portfolio URL
+                <input
+                  style={{ padding: '9px 12px', fontSize: 13, color: 'var(--color-text)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', outline: 'none', fontFamily: 'var(--font-body)' }}
+                  value={creatorForm.portfolioUrl}
+                  onChange={(e) => setCreatorForm((p) => ({ ...p, portfolioUrl: e.target.value }))}
+                  placeholder="https://yoursite.com"
+                />
+              </label>
+              {creatorApplyError && (
+                <p style={{ fontSize: 13, color: '#f87171', margin: 0 }}>{creatorApplyError}</p>
+              )}
+            </div>
+            <div className={styles.modalActions}>
+              <button
+                className={styles.modalCancelBtn}
+                onClick={() => { setShowCreatorModal(false); setCreatorApplyError('') }}
+                disabled={creatorApplying}
+              >
+                Cancel
+              </button>
+              <button
+                className={styles.modalConfirmBtn}
+                onClick={handleCreatorApply}
+                disabled={creatorApplying}
+              >
+                {creatorApplying ? 'Submitting…' : 'Submit Application'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Payment History ── */}
+      {(loadingHistory || paymentHistory.length > 0) && (
+        <section className={styles.watchlistSection}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Payment History</h2>
+          </div>
+          {loadingHistory ? (
+            <p className={styles.empty}>Loading…</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {paymentHistory.map((t) => (
+                <div key={t.id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 16px', background: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
+                  gap: 12, flexWrap: 'wrap',
+                }}>
+                  <div>
+                    <p style={{ fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: 600, color: 'var(--color-text)', margin: '0 0 2px' }}>
+                      {t.planLabel || t.plan} Plan
+                    </p>
+                    <p style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
+                      {new Date(t.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {t.orderId ? ` · ${t.orderId}` : ''}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 16, color: 'var(--color-text)' }}>
+                      ₹{((t.amount || 0) / 100).toFixed(0)}
+                    </span>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                      background: t.status === 'paid' ? 'rgba(74,222,128,0.12)' : 'rgba(248,113,113,0.12)',
+                      color: t.status === 'paid' ? '#4ade80' : '#f87171',
+                      border: `1px solid ${t.status === 'paid' ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.25)'}`,
+                    }}>
+                      {t.status === 'paid' ? 'Paid' : t.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
 

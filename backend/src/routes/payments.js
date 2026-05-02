@@ -1,14 +1,15 @@
 import { Router } from 'express'
 import { User } from '../models/User.js'
+import { Transaction } from '../models/Transaction.js'
 import { requireAuth } from '../middleware/auth.js'
 import { getActiveProvider } from '../providers/index.js'
 
 const router = Router()
 
 const PLANS = {
-  monthly: { amount: 9900,  days: 30  },  // ₹99
-  annual:  { amount: 59900, days: 365 },  // ₹599
-  family:  { amount: 99900, days: 365 },  // ₹999
+  monthly: { label: 'Monthly',  amount: 9900,  days: 30  },  // ₹99
+  annual:  { label: 'Annual',   amount: 59900, days: 365 },  // ₹599
+  family:  { label: 'Family',   amount: 99900, days: 365 },  // ₹999
 }
 
 const GRACE_DAYS = 3
@@ -19,8 +20,6 @@ function planExpiresAt(plan) {
 
 /**
  * POST /api/payments/create-order
- * Creates a payment order via the active provider. Returns orderId + amount +
- * the provider's public key so the frontend can open the checkout modal.
  */
 router.post('/create-order', requireAuth, async (req, res, next) => {
   try {
@@ -34,6 +33,23 @@ router.post('/create-order', requireAuth, async (req, res, next) => {
       currency: 'INR',
       receipt:  `dhara_${req.user._id.toString().slice(-8)}_${Date.now()}`,
       notes:    { userId: req.user._id.toString(), plan },
+    })
+
+    // Create a pending transaction record immediately
+    await Transaction.create({
+      userId:    req.user._id,
+      userEmail: req.user.email,
+      plan,
+      amount:    order.amount,
+      currency:  order.currency,
+      gateway:   'razorpay',
+      orderId:   order.orderId,
+      status:    'pending',
+      planSnapshot: {
+        label:  PLANS[plan].label,
+        days:   PLANS[plan].days,
+        amount: PLANS[plan].amount,
+      },
     })
 
     res.json({
@@ -50,12 +66,7 @@ router.post('/create-order', requireAuth, async (req, res, next) => {
 
 /**
  * POST /api/payments/verify
- * Called by the frontend immediately after checkout succeeds.
- * Performs strict backend verification before activating the subscription:
- *   1. HMAC signature verified by the active provider adapter
- *   2. Order fetched from the provider — status must be 'paid'
- *   3. Amount on the order must exactly match the declared plan amount
- *   4. Order notes.userId must match the authenticated user
+ * 4-step backend verification before activating subscription.
  */
 router.post('/verify', requireAuth, async (req, res, next) => {
   try {
@@ -70,31 +81,56 @@ router.post('/verify', requireAuth, async (req, res, next) => {
 
     const { adapter } = await getActiveProvider()
 
-    // 1. Verify HMAC signature via the active provider
+    // 1. Verify HMAC signature
     const signatureValid = adapter.verifyPaymentSignature({
       orderId:   razorpay_order_id,
       paymentId: razorpay_payment_id,
       signature: razorpay_signature,
     })
     if (!signatureValid) {
+      await Transaction.findOneAndUpdate(
+        { orderId: razorpay_order_id },
+        { $set: { status: 'failed', failureReason: 'Invalid HMAC signature', paymentId: razorpay_payment_id } }
+      )
       return res.status(400).json({ error: 'Payment verification failed' })
     }
 
-    // 2 & 3. Fetch the actual order and validate status + amount
+    // 2 & 3. Fetch order and validate status + amount
     const order = await adapter.fetchOrder(razorpay_order_id)
     if (order.status !== 'paid') {
+      await Transaction.findOneAndUpdate(
+        { orderId: razorpay_order_id },
+        { $set: { status: 'failed', failureReason: `Order status: ${order.status}` } }
+      )
       return res.status(400).json({ error: 'Order has not been paid' })
     }
     if (order.amount !== PLANS[plan].amount) {
+      await Transaction.findOneAndUpdate(
+        { orderId: razorpay_order_id },
+        { $set: { status: 'failed', failureReason: 'Amount mismatch' } }
+      )
       return res.status(400).json({ error: 'Payment amount does not match selected plan' })
     }
 
-    // 4. Ensure this order was created for the authenticated user
+    // 4. Ensure the order belongs to this user
     if (order.notes?.userId !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Order does not belong to this account' })
     }
 
-    // All checks passed — activate subscription
+    const expiresAt = planExpiresAt(plan)
+
+    // Mark transaction as paid
+    await Transaction.findOneAndUpdate(
+      { orderId: razorpay_order_id },
+      {
+        $set: {
+          status:    'paid',
+          paymentId: razorpay_payment_id,
+        },
+      }
+    )
+
+    // Activate subscription
     const user = await User.findByIdAndUpdate(
       req.user._id,
       {
@@ -102,7 +138,7 @@ router.post('/verify', requireAuth, async (req, res, next) => {
           subscriptionStatus:    'active',
           subscriptionPlan:      plan,
           subscriptionStartedAt: new Date(),
-          subscriptionExpiresAt: planExpiresAt(plan),
+          subscriptionExpiresAt: expiresAt,
           graceEndsAt:           null,
         },
       },
@@ -123,8 +159,7 @@ router.post('/verify', requireAuth, async (req, res, next) => {
 
 /**
  * POST /api/payments/create-subscription
- * Creates a recurring subscription via the active provider.
- * Requires provider plan IDs configured in env (e.g. RAZORPAY_PLAN_ID_ANNUAL).
+ * Recurring billing via provider plan IDs.
  */
 router.post('/create-subscription', requireAuth, async (req, res, next) => {
   try {
@@ -157,15 +192,14 @@ router.post('/create-subscription', requireAuth, async (req, res, next) => {
 
 /**
  * POST /api/payments/webhook
- * Provider calls this for async payment events. Signature is verified via the
- * active provider adapter before any state is changed.
+ * Raw body — verified via HMAC before any state changes.
  */
 router.post('/webhook', async (req, res, next) => {
   try {
     const { adapter } = await getActiveProvider()
 
     const signatureValid = adapter.verifyWebhookSignature({
-      body:      req.body,  // raw Buffer — server.js keeps this route unparsed
+      body:      req.body,
       signature: req.headers['x-razorpay-signature'],
     })
     if (!signatureValid) {
@@ -176,11 +210,40 @@ router.post('/webhook', async (req, res, next) => {
 
     switch (event.event) {
       case 'payment.captured': {
-        // Idempotent — /verify may have already activated the user
-        const { userId, plan } = event.payload.payment.entity.notes || {}
+        const entity = event.payload.payment.entity
+        const { userId, plan } = entity.notes || {}
         if (!userId || !PLANS[plan]) break
+
         const user = await User.findById(userId)
-        if (user && user.subscriptionStatus !== 'active') {
+        if (!user) break
+
+        // Upsert transaction from webhook (in case /verify wasn't called)
+        await Transaction.findOneAndUpdate(
+          { orderId: entity.order_id },
+          {
+            $setOnInsert: {
+              userId:    user._id,
+              userEmail: user.email,
+              plan,
+              amount:    entity.amount,
+              currency:  entity.currency || 'INR',
+              gateway:   'razorpay',
+              orderId:   entity.order_id,
+              planSnapshot: {
+                label:  PLANS[plan].label,
+                days:   PLANS[plan].days,
+                amount: PLANS[plan].amount,
+              },
+            },
+            $set: {
+              status:    'paid',
+              paymentId: entity.id,
+            },
+          },
+          { upsert: true }
+        )
+
+        if (user.subscriptionStatus !== 'active') {
           await User.findByIdAndUpdate(userId, {
             $set: {
               subscriptionStatus:    'active',
@@ -198,11 +261,35 @@ router.post('/webhook', async (req, res, next) => {
         const entity = event.payload.subscription.entity
         const { userId, plan } = entity.notes || {}
         if (!userId || !PLANS[plan]) break
+
+        const user = await User.findById(userId)
+        if (!user) break
+
+        const expiresAt = planExpiresAt(plan)
+
+        await Transaction.create({
+          userId:    user._id,
+          userEmail: user.email,
+          plan,
+          amount:    PLANS[plan].amount,
+          currency:  'INR',
+          gateway:   'razorpay',
+          orderId:   `sub_renewal_${entity.id}_${Date.now()}`,
+          paymentId: event.payload.payment?.entity?.id || '',
+          subscriptionId: entity.id,
+          status:    'paid',
+          planSnapshot: {
+            label:  PLANS[plan].label,
+            days:   PLANS[plan].days,
+            amount: PLANS[plan].amount,
+          },
+        })
+
         await User.findByIdAndUpdate(userId, {
           $set: {
             subscriptionStatus:     'active',
             subscriptionPlan:       plan,
-            subscriptionExpiresAt:  planExpiresAt(plan),
+            subscriptionExpiresAt:  expiresAt,
             razorpaySubscriptionId: entity.id,
             graceEndsAt:            null,
           },
@@ -211,7 +298,6 @@ router.post('/webhook', async (req, res, next) => {
       }
 
       case 'subscription.halted': {
-        // Payment failed — 3-day grace period before access is removed
         const entity = event.payload.subscription.entity
         const { userId } = entity.notes || {}
         if (!userId) break
@@ -245,6 +331,33 @@ router.post('/webhook', async (req, res, next) => {
     }
 
     res.json({ received: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/payments/history
+ * Returns the authenticated user's own transaction history.
+ */
+router.get('/history', requireAuth, async (req, res, next) => {
+  try {
+    const transactions = await Transaction.find({ userId: req.user._id })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean()
+
+    res.json(transactions.map((t) => ({
+      id:         t._id,
+      plan:       t.plan,
+      planLabel:  t.planSnapshot?.label || t.plan,
+      amount:     t.amount,
+      currency:   t.currency,
+      status:     t.status,
+      orderId:    t.orderId,
+      paymentId:  t.paymentId,
+      date:       t.createdAt,
+    })))
   } catch (err) {
     next(err)
   }

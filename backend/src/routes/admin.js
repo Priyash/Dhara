@@ -3,6 +3,8 @@ import { Content } from '../models/Content.js'
 import { StreamCollection } from '../models/StreamCollection.js'
 import { UploadJob } from '../models/UploadJob.js'
 import { PaymentConfig } from '../models/PaymentConfig.js'
+import { Transaction } from '../models/Transaction.js'
+import { User } from '../models/User.js'
 import { SUPPORTED_PROVIDERS, getProviderStatus } from '../providers/index.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 
@@ -83,7 +85,30 @@ async function syncProcessingJob(job) {
     )
 
     if (isReady && updated?.contentId) {
-      await Content.findByIdAndUpdate(updated.contentId, { $set: { bunnyVideoId: updated.bunnyVideoId } })
+      if (updated.episodeNumber) {
+        // Try to update an existing episode entry first
+        const linked = await Content.findOneAndUpdate(
+          { _id: updated.contentId, 'episodes.number': updated.episodeNumber },
+          { $set: { 'episodes.$.bunnyVideoId': updated.bunnyVideoId } },
+          { new: true }
+        )
+        // Episode didn't exist yet — push a new one
+        if (!linked) {
+          await Content.findByIdAndUpdate(updated.contentId, {
+            $push: {
+              episodes: {
+                number:      updated.episodeNumber,
+                title:       updated.episodeTitle    || `Episode ${updated.episodeNumber}`,
+                duration:    updated.episodeDuration || '',
+                bunnyVideoId: updated.bunnyVideoId,
+              },
+            },
+          })
+        }
+      } else {
+        // Film / Documentary — link to root bunnyVideoId
+        await Content.findByIdAndUpdate(updated.contentId, { $set: { bunnyVideoId: updated.bunnyVideoId } })
+      }
     }
 
     return updated || job
@@ -507,7 +532,14 @@ router.get('/upload-jobs', async (req, res, next) => {
 
 router.post('/upload-jobs', async (req, res, next) => {
   try {
-    const { title, collectionId, contentId = null } = req.body
+    const {
+      title, collectionId,
+      contentId      = null,
+      episodeNumber  = null,
+      episodeTitle   = '',
+      episodeDuration = '',
+    } = req.body
+
     if (!title || !collectionId) {
       return res.status(400).json({ error: 'title and collectionId are required' })
     }
@@ -518,15 +550,18 @@ router.post('/upload-jobs', async (req, res, next) => {
     }
 
     const job = await UploadJob.create({
-      createdByEmail: req.user.email,
-      title: title.trim(),
-      collectionId: collection._id,
-      collectionName: collection.name,
+      createdByEmail:  req.user.email,
+      title:           title.trim(),
+      collectionId:    collection._id,
+      collectionName:  collection.name,
       bunnyCollectionId: collection.bunnyCollectionId,
       contentId,
-      status: 'awaiting_file',
+      episodeNumber:   episodeNumber   ? Number(episodeNumber)      : null,
+      episodeTitle:    episodeTitle    ? String(episodeTitle).trim() : '',
+      episodeDuration: episodeDuration ? String(episodeDuration).trim() : '',
+      status:   'awaiting_file',
       progress: 0,
-      note: 'Upload job created. Waiting for file bytes.',
+      note:     'Upload job created. Waiting for file bytes.',
     })
 
     res.status(201).json(job)
@@ -563,6 +598,239 @@ router.put('/upload-jobs/:id/file', express.raw({ type: 'application/octet-strea
     })
 
     res.status(202).json({ success: true, jobId: job._id, message: 'File accepted and queued for async upload.' })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/admin/transactions
+ * Full transaction log with optional filters: status, plan, page.
+ */
+router.get('/transactions', async (req, res, next) => {
+  try {
+    const { status, plan, page = 1 } = req.query
+    const limit = 50
+    const filter = {}
+    if (status) filter.status = status
+    if (plan)   filter.plan   = plan
+
+    const [transactions, total] = await Promise.all([
+      Transaction.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((Number(page) - 1) * limit)
+        .limit(limit)
+        .lean(),
+      Transaction.countDocuments(filter),
+    ])
+
+    res.json({
+      transactions: transactions.map((t) => ({
+        id:         t._id,
+        userId:     t.userId,
+        userEmail:  t.userEmail,
+        plan:       t.plan,
+        planLabel:  t.planSnapshot?.label || t.plan,
+        amount:     t.amount,
+        currency:   t.currency,
+        status:     t.status,
+        gateway:    t.gateway,
+        orderId:    t.orderId,
+        paymentId:  t.paymentId,
+        failureReason: t.failureReason || null,
+        date:       t.createdAt,
+      })),
+      total,
+      page: Number(page),
+      pages: Math.ceil(total / limit),
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/admin/revenue
+ * Aggregated revenue stats: total, monthly breakdown, plan breakdown,
+ * subscriber counts by status.
+ */
+router.get('/revenue', async (req, res, next) => {
+  try {
+    const [planBreakdown, monthlyRevenue, subscriberCounts, totalPaid] = await Promise.all([
+      // Revenue per plan (paid only)
+      Transaction.aggregate([
+        { $match: { status: 'paid' } },
+        { $group: { _id: '$plan', revenue: { $sum: '$amount' }, count: { $sum: 1 } } },
+        { $sort: { revenue: -1 } },
+      ]),
+
+      // Last 12 months monthly revenue
+      Transaction.aggregate([
+        { $match: { status: 'paid', createdAt: { $gte: new Date(Date.now() - 365 * 86_400_000) } } },
+        {
+          $group: {
+            _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+            revenue: { $sum: '$amount' },
+            count:   { $sum: 1 },
+          },
+        },
+        { $sort: { '_id.year': 1, '_id.month': 1 } },
+      ]),
+
+      // Subscriber counts by status
+      User.aggregate([
+        { $group: { _id: '$subscriptionStatus', count: { $sum: 1 } } },
+      ]),
+
+      // Total paid revenue (all time)
+      Transaction.aggregate([
+        { $match: { status: 'paid' } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
+      ]),
+    ])
+
+    res.json({
+      totalRevenuePaise: totalPaid[0]?.total || 0,
+      totalTransactions: totalPaid[0]?.count || 0,
+      planBreakdown: planBreakdown.map((p) => ({
+        plan:           p._id,
+        revenuePaise:   p.revenue,
+        transactionCount: p.count,
+      })),
+      monthlyRevenue: monthlyRevenue.map((m) => ({
+        year:         m._id.year,
+        month:        m._id.month,
+        revenuePaise: m.revenue,
+        count:        m.count,
+      })),
+      subscribersByStatus: Object.fromEntries(
+        subscriberCounts.map((s) => [s._id, s.count])
+      ),
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/admin/creator-applications
+ * List all creator applications, filterable by status.
+ */
+router.get('/creator-applications', async (req, res, next) => {
+  try {
+    const { status = 'applied' } = req.query
+
+    // Always restrict to users who have actually interacted with the creator flow.
+    // 'none' is the default — those users have never applied and should never appear here.
+    const creatorStatuses = ['applied', 'approved', 'rejected']
+    const filter = status === 'all'
+      ? { creatorStatus: { $in: creatorStatuses } }
+      : { creatorStatus: status }
+
+    const users = await User.find(filter)
+      .sort({ 'creatorProfile.appliedAt': -1, createdAt: -1 })
+      .select('email displayName creatorStatus isCreator creatorProfile creatorRejectionReason createdAt')
+      .lean()
+
+    res.json(users)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/admin/creator-applications/:userId/approve
+ */
+router.patch('/creator-applications/:userId/approve', async (req, res, next) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.params.userId,
+      { $set: { creatorStatus: 'approved', isCreator: true, creatorRejectionReason: '' } },
+      { new: true }
+    ).select('email displayName creatorStatus isCreator creatorProfile')
+
+    if (!user) return res.status(404).json({ error: 'User not found' })
+    res.json({ success: true, user })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/admin/creator-applications/:userId/reject
+ */
+router.patch('/creator-applications/:userId/reject', async (req, res, next) => {
+  try {
+    const { reason = '' } = req.body
+    const user = await User.findByIdAndUpdate(
+      req.params.userId,
+      { $set: { creatorStatus: 'rejected', isCreator: false, creatorRejectionReason: reason.trim() } },
+      { new: true }
+    ).select('email displayName creatorStatus isCreator creatorProfile')
+
+    if (!user) return res.status(404).json({ error: 'User not found' })
+    res.json({ success: true, user })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/admin/submissions
+ * List creator content submissions, filterable by submissionStatus.
+ */
+router.get('/submissions', async (req, res, next) => {
+  try {
+    const { status = 'pending' } = req.query
+    const filter = { creatorId: { $ne: null } }
+    if (status !== 'all') filter.submissionStatus = status
+
+    const items = await Content.find(filter)
+      .sort({ updatedAt: -1 })
+      .populate('creatorId', 'email displayName creatorProfile')
+      .select('title type genre submissionStatus rejectionReason revisionCount posterUrl bunnyVideoId creatorId createdAt updatedAt isPremium')
+      .lean()
+
+    res.json(items)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/admin/submissions/:id/approve
+ */
+router.patch('/submissions/:id/approve', async (req, res, next) => {
+  try {
+    const content = await Content.findOneAndUpdate(
+      { _id: req.params.id, creatorId: { $ne: null } },
+      { $set: { submissionStatus: 'approved', rejectionReason: '' } },
+      { new: true }
+    ).lean()
+
+    if (!content) return res.status(404).json({ error: 'Submission not found' })
+    res.json({ success: true, content })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/admin/submissions/:id/reject
+ */
+router.patch('/submissions/:id/reject', async (req, res, next) => {
+  try {
+    const { reason = '' } = req.body
+    if (!reason.trim()) return res.status(400).json({ error: 'Rejection reason is required' })
+
+    const content = await Content.findOneAndUpdate(
+      { _id: req.params.id, creatorId: { $ne: null } },
+      { $set: { submissionStatus: 'rejected', rejectionReason: reason.trim() } },
+      { new: true }
+    ).lean()
+
+    if (!content) return res.status(404).json({ error: 'Submission not found' })
+    res.json({ success: true, content })
   } catch (err) {
     next(err)
   }

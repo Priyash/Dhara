@@ -25,6 +25,11 @@ function serializeUser(u, { isAdmin = false } = {}) {
     watchlist:             u.watchlist,
     likedContent:          u.likedContent    ?? [],
     dislikedContent:       u.dislikedContent ?? [],
+    // Creator Studio
+    isCreator:             Boolean(u.isCreator),
+    creatorStatus:         u.creatorStatus         ?? 'none',
+    creatorProfile:        u.creatorProfile        ?? null,
+    creatorRejectionReason: u.creatorRejectionReason ?? '',
     createdAt:             u.createdAt,
     updatedAt:             u.updatedAt,
   }

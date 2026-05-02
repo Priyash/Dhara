@@ -17,10 +17,11 @@ const NAV_ROUTES = {
 export default function Navbar() {
   const scrolled = useScrolled(60)
   const [activeLink, setActiveLink] = useState('Home')
-  const { setShowSearch, openPaywall, openAuth, isLoggedIn, isSubscribed, isAdmin, user } = useStore()
+  const { setShowSearch, openPaywall, openAuth, isLoggedIn, isSubscribed, isAdmin, isCreator, creatorStatus, user } = useStore()
   const navigate = useNavigate()
   const location = useLocation()
   const onAdminPage = location.pathname === '/admin'
+  const onCreatorPage = location.pathname === '/creator-studio'
 
   const avatarLetter = user?.displayName?.[0] || user?.email?.[0] || '?'
 
@@ -74,6 +75,18 @@ export default function Navbar() {
               >
                 <Clapperboard size={13} />
                 Studio
+              </button>
+            )}
+
+            {!isAdmin && isCreator && creatorStatus === 'approved' && (
+              <button
+                className={`${styles.creatorBtn} ${onCreatorPage ? styles.creatorBtnActive : ''}`}
+                onClick={() => { if (!onCreatorPage) navigate('/creator-studio') }}
+                disabled={onCreatorPage}
+                title={onCreatorPage ? 'You are in Creator Studio' : 'Creator Studio'}
+              >
+                <Clapperboard size={13} />
+                Creator Studio
               </button>
             )}
 

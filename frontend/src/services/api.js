@@ -129,6 +129,10 @@ export async function createSubscription(plan) {
   })
 }
 
+export async function getPaymentHistory() {
+  return request('/api/payments/history')
+}
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export async function getAdminSession() {
@@ -234,5 +238,91 @@ export async function updateAdminContent(id, payload) {
   return request(`/api/admin/content/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  })
+}
+
+export async function getAdminTransactions(params = {}) {
+  const qs = new URLSearchParams(params).toString()
+  return request(`/api/admin/transactions${qs ? `?${qs}` : ''}`)
+}
+
+export async function getAdminRevenue() {
+  return request('/api/admin/revenue')
+}
+
+// ── Creator Studio ────────────────────────────────────────────────────────────
+
+export async function applyAsCreator(payload) {
+  return request('/api/creator/apply', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function getCreatorStatus() {
+  return request('/api/creator/status')
+}
+
+export async function getCreatorMe() {
+  return request('/api/creator/me')
+}
+
+export async function updateCreatorProfile(payload) {
+  return request('/api/creator/profile', { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export async function listCreatorContent(params = {}) {
+  const qs = new URLSearchParams(params).toString()
+  return request(`/api/creator/content${qs ? `?${qs}` : ''}`)
+}
+
+export async function createCreatorContent(payload) {
+  return request('/api/creator/content', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function getCreatorContentById(id) {
+  return request(`/api/creator/content/${id}`)
+}
+
+export async function updateCreatorContent(id, payload) {
+  return request(`/api/creator/content/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export async function resubmitCreatorContent(id) {
+  return request(`/api/creator/content/${id}/resubmit`, { method: 'POST' })
+}
+
+export async function deleteCreatorContent(id) {
+  return request(`/api/creator/content/${id}`, { method: 'DELETE' })
+}
+
+// ── Admin Creator Hub ─────────────────────────────────────────────────────────
+
+export async function listCreatorApplications(params = {}) {
+  const qs = new URLSearchParams(params).toString()
+  return request(`/api/admin/creator-applications${qs ? `?${qs}` : ''}`)
+}
+
+export async function approveCreatorApplication(userId) {
+  return request(`/api/admin/creator-applications/${userId}/approve`, { method: 'PATCH' })
+}
+
+export async function rejectCreatorApplication(userId, reason) {
+  return request(`/api/admin/creator-applications/${userId}/reject`, {
+    method: 'PATCH',
+    body: JSON.stringify({ reason }),
+  })
+}
+
+export async function listAdminSubmissions(params = {}) {
+  const qs = new URLSearchParams(params).toString()
+  return request(`/api/admin/submissions${qs ? `?${qs}` : ''}`)
+}
+
+export async function approveSubmission(id) {
+  return request(`/api/admin/submissions/${id}/approve`, { method: 'PATCH' })
+}
+
+export async function rejectSubmission(id, reason) {
+  return request(`/api/admin/submissions/${id}/reject`, {
+    method: 'PATCH',
+    body: JSON.stringify({ reason }),
   })
 }

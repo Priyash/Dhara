@@ -56,6 +56,7 @@
 .playerWrap {
   width: 100%;
   background: #000;
+  /* Gate states now render as full-screen — playerWrap only shown when streaming */
 }
 
 .state {
@@ -67,6 +68,243 @@
   font-size: 15px;
 }
 
+/* ── Cinematic gate (unauthenticated / unverified / premium blocked) ──────── */
+/* ── Cinematic gate ───────────────────────────────────────────────────────── */
+.cinematicGate {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* background-attachment must NOT be fixed on a position:fixed element */
+  background-color: #0a0a0c;
+}
+
+/* Backdrop rendered as an absolutely-positioned pseudo-layer so we can
+   apply the gradient overlay without conflicting with background-attachment */
+.cinematicGate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--backdrop, none);
+  background-size: cover;
+  background-position: center center;
+  opacity: 0.55;
+  z-index: 0;
+}
+
+/* Gradient overlay on top of the backdrop */
+.cinematicGate::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(0,0,0,0.1)  0%,
+    rgba(0,0,0,0.3)  30%,
+    rgba(0,0,0,0.65) 60%,
+    rgba(0,0,0,0.88) 80%,
+    #0a0a0c 100%
+  );
+  z-index: 1;
+}
+
+.gateScrim { display: none; }
+
+/* Back button */
+.gateBackBtn {
+  position: absolute;
+  top: calc(var(--nav-height, 64px) + 16px);
+  left: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px;
+  padding: 8px 16px 8px 12px;
+  color: rgba(255,255,255,0.8);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.12s;
+  z-index: 3;
+}
+.gateBackBtn:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.22);
+  transform: translateX(-2px);
+}
+
+/* Center content sits above all layers */
+.gateCentered {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  width: 100%;
+  max-width: 520px;
+  padding: 0 24px;
+  text-align: center;
+  margin-top: calc(var(--nav-height, 64px) * 0.5);
+}
+
+/* Movie info — visible through the gate, building desire */
+.gateMovieInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.gateGenres {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.gateGenreChip {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: rgba(255,255,255,0.5);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: rgba(255,255,255,0.06);
+}
+
+.gateMovieTitle {
+  font-family: var(--font-display);
+  font-size: clamp(22px, 4vw, 40px);
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.1;
+  text-shadow: 0 2px 20px rgba(0,0,0,0.6);
+  margin: 0;
+}
+
+.gateMovieMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: rgba(255,255,255,0.5);
+}
+
+.gateMetaDot { color: rgba(255,255,255,0.25); }
+
+.gateRating {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+/* The gate CTA panel */
+.gatePanel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  background: rgba(14,14,16,0.85);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  padding: 32px 36px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  width: 100%;
+}
+
+.gatePanelIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 4px;
+}
+
+.gatePanelTitle {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.gatePanelDesc {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: rgba(255,255,255,0.55);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 340px;
+}
+
+.gatePanelActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.gatePanelBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 13px 28px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 700;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark, #d97706));
+  color: #000;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.12s;
+}
+.gatePanelBtn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+.gatePanelBtnGhost {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 13px 24px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.8);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.gatePanelBtnGhost:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.3); }
+
+.gatePanelFine {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: rgba(255,255,255,0.28);
+  margin: 0;
+}
+
+/* Keep old .gate class for fallback — no longer used in gate states */
 .gate {
   width: min(560px, 92%);
   text-align: center;
@@ -80,10 +318,6 @@
   gap: 12px;
 }
 
-.gate p {
-  color: rgba(255, 255, 255, 0.88);
-}
-
 .gateActions {
   display: flex;
   align-items: center;
@@ -92,24 +326,26 @@
   flex-wrap: wrap;
 }
 
-.gateBtn,
-.gateBtnGhost {
+.gateBtn {
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
+  color: #141414;
   border: none;
   border-radius: 10px;
   font-size: 13px;
   font-weight: 600;
   padding: 10px 14px;
-}
-
-.gateBtn {
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
-  color: #141414;
+  cursor: pointer;
 }
 
 .gateBtnGhost {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: var(--color-text);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 14px;
+  cursor: pointer;
 }
 
 /* Below player */

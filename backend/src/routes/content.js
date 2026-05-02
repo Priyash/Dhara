@@ -47,6 +47,9 @@ router.get('/', async (req, res, next) => {
   try {
     const { type, filter, sort = 'rating' } = req.query
     const query = {}
+    // Hide only creator submissions that are pending/rejected.
+    // Existing admin content has no submissionStatus field and must remain visible.
+    query.submissionStatus = { $nin: ['pending', 'rejected'] }
 
     if (type   && type   !== 'All') query.type     = type
     if (filter === 'Free')          query.isPremium = false
@@ -69,7 +72,7 @@ router.get('/', async (req, res, next) => {
  */
 router.get('/featured', async (req, res, next) => {
   try {
-    const item = await Content.findOne({ isFeatured: true }).select(PUBLIC_FIELDS).lean()
+    const item = await Content.findOne({ isFeatured: true, submissionStatus: { $nin: ['pending', 'rejected'] } }).select(PUBLIC_FIELDS).lean()
     if (!item) return res.status(404).json({ error: 'No featured content set' })
     res.json(item)
   } catch (err) {
@@ -83,7 +86,7 @@ router.get('/featured', async (req, res, next) => {
  */
 router.get('/:id', async (req, res, next) => {
   try {
-    const item = await Content.findById(req.params.id).select(PUBLIC_FIELDS).lean()
+    const item = await Content.findOne({ _id: req.params.id, submissionStatus: { $nin: ['pending', 'rejected'] } }).select(PUBLIC_FIELDS).lean()
     if (!item) return res.status(404).json({ error: 'Content not found' })
     res.json(item)
   } catch (err) {
@@ -101,11 +104,17 @@ router.get('/:id', async (req, res, next) => {
 router.get('/:id/stream', requireAuth, async (req, res, next) => {
   try {
     const item = await Content.findById(req.params.id)
-      .select('isPremium bunnyVideoId')
+      .select('isPremium bunnyVideoId submissionStatus creatorId')
       .lean()
 
     if (!item)              return res.status(404).json({ error: 'Content not found' })
     if (!item.bunnyVideoId) return res.status(404).json({ error: 'No video attached to this title' })
+
+    const isOwnContent = item?.creatorId && req.user?._id?.toString() === item.creatorId.toString()
+    const isHidden = ['pending', 'rejected'].includes(item?.submissionStatus)
+    if (isHidden && !isOwnContent) {
+      return res.status(404).json({ error: 'Content not found' })
+    }
 
     if (item.isPremium) {
       return requireSubscription(req, res, () => {

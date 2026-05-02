@@ -21,6 +21,17 @@ const userSchema = new mongoose.Schema(
     watchlist:              [{ type: String }],
     likedContent:           [{ type: String }],
     dislikedContent:        [{ type: String }],
+
+    // Creator Studio
+    creatorStatus:          { type: String, enum: ['none', 'applied', 'approved', 'rejected'], default: 'none' },
+    isCreator:              { type: Boolean, default: false },
+    creatorProfile: {
+      studioName:   { type: String, default: '' },
+      bio:          { type: String, default: '' },
+      portfolioUrl: { type: String, default: '' },
+      appliedAt:    { type: Date,   default: null },
+    },
+    creatorRejectionReason: { type: String, default: '' },
   },
   { timestamps: true }
 )

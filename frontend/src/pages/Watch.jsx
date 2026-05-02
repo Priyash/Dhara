@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, List, Crown, Lock, ShieldAlert, Star, Clapperboard, Users, Globe } from 'lucide-react'
+import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Clapperboard, Users, Globe, Play } from 'lucide-react'
 import VideoPlayer from '../components/VideoPlayer'
 import { fetchContentById, fetchStreamUrl } from '../services/api'
 import { useStore } from '../store/useStore'
+import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './Watch.module.css'
 
 function stripExtension(name = '') {
@@ -13,7 +14,7 @@ function stripExtension(name = '') {
 export default function Watch() {
   const { id }   = useParams()
   const navigate = useNavigate()
-  const { isLoggedIn, isSubscribed, user, openPaywall, openVerifyEmailGate } = useStore()
+  const { isLoggedIn, isSubscribed, user, openPaywall, openVerifyEmailGate, openAuth } = useStore()
 
   const [content,  setContent]  = useState(null)
   const [hlsUrl,   setHlsUrl]   = useState(null)
@@ -54,6 +55,105 @@ export default function Watch() {
   const hasRating   = content.rating > 0
   const hasMeta     = hasGenre || hasCast || hasDirector || hasRating || content.releaseYear || content.desc
 
+  // Build backdrop URL for cinematic gate
+  const backdropRaw = content.backdropUrl || content.posterUrl || null
+  const backdropUrl = backdropRaw
+    ? cloudinaryTransform(backdropRaw, 'w_1920,h_1080,c_fill,g_auto,f_auto,q_auto:low')
+    : null
+
+  // Determine which gate state we're in
+  const gateState = !isLoggedIn
+    ? 'unauthenticated'
+    : !user?.emailVerified
+    ? 'unverified'
+    : content.isPremium && !isSubscribed
+    ? 'premium'
+    : null
+
+  // ── Cinematic gate — shown for all access-blocked states ──────────────────
+  if (gateState) {
+    return (
+      <div
+        className={styles.cinematicGate}
+        style={backdropUrl ? { '--backdrop': `url(${backdropUrl})` } : {}}
+      >
+        <div className={styles.gateScrim} />
+
+        <button className={styles.gateBackBtn} onClick={() => navigate(-1)}>
+          <ArrowLeft size={15} /> Back
+        </button>
+
+        <div className={styles.gateCentered}>
+          {/* Movie context — teases what they're about to watch */}
+          <div className={styles.gateMovieInfo}>
+            {hasGenre && (
+              <div className={styles.gateGenres}>
+                {content.genre.slice(0, 3).map((g) => (
+                  <span key={g} className={styles.gateGenreChip}>{g}</span>
+                ))}
+              </div>
+            )}
+            <h1 className={styles.gateMovieTitle}>{cleanTitle}</h1>
+            <div className={styles.gateMovieMeta}>
+              {content.releaseYear && <span>{content.releaseYear}</span>}
+              {content.type        && <><span className={styles.gateMetaDot}>·</span><span>{content.type}</span></>}
+              {hasRating           && <><span className={styles.gateMetaDot}>·</span><span className={styles.gateRating}><Star size={11} fill="#f59e0b" color="#f59e0b" /> {content.rating.toFixed(1)}</span></>}
+            </div>
+          </div>
+
+          {/* The actual gate CTA panel */}
+          <div className={styles.gatePanel}>
+            {gateState === 'unauthenticated' && (
+              <>
+                <div className={styles.gatePanelIcon}><Lock size={22} /></div>
+                <h2 className={styles.gatePanelTitle}>Sign in to watch</h2>
+                <p className={styles.gatePanelDesc}>
+                  Join Dhara and enjoy unlimited Bengali cinema, series & documentaries.
+                </p>
+                <button className={styles.gatePanelBtn} onClick={() => openAuth('signin')}>
+                  <Play size={14} fill="currentColor" /> Sign In to Continue
+                </button>
+                <p className={styles.gatePanelFine}>Free trial available · No credit card required</p>
+              </>
+            )}
+
+            {gateState === 'unverified' && (
+              <>
+                <div className={styles.gatePanelIcon} style={{ color: '#fbbf24' }}><MailCheck size={22} /></div>
+                <h2 className={styles.gatePanelTitle}>Verify your email</h2>
+                <p className={styles.gatePanelDesc}>
+                  Check your inbox and verify your email address to start watching.
+                </p>
+                <div className={styles.gatePanelActions}>
+                  <button className={styles.gatePanelBtn} onClick={() => openVerifyEmailGate('watch')}>
+                    Verify Email
+                  </button>
+                  <button className={styles.gatePanelBtnGhost} onClick={() => navigate('/profile')}>
+                    Open Profile
+                  </button>
+                </div>
+              </>
+            )}
+
+            {gateState === 'premium' && (
+              <>
+                <div className={styles.gatePanelIcon} style={{ color: '#f59e0b' }}><Crown size={22} /></div>
+                <h2 className={styles.gatePanelTitle}>Premium content</h2>
+                <p className={styles.gatePanelDesc}>
+                  Subscribe to Dhara Pro to unlock this title and all premium content.
+                </p>
+                <button className={styles.gatePanelBtn} onClick={openPaywall}>
+                  <Crown size={14} /> Subscribe — from ₹99/mo
+                </button>
+                <p className={styles.gatePanelFine}>Cancel anytime · No hidden charges</p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={styles.page}>
       <div className={styles.topBar}>
@@ -64,35 +164,12 @@ export default function Watch() {
       </div>
 
       <div className={styles.playerWrap}>
-        {!isLoggedIn ? (
-          <div className={styles.gate}>
-            <Lock size={32} color="rgba(255,255,255,0.4)" />
-            <p>Sign in to watch</p>
-            <button className={styles.gateBtn} onClick={() => navigate('/')}>Sign in</button>
-          </div>
-        ) : !user?.emailVerified ? (
-          <div className={styles.gate}>
-            <ShieldAlert size={32} color="#fbbf24" />
-            <p>Verify your email to start watching</p>
-            <div className={styles.gateActions}>
-              <button className={styles.gateBtn} onClick={() => openVerifyEmailGate('watch')}>Verify Email</button>
-              <button className={styles.gateBtnGhost} onClick={() => navigate('/profile')}>Open Profile</button>
-            </div>
-          </div>
-        ) : content.isPremium && !isSubscribed ? (
-          <div className={styles.gate}>
-            <Crown size={32} color="#f59e0b" />
-            <p>Subscribe to watch premium content</p>
-            <button className={styles.gateBtn} onClick={openPaywall}>Subscribe</button>
-          </div>
-        ) : (
-          <VideoPlayer
-            src={hlsUrl}
-            title={playerTitle}
-            poster={content.posterUrl || null}
-            storageKey={id}
-          />
-        )}
+        <VideoPlayer
+          src={hlsUrl}
+          title={playerTitle}
+          poster={content.posterUrl || null}
+          storageKey={id}
+        />
       </div>
 
       <div className={styles.below}>
