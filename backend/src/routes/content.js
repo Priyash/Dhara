@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { createHash } from 'crypto'
 import { Content } from '../models/Content.js'
+import { CuratedShelf } from '../models/CuratedShelf.js'
 import { User } from '../models/User.js'
 import { requireAuth, requireSubscription } from '../middleware/auth.js'
 
@@ -47,8 +48,7 @@ router.get('/', async (req, res, next) => {
   try {
     const { type, filter, sort = 'rating' } = req.query
     const query = {}
-    // Hide only creator submissions that are pending/rejected.
-    // Existing admin content has no submissionStatus field and must remain visible.
+    query.isPublished = true
     query.submissionStatus = { $nin: ['pending', 'rejected'] }
 
     if (type   && type   !== 'All') query.type     = type
@@ -72,9 +72,39 @@ router.get('/', async (req, res, next) => {
  */
 router.get('/featured', async (req, res, next) => {
   try {
-    const item = await Content.findOne({ isFeatured: true, submissionStatus: { $nin: ['pending', 'rejected'] } }).select(PUBLIC_FIELDS).lean()
-    if (!item) return res.status(404).json({ error: 'No featured content set' })
-    res.json(item)
+    const items = await Content.find({ isFeatured: true, isPublished: true, submissionStatus: { $nin: ['pending', 'rejected'] } })
+      .select(PUBLIC_FIELDS)
+      .sort({ updatedAt: -1 })
+      .limit(8)
+      .lean()
+    if (!items.length) return res.status(404).json({ error: 'No featured content set' })
+    res.json(items)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/content/shelves
+ * Public. Returns active curated shelves with populated (published) content.
+ * Must be declared before /:id to avoid Express matching "shelves" as an id param.
+ */
+router.get('/shelves', async (req, res, next) => {
+  try {
+    const shelves = await CuratedShelf.find({ isActive: true })
+      .sort({ displayOrder: 1 })
+      .populate({
+        path: 'contentIds',
+        match: { isPublished: true },
+        select: PUBLIC_FIELDS,
+      })
+      .lean()
+
+    const result = shelves.map((s) => ({
+      ...s,
+      items: (s.contentIds || []).filter(Boolean),
+    }))
+    res.json(result)
   } catch (err) {
     next(err)
   }
@@ -86,7 +116,7 @@ router.get('/featured', async (req, res, next) => {
  */
 router.get('/:id', async (req, res, next) => {
   try {
-    const item = await Content.findOne({ _id: req.params.id, submissionStatus: { $nin: ['pending', 'rejected'] } }).select(PUBLIC_FIELDS).lean()
+    const item = await Content.findOne({ _id: req.params.id, isPublished: true, submissionStatus: { $nin: ['pending', 'rejected'] } }).select(PUBLIC_FIELDS).lean()
     if (!item) return res.status(404).json({ error: 'Content not found' })
     res.json(item)
   } catch (err) {
@@ -104,14 +134,14 @@ router.get('/:id', async (req, res, next) => {
 router.get('/:id/stream', requireAuth, async (req, res, next) => {
   try {
     const item = await Content.findById(req.params.id)
-      .select('isPremium bunnyVideoId submissionStatus creatorId')
+      .select('isPremium bunnyVideoId submissionStatus isPublished creatorId')
       .lean()
 
     if (!item)              return res.status(404).json({ error: 'Content not found' })
     if (!item.bunnyVideoId) return res.status(404).json({ error: 'No video attached to this title' })
 
     const isOwnContent = item?.creatorId && req.user?._id?.toString() === item.creatorId.toString()
-    const isHidden = ['pending', 'rejected'].includes(item?.submissionStatus)
+    const isHidden = ['pending', 'rejected'].includes(item?.submissionStatus) || !item.isPublished
     if (isHidden && !isOwnContent) {
       return res.status(404).json({ error: 'Content not found' })
     }
@@ -123,6 +153,29 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
     }
 
     res.json({ hlsUrl: buildHlsUrl(item.bunnyVideoId, false) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/content/:id/view
+ * No auth required. Increments viewCount atomically.
+ * Optionally increments episode viewCount when episodeNumber is provided.
+ */
+router.post('/:id/view', async (req, res, next) => {
+  try {
+    const { episodeNumber } = req.body
+    if (episodeNumber != null) {
+      await Content.findByIdAndUpdate(
+        req.params.id,
+        { $inc: { viewCount: 1, 'episodes.$[ep].viewCount': 1 } },
+        { arrayFilters: [{ 'ep.number': Number(episodeNumber) }] }
+      )
+    } else {
+      await Content.findByIdAndUpdate(req.params.id, { $inc: { viewCount: 1 } })
+    }
+    res.json({ ok: true })
   } catch (err) {
     next(err)
   }

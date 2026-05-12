@@ -20,7 +20,7 @@ router.get('/', async (req, res, next) => {
 
     // Hide pending/rejected creator submissions from search.
     // Existing admin content has no submissionStatus field and must remain visible.
-    const approvedOnly = { submissionStatus: { $nin: ['pending', 'rejected'] } }
+    const approvedOnly = { isPublished: true, submissionStatus: { $nin: ['pending', 'rejected'] } }
 
     if (q.length < 4) {
       results = await Content

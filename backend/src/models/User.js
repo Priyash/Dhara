@@ -21,17 +21,27 @@ const userSchema = new mongoose.Schema(
     watchlist:              [{ type: String }],
     likedContent:           [{ type: String }],
     dislikedContent:        [{ type: String }],
+    watchProgress:          [{
+      contentId:     { type: String, required: true },
+      episodeNumber: { type: Number, default: null },
+      positionSecs:  { type: Number, default: 0 },
+      durationSecs:  { type: Number, default: 0 },
+      updatedAt:     { type: Date, default: () => new Date() },
+    }],
 
     // Creator Studio
     creatorStatus:          { type: String, enum: ['none', 'applied', 'approved', 'rejected'], default: 'none' },
     isCreator:              { type: Boolean, default: false },
     creatorProfile: {
-      studioName:   { type: String, default: '' },
-      bio:          { type: String, default: '' },
-      portfolioUrl: { type: String, default: '' },
-      appliedAt:    { type: Date,   default: null },
+      studioName:    { type: String,   default: '' },
+      bio:           { type: String,   default: '' },
+      portfolioUrl:  { type: String,   default: '' },
+      sampleWorkUrl: { type: String,   default: '' },  // link to reel / channel / past film
+      contentTypes:  { type: [String], default: [] },  // ['Film','Series','Documentary']
+      appliedAt:     { type: Date,     default: null },
     },
     creatorRejectionReason: { type: String, default: '' },
+    creatorRejectedAt:      { type: Date,   default: null },
   },
   { timestamps: true }
 )

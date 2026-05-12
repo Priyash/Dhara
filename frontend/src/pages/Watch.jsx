@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Clapperboard, Users, Globe, Play } from 'lucide-react'
 import VideoPlayer from '../components/VideoPlayer'
-import { fetchContentById, fetchStreamUrl } from '../services/api'
+import { fetchContentById, fetchStreamUrl, saveWatchProgress, recordView } from '../services/api'
 import { useStore } from '../store/useStore'
 import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './Watch.module.css'
@@ -14,10 +14,10 @@ function stripExtension(name = '') {
 export default function Watch() {
   const { id }   = useParams()
   const navigate = useNavigate()
-  const { isLoggedIn, isSubscribed, user, openPaywall, openVerifyEmailGate, openAuth } = useStore()
+  const { isLoggedIn, isSubscribed, user, openPaywall, openVerifyEmailGate, openAuth, authLoading } = useStore()
 
-  const [content,  setContent]  = useState(null)
-  const [hlsUrl,   setHlsUrl]   = useState(null)
+  const [content,        setContent]       = useState(null)
+  const [hlsUrl,         setHlsUrl]        = useState(null)
   const [activeEp, setActiveEp] = useState(0)
   const [showList, setShowList] = useState(false)
   const [loading,  setLoading]  = useState(true)
@@ -37,12 +37,41 @@ export default function Watch() {
     if (content.isPremium && !isSubscribed) return
 
     fetchStreamUrl(id)
-      .then(({ hlsUrl }) => setHlsUrl(hlsUrl))
+      .then(({ hlsUrl }) => { setHlsUrl(hlsUrl) })
       .catch(() => setError('Could not load stream. Please try again.'))
   }, [content, id, isLoggedIn, isSubscribed, user?.emailVerified])
 
-  if (loading) return <div className={styles.state}>Loading…</div>
-  if (error)   return <div className={styles.state}>{error}</div>
+  // Record a view once when the stream becomes available
+  useEffect(() => {
+    if (!hlsUrl) return
+    recordView(id).catch(() => {})
+  }, [hlsUrl, id])
+
+  // Persist watch progress to backend every 30 s while playing
+  useEffect(() => {
+    if (!hlsUrl || !isLoggedIn) return
+    const STORAGE_KEY = `dhara_progress_${id}`
+
+    const tick = () => {
+      const pos = parseFloat(localStorage.getItem(STORAGE_KEY) || '0')
+      const dur = parseFloat(localStorage.getItem(`${STORAGE_KEY}_dur`) || '0')
+      if (pos < 10) return
+      // Don't save if within last 45 s — treat as finished, remove from continue-watching
+      if (dur > 0 && pos > dur - 45) return
+      saveWatchProgress({
+        contentId:     id,
+        episodeNumber: content?.episodes?.length > 0 ? (content.episodes[activeEp]?.number ?? null) : null,
+        positionSecs:  Math.floor(pos),
+        durationSecs:  Math.floor(dur),
+      }).catch(() => {})
+    }
+
+    const timer = setInterval(tick, 30_000)
+    return () => clearInterval(timer)
+  }, [hlsUrl, isLoggedIn, id, activeEp, content])
+
+  if (loading || authLoading) return <div className={styles.state}>Loading…</div>
+  if (error)                  return <div className={styles.state}>{error}</div>
 
   const cleanTitle    = stripExtension(content.title)
   const episodes      = content?.episodes || []

@@ -3,7 +3,9 @@ import {
   UploadCloud, FolderPlus, ShieldAlert, RefreshCw, Link2, Film,
   CheckCircle2, XCircle, Pencil, X, Library, ImagePlus,
   CreditCard, Check, Copy, AlertTriangle, Zap, Code2, Crown,
-  UserCheck, UserX, FileCheck, FileX, ListPlus, Trash2,
+  UserCheck, UserX, FileCheck, FileX, ListPlus, Trash2, Eye,
+  GripVertical, Layers, Plus, UploadIcon, IndianRupee,
+  Calculator, Wallet, Clock, ChevronDown,
 } from 'lucide-react'
 import { uploadToCloudinary } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
@@ -12,19 +14,42 @@ import {
   createAdminCollection, createBunnyCollection, createUploadJob, fetchAdminContentById,
   getAdminSession, importFromCdn, listBunnyCollections, listBunnyVideos,
   listAdminCollections, listAdminContent, listUploadJobs,
-  mapExistingBunnyVideo, syncBunnyCollections, updateAdminContent,
+  mapExistingBunnyVideo, syncBunnyCollections, createAdminContent, updateAdminContent, togglePublishContent,
   uploadJobFile, getPaymentConfig, updatePaymentConfig,
   listCreatorApplications, approveCreatorApplication, rejectCreatorApplication,
   listAdminSubmissions, approveSubmission, rejectSubmission,
+  listAdminShelves, createAdminShelf, updateAdminShelf, deleteAdminShelf, reorderAdminShelves,
+  listAdminCreatorEarnings, calculateCreatorEarnings, processCreatorPayout, listAdminCreatorPayouts,
 } from '../services/api'
 import styles from './Admin.module.css'
+import { isValidDuration } from '../utils/duration'
 
 const TABS = [
-  { id: 'content',  label: 'Content',     icon: Library },
-  { id: 'uploads',  label: 'Uploads',     icon: UploadCloud },
-  { id: 'payments', label: 'Payments',    icon: CreditCard },
-  { id: 'creators', label: 'Creator Hub', icon: UserCheck },
+  { id: 'content',  label: 'Content',         icon: Library      },
+  { id: 'uploads',  label: 'Uploads',         icon: UploadCloud  },
+  { id: 'shelves',  label: 'Shelves',         icon: Layers       },
+  { id: 'payments', label: 'Payments',        icon: CreditCard   },
+  { id: 'creators', label: 'Creator Hub',     icon: UserCheck    },
+  { id: 'revenue',  label: 'Creator Revenue', icon: IndianRupee  },
 ]
+
+const NEW_CONTENT_ID = '__new__'
+
+const EMPTY_EDIT_FORM = {
+  title: '', subtitle: '', desc: '', type: 'Film', duration: '',
+  genre: '', cast: '', director: '', releaseYear: '', rating: '',
+  isPremium: false, isFeatured: false, badge: '',
+  posterUrl: '', backdropUrl: '', palette: '', reviewCount: '',
+  contentLanguage: 'Bengali', certification: '', contentWarnings: '',
+  moodTags: '', bunnyVideoId: '', episodes: [],
+}
+
+const SHELF_ACCENT_COLORS = [
+  '#f59e0b', '#818cf8', '#34d399', '#f87171',
+  '#a78bfa', '#fb923c', '#38bdf8', '#fb7185',
+]
+
+const EMPTY_SHELF = { name: '', tagline: '', backdropUrl: '', accentColor: '#f59e0b', contentIds: [] }
 
 const statusClass = {
   awaiting_file: styles.statusAwaiting,
@@ -63,6 +88,15 @@ export default function Admin() {
   const [episodeDuration, setEpisodeDuration] = useState('')
   const [seriesEpisodes, setSeriesEpisodes] = useState([])   // existing episodes of selected series
   const [loadingSeriesEpisodes, setLoadingSeriesEpisodes] = useState(false)
+  // Bulk upload mode (single vs. bulk queue for series)
+  const [uploadMode, setUploadMode]         = useState('single') // 'single' | 'bulk'
+  const bulkRowIdRef                        = useRef(1)
+  const [bulkRows, setBulkRows]             = useState([
+    { id: 0, number: '', title: '', duration: '', file: null, status: 'idle', error: '' },
+  ])
+  const [bulkBusy, setBulkBusy]             = useState(false)
+  // Drag-to-reorder state for episode rows in the edit modal
+  const [dragEpIdx, setDragEpIdx]           = useState(null)
   const [mapCollectionId, setMapCollectionId] = useState('')
   const [mapVideoId, setMapVideoId]           = useState('')
   const [mapContentId, setMapContentId]       = useState('')
@@ -73,6 +107,8 @@ export default function Admin() {
   const [error, setError]                     = useState('')
   const [dragOver, setDragOver]               = useState(false)
   const [toast, setToast]                     = useState(null)
+  const [jobsLastRefreshed, setJobsLastRefreshed] = useState(null)
+  const [refreshTick, setRefreshTick]             = useState(0)
 
   // ── Payment provider ──────────────────────────────────────────────────────
   const [paymentConfig, setPaymentConfig]   = useState(null)
@@ -90,6 +126,34 @@ export default function Admin() {
   const [creatorBusy, setCreatorBusy]                 = useState(false)
   const [rejectModal, setRejectModal]                 = useState(null)
   const [rejectReason, setRejectReason]               = useState('')
+
+  // ── Creator Revenue ──────────────────────────────────────────────────────
+  const [creatorEarnings,    setCreatorEarnings]    = useState([])
+  const [creatorPayouts,     setCreatorPayouts]     = useState([])
+  const [revenueLoading,     setRevenueLoading]     = useState(false)
+  const [showCalcModal,      setShowCalcModal]      = useState(false)
+  const [calcForm,           setCalcForm]           = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), ratePerViewPaise: 50 })
+  const [calcBusy,           setCalcBusy]           = useState(false)
+  const [calcResult,         setCalcResult]         = useState(null)
+  const [showPayoutModal,    setShowPayoutModal]     = useState(null)  // { creatorId, studioName, pending }
+  const [payoutForm,         setPayoutForm]         = useState({ method: 'Bank Transfer', referenceId: '', notes: '' })
+  const [payoutBusy,         setPayoutBusy]         = useState(false)
+  const [revenueNotice,      setRevenueNotice]      = useState('')
+  const [revenueError,       setRevenueError]       = useState('')
+
+  // ── Curated Shelves ───────────────────────────────────────────────────────
+  const [shelves,          setShelves]          = useState([])
+  const [shelvesLoading,   setShelvesLoading]   = useState(false)
+  const [showShelfModal,   setShowShelfModal]   = useState(false)
+  const [editingShelfId,   setEditingShelfId]   = useState(null)
+  const [shelfForm,        setShelfForm]        = useState(EMPTY_SHELF)
+  const [shelfBusy,        setShelfBusy]        = useState(false)
+  const [shelfNotice,      setShelfNotice]      = useState('')
+  const [shelfError,       setShelfError]       = useState('')
+  const [shelfImgUploading, setShelfImgUploading] = useState(false)
+  const [shelfContentSearch, setShelfContentSearch] = useState('')
+  const [dragShelfIdx,     setDragShelfIdx]     = useState(null)
+  const [dragOverShelfIdx, setDragOverShelfIdx] = useState(null)
 
   // ── Content editor ────────────────────────────────────────────────────────
   const [editingId, setEditingId]     = useState(null)
@@ -127,6 +191,7 @@ export default function Admin() {
     setCollections(collectionData)
     setContentItems(contentData)
     setJobs(jobData)
+    setJobsLastRefreshed(new Date())
     setBunnyCollections(bunnyCollectionData)
     if (paymentData) setPaymentConfig(paymentData)
   }
@@ -170,11 +235,18 @@ export default function Admin() {
     requestPermission()
     const timer = setInterval(() => {
       listUploadJobs(40)
-        .then((jobs) => { setJobs(jobs); checkTransitions(jobs) })
+        .then((jobs) => { setJobs(jobs); setJobsLastRefreshed(new Date()); checkTransitions(jobs) })
         .catch(() => {})
     }, 5000)
     return () => clearInterval(timer)
   }, [adminAllowed, requestPermission, checkTransitions])
+
+  // 1-second ticker so "Xs ago" label stays current
+  useEffect(() => {
+    if (!jobsLastRefreshed) return undefined
+    const t = setInterval(() => setRefreshTick((n) => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [jobsLastRefreshed])
 
   useEffect(() => {
     if (editForm && modalFormRef.current) modalFormRef.current.scrollTop = 0
@@ -184,6 +256,12 @@ export default function Admin() {
     if (activeTab === 'creators' && adminAllowed) {
       void loadCreatorApplications()
       void loadSubmissions()
+    }
+    if (activeTab === 'shelves' && adminAllowed) {
+      void loadShelves()
+    }
+    if (activeTab === 'revenue' && adminAllowed) {
+      void loadCreatorRevenue()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, adminAllowed])
@@ -239,7 +317,8 @@ export default function Admin() {
   }
 
   // ── Quick premium toggle (no modal needed) ───────────────────────────────
-  const [togglingPremium, setTogglingPremium] = useState(null) // item._id being toggled
+  const [togglingPremium, setTogglingPremium]   = useState(null)
+  const [togglingPublish, setTogglingPublish]   = useState(null)
 
   const handleTogglePremium = async (item) => {
     setTogglingPremium(item._id)
@@ -259,6 +338,25 @@ export default function Admin() {
     }
   }
 
+  const handleTogglePublish = async (item) => {
+    const next = !item.isPublished
+    setTogglingPublish(item._id)
+    setContentItems((prev) =>
+      prev.map((c) => c._id === item._id ? { ...c, isPublished: next } : c)
+    )
+    try {
+      await togglePublishContent(item._id, next)
+      showToast({ type: 'success', message: next ? 'Content published' : 'Content unpublished' })
+    } catch (err) {
+      setContentItems((prev) =>
+        prev.map((c) => c._id === item._id ? { ...c, isPublished: item.isPublished } : c)
+      )
+      showToast({ type: 'error', message: err?.message || 'Could not update publish state' })
+    } finally {
+      setTogglingPublish(null)
+    }
+  }
+
   // ── Content editor handlers ───────────────────────────────────────────────
   const openEditModal = async (item) => {
     setEditNotice('')
@@ -272,6 +370,7 @@ export default function Admin() {
         subtitle:        full.subtitle         || '',
         desc:            full.desc             || '',
         type:            full.type             || 'Film',
+        duration:        full.duration         || '',
         genre:           (full.genre          || []).join(', '),
         cast:            (full.cast           || []).join(', '),
         director:        full.director         || '',
@@ -309,6 +408,12 @@ export default function Admin() {
     setEditNotice('');  setEditError('')
   }
 
+  const openCreateModal = () => {
+    setEditingId(NEW_CONTENT_ID)
+    setEditForm(EMPTY_EDIT_FORM)
+    setEditNotice(''); setEditError('')
+  }
+
   const handleEditSave = async (e) => {
     e.preventDefault()
     setEditNotice(''); setEditError(''); setEditBusy(true)
@@ -318,6 +423,7 @@ export default function Admin() {
         subtitle:        editForm.subtitle.trim(),
         desc:            editForm.desc.trim(),
         type:            editForm.type,
+        duration:        editForm.type !== 'Series' ? (editForm.duration?.trim() || '') : '',
         genre:           editForm.genre.split(',').map((s) => s.trim()).filter(Boolean),
         cast:            editForm.cast.split(',').map((s) => s.trim()).filter(Boolean),
         director:        editForm.director.trim(),
@@ -338,14 +444,25 @@ export default function Admin() {
           number:      Number(ep.number),
           title:       ep.title.trim(),
           duration:    ep.duration.trim(),
-          bunnyVideoId: ep.bunnyVideoId.trim(),
+          bunnyVideoId: ep.bunnyVideoId?.trim() || '',
         })),
       }
-      await updateAdminContent(editingId, payload)
-      setEditNotice('Metadata saved.')
-      await loadData()
+
+      if (editingId === NEW_CONTENT_ID) {
+        // ── Create mode ──
+        const created = await createAdminContent(payload)
+        await loadData()
+        // Switch to edit mode so admin can see the "Go to Uploads" CTA
+        setEditingId(created._id)
+        setEditNotice(`"${created.title}" created successfully!`)
+      } else {
+        // ── Edit mode ──
+        await updateAdminContent(editingId, payload)
+        setEditNotice('Metadata saved.')
+        await loadData()
+      }
     } catch (err) {
-      setEditError(err?.message || 'Could not save metadata.')
+      setEditError(err?.message || 'Could not save.')
     } finally {
       setEditBusy(false)
     }
@@ -363,6 +480,17 @@ export default function Admin() {
       c.title?.toLowerCase().includes(q) || c.type?.toLowerCase().includes(q)
     )
   }, [contentItems, contentSearch])
+
+  // Set of contentIds that still have an active transcoding job
+  const processingContentIds = useMemo(() => {
+    const active = new Set()
+    for (const job of jobs) {
+      if (job.contentId && ['queued', 'uploading', 'processing'].includes(job.status)) {
+        active.add(typeof job.contentId === 'object' ? job.contentId._id ?? job.contentId : job.contentId)
+      }
+    }
+    return active
+  }, [jobs])
 
   const handleImageUpload = async (field, file) => {
     if (!file) return
@@ -485,6 +613,8 @@ export default function Admin() {
     setSelectedContentId(contentId)
     setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration('')
     setSeriesEpisodes([])
+    setUploadMode('single')
+    setBulkRows([{ id: bulkRowIdRef.current++, number: '', title: '', duration: '', file: null, status: 'idle', error: '' }])
     const selected = contentItems.find((c) => c._id === contentId)
     if (selected?.type === 'Series' && contentId) {
       setLoadingSeriesEpisodes(true)
@@ -500,6 +630,202 @@ export default function Admin() {
     }
   }
 
+  // ── Shelf handlers ────────────────────────────────────────────────────────
+  const loadShelves = async () => {
+    setShelvesLoading(true)
+    try {
+      const data = await listAdminShelves()
+      setShelves(data)
+    } catch { /* non-critical */ }
+    finally { setShelvesLoading(false) }
+  }
+
+  const openCreateShelf = () => {
+    setEditingShelfId(null); setShelfForm(EMPTY_SHELF)
+    setShelfNotice(''); setShelfError(''); setShelfContentSearch('')
+    setShowShelfModal(true)
+  }
+
+  const openEditShelf = (shelf) => {
+    setEditingShelfId(shelf._id)
+    setShelfForm({
+      name:        shelf.name        || '',
+      tagline:     shelf.tagline     || '',
+      backdropUrl: shelf.backdropUrl || '',
+      accentColor: shelf.accentColor || '#f59e0b',
+      contentIds:  (shelf.contentIds || []).map((id) => String(id)),
+    })
+    setShelfNotice(''); setShelfError(''); setShelfContentSearch('')
+    setShowShelfModal(true)
+  }
+
+  const closeShelfModal = () => { setShowShelfModal(false); setShelfError(''); setShelfNotice('') }
+
+  const handleShelfSave = async () => {
+    if (!shelfForm.name.trim()) { setShelfError('Name is required.'); return }
+    setShelfBusy(true); setShelfError(''); setShelfNotice('')
+    try {
+      if (editingShelfId) {
+        await updateAdminShelf(editingShelfId, shelfForm)
+        setShelfNotice('Shelf updated.')
+      } else {
+        await createAdminShelf(shelfForm)
+        closeShelfModal()
+      }
+      await loadShelves()
+    } catch (err) {
+      setShelfError(err?.message || 'Could not save shelf.')
+    } finally { setShelfBusy(false) }
+  }
+
+  const handleShelfDelete = async (id) => {
+    if (!window.confirm('Delete this shelf? It cannot be undone.')) return
+    try {
+      await deleteAdminShelf(id)
+      await loadShelves()
+      showToast({ type: 'success', message: 'Shelf deleted.' })
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Could not delete shelf.' })
+    }
+  }
+
+  const handleShelfToggleActive = async (shelf) => {
+    try {
+      await updateAdminShelf(shelf._id, { isActive: !shelf.isActive })
+      await loadShelves()
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Could not toggle shelf.' })
+    }
+  }
+
+  const handleShelfDrop = async (toIdx) => {
+    setDragOverShelfIdx(null)
+    if (dragShelfIdx === null || dragShelfIdx === toIdx) { setDragShelfIdx(null); return }
+    const previous = [...shelves]
+    const reordered = [...shelves]
+    const [moved] = reordered.splice(dragShelfIdx, 1)
+    reordered.splice(toIdx, 0, moved)
+    setShelves(reordered)
+    setDragShelfIdx(null)
+    try {
+      await reorderAdminShelves(reordered.map((s, i) => ({ id: s._id, displayOrder: i })))
+      showToast({ type: 'success', message: 'Shelf order saved.' })
+    } catch (err) {
+      setShelves(previous)
+      showToast({ type: 'error', message: err?.message || 'Could not save shelf order.' })
+    }
+  }
+
+  const handleShelfImageUpload = async (file) => {
+    if (!file) return
+    setShelfImgUploading(true)
+    try {
+      const url = await uploadToCloudinary(file, { folder: 'dhara/shelves', onProgress: () => {} })
+      setShelfForm((prev) => ({ ...prev, backdropUrl: url }))
+    } catch (err) {
+      setShelfError(err?.message || 'Image upload failed.')
+    } finally { setShelfImgUploading(false) }
+  }
+
+  const toggleShelfContent = (contentId) => {
+    const id = String(contentId)
+    setShelfForm((prev) => ({
+      ...prev,
+      contentIds: prev.contentIds.includes(id)
+        ? prev.contentIds.filter((c) => c !== id)
+        : [...prev.contentIds, id],
+    }))
+  }
+
+  // ── Creator Revenue handlers ──────────────────────────────────────────────
+  const loadCreatorRevenue = async () => {
+    setRevenueLoading(true)
+    try {
+      const [earnings, payouts] = await Promise.all([
+        listAdminCreatorEarnings(),
+        listAdminCreatorPayouts(),
+      ])
+      setCreatorEarnings(earnings)
+      setCreatorPayouts(payouts)
+    } catch (err) {
+      setRevenueError(err?.message || 'Could not load revenue data.')
+    } finally {
+      setRevenueLoading(false)
+    }
+  }
+
+  const handleCalculateEarnings = async () => {
+    setCalcBusy(true); setCalcResult(null); setRevenueError('')
+    try {
+      const res = await calculateCreatorEarnings(calcForm)
+      setCalcResult(res)
+      await loadCreatorRevenue()
+    } catch (err) {
+      setRevenueError(err?.message || 'Calculation failed.')
+    } finally {
+      setCalcBusy(false) }
+  }
+
+  const handleProcessPayout = async () => {
+    if (!showPayoutModal) return
+    setPayoutBusy(true); setRevenueError('')
+    try {
+      await processCreatorPayout({ creatorId: showPayoutModal.creatorId, ...payoutForm })
+      showToast({ type: 'success', message: `Payout of ₹${showPayoutModal.pending.toLocaleString('en-IN')} processed` })
+      setShowPayoutModal(null)
+      setPayoutForm({ method: 'Bank Transfer', referenceId: '', notes: '' })
+      await loadCreatorRevenue()
+    } catch (err) {
+      setRevenueError(err?.message || 'Payout failed.')
+    } finally {
+      setPayoutBusy(false) }
+  }
+
+  const handleBulkUpload = async (e) => {
+    e.preventDefault()
+    if (!selectedCollectionId) { setError('Please select a mapped collection.'); return }
+    const validRows = bulkRows.filter((r) => r.number && r.file)
+    if (validRows.length === 0) { setError('Add at least one row with an episode number and video file.'); return }
+    const badDuration = validRows.find((r) => r.duration && !isValidDuration(r.duration))
+    if (badDuration) {
+      setError(`Ep ${badDuration.number}: invalid duration "${badDuration.duration}". Use "42m", "1h 20m", or "1:20".`)
+      return
+    }
+
+    setBulkBusy(true); setError(''); setNotice('')
+    let allOk = true
+    for (const row of validRows) {
+      const fileErr = validateVideoFile(row.file)
+      if (fileErr) {
+        setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: 'error', error: fileErr } : r))
+        allOk = false; continue
+      }
+      setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: 'uploading', error: '' } : r))
+      try {
+        const job = await createUploadJob({
+          title:           row.title.trim() || `Episode ${row.number}`,
+          collectionId:    selectedCollectionId,
+          contentId:       selectedContentId || null,
+          episodeNumber:   Number(row.number),
+          episodeTitle:    row.title.trim(),
+          episodeDuration: row.duration.trim(),
+        })
+        await uploadJobFile(job._id, row.file)
+        setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: 'done' } : r))
+      } catch (err) {
+        setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: 'error', error: err?.message || 'Upload failed' } : r))
+        allOk = false
+      }
+    }
+    setBulkBusy(false)
+    if (allOk) {
+      setNotice(`Queued ${validRows.length} episode upload${validRows.length !== 1 ? 's' : ''} — processing asynchronously.`)
+      setBulkRows([{ id: bulkRowIdRef.current++, number: '', title: '', duration: '', file: null, status: 'idle', error: '' }])
+      setUploadMode('single')
+      await loadData()
+    }
+  }
+
   const handleUpload = async (e) => {
     e.preventDefault()
     const fileErr = validateVideoFile(file)
@@ -508,6 +834,8 @@ export default function Admin() {
 
     const isSeries = Boolean(selectedContentId && contentItems.find((c) => c._id === selectedContentId)?.type === 'Series')
     if (isSeries && !episodeNumber) return setError('Please enter an episode number for this series.')
+    if (isSeries && episodeDuration && !isValidDuration(episodeDuration))
+      return setError(`Invalid episode duration "${episodeDuration}". Use "42m", "1h 20m", or "1:20".`)
 
     setNotice(''); setError(''); setBusy(true)
     try {
@@ -644,6 +972,7 @@ export default function Admin() {
             {activeTab === 'uploads'  && 'Upload and map video files'}
             {activeTab === 'payments' && 'Configure payment infrastructure'}
             {activeTab === 'creators' && 'Review creator applications and content submissions'}
+            {activeTab === 'revenue'  && 'Calculate monthly earnings and process creator payouts'}
           </p>
         </div>
         <div className={styles.headerActions}>
@@ -691,12 +1020,21 @@ export default function Admin() {
         <section className={styles.jobsCard}>
           <div className={styles.libraryHeader}>
             <h2 className={styles.cardTitle}><Library size={16} /> Content Library</h2>
-            <input
-              className={styles.librarySearch}
-              placeholder="Search title or type…"
-              value={contentSearch}
-              onChange={(e) => setContentSearch(e.target.value)}
-            />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                className={styles.librarySearch}
+                placeholder="Search title or type…"
+                value={contentSearch}
+                onChange={(e) => setContentSearch(e.target.value)}
+              />
+              <button
+                className={styles.primaryBtn}
+                style={{ padding: '7px 14px', fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
+                onClick={openCreateModal}
+              >
+                <Plus size={13} /> New Content
+              </button>
+            </div>
           </div>
           <div className={styles.libraryList}>
             {filteredContent.length === 0 && <p className={styles.empty}>No content found.</p>}
@@ -708,10 +1046,31 @@ export default function Admin() {
                     {item.type}
                     {item.releaseYear ? ` · ${item.releaseYear}` : ''}
                     {item.genre?.length ? ` · ${item.genre.join(', ')}` : ''}
-                    {!item.bunnyVideoId ? ' · No stream' : ''}
+                    {processingContentIds.has(item._id) ? ' · Transcoding…' : !item.bunnyVideoId ? ' · No video' : ''}
                   </p>
                 </div>
                 <div className={styles.libraryActions}>
+                  {(() => {
+                    const isProcessing = processingContentIds.has(item._id)
+                    const hasVideo = Boolean(item.bunnyVideoId)
+                    const canPublish = hasVideo && !isProcessing
+                    return (
+                      <button
+                        className={`${styles.proToggleBtn} ${item.isPublished ? styles.proToggleBtnOn : ''}`}
+                        onClick={() => handleTogglePublish(item)}
+                        disabled={togglingPublish === item._id || (!item.isPublished && !canPublish)}
+                        title={
+                          isProcessing ? 'Video is still transcoding — wait for it to finish'
+                          : !hasVideo ? 'No video uploaded yet'
+                          : item.isPublished ? 'Click to unpublish'
+                          : 'Click to publish'
+                        }
+                      >
+                        {isProcessing ? <RefreshCw size={11} className={styles.refreshIconSpinning} /> : <Eye size={11} />}
+                        {isProcessing ? 'Processing…' : item.isPublished ? 'Unpublish' : 'Publish'}
+                      </button>
+                    )
+                  })()}
                   <button
                     className={`${styles.proToggleBtn} ${item.isPremium ? styles.proToggleBtnOn : ''}`}
                     onClick={() => handleTogglePremium(item)}
@@ -848,21 +1207,44 @@ export default function Admin() {
                       Video uploads to CDN but won't appear in the app until mapped.
                     </span>
                   )}
+                  {selectedContentId && contentItems.find((c) => c._id === selectedContentId)?.type !== 'Series' && (
+                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.3rem', display: 'block' }}>
+                      Select a <strong style={{ color: 'var(--color-accent)' }}>Series</strong> to enable episode-by-episode upload.
+                    </span>
+                  )}
                 </label>
 
                 {/* ── Episode fields — shown only for Series ── */}
                 {selectedContentId && contentItems.find((c) => c._id === selectedContentId)?.type === 'Series' && (
                   <div className={styles.episodeUploadBlock}>
-                    <p className={styles.episodeUploadTitle}>
-                      <Film size={12} /> Series Episode
-                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <p className={styles.episodeUploadTitle}>
+                        <Film size={12} /> Series Episodes
+                      </p>
+                      <div className={styles.uploadModeToggle}>
+                        <button
+                          type="button"
+                          className={uploadMode === 'single' ? styles.modePillActive : styles.modePillInactive}
+                          onClick={() => setUploadMode('single')}
+                        >
+                          Single
+                        </button>
+                        <button
+                          type="button"
+                          className={uploadMode === 'bulk' ? styles.modePillActive : styles.modePillInactive}
+                          onClick={() => setUploadMode('bulk')}
+                        >
+                          Bulk Queue
+                        </button>
+                      </div>
+                    </div>
 
                     {loadingSeriesEpisodes && (
                       <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Loading existing episodes…</p>
                     )}
 
-                    {/* Existing episodes summary */}
-                    {seriesEpisodes.length > 0 && (
+                    {/* Existing episodes summary pills */}
+                    {seriesEpisodes.length > 0 && uploadMode === 'single' && (
                       <div className={styles.existingEpisodes}>
                         <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 6 }}>
                           Already uploaded: {seriesEpisodes.map((ep) => `E${ep.number}`).join(', ')}
@@ -887,49 +1269,151 @@ export default function Admin() {
                       </div>
                     )}
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: 8, marginTop: 8 }}>
-                      <label className={styles.label}>
-                        Ep #
-                        <input
-                          className={styles.input}
-                          type="number"
-                          min="1"
-                          value={episodeNumber}
-                          onChange={(e) => setEpisodeNumber(e.target.value)}
-                          placeholder="1"
-                          required
-                        />
-                      </label>
-                      <label className={styles.label}>
-                        Episode Title
-                        <input
-                          className={styles.input}
-                          value={episodeTitle}
-                          onChange={(e) => setEpisodeTitle(e.target.value)}
-                          placeholder={`Episode ${episodeNumber || 'N'} title`}
-                        />
-                      </label>
-                      <label className={styles.label}>
-                        Duration
-                        <input
-                          className={styles.input}
-                          value={episodeDuration}
-                          onChange={(e) => setEpisodeDuration(e.target.value)}
-                          placeholder="42m"
-                        />
-                      </label>
-                    </div>
+                    {/* Single episode fields */}
+                    {uploadMode === 'single' && (
+                      <>
+                        <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: 8, marginTop: 8 }}>
+                          <label className={styles.label}>
+                            Ep #
+                            <input
+                              className={styles.input}
+                              type="number"
+                              min="1"
+                              value={episodeNumber}
+                              onChange={(e) => setEpisodeNumber(e.target.value)}
+                              placeholder="1"
+                              required
+                            />
+                          </label>
+                          <label className={styles.label}>
+                            Episode Title
+                            <input
+                              className={styles.input}
+                              value={episodeTitle}
+                              onChange={(e) => setEpisodeTitle(e.target.value)}
+                              placeholder={`Episode ${episodeNumber || 'N'} title`}
+                            />
+                          </label>
+                          <label className={styles.label}>
+                            Duration <span className={styles.labelHint}>(e.g. 42m, 1h 20m)</span>
+                            <input
+                              className={`${styles.input} ${episodeDuration && !isValidDuration(episodeDuration) ? styles.inputError : ''}`}
+                              value={episodeDuration}
+                              onChange={(e) => setEpisodeDuration(e.target.value)}
+                              placeholder="42m"
+                              title="Format: 42m · 1h · 1h 20m · 1:20"
+                            />
+                            {episodeDuration && !isValidDuration(episodeDuration) && (
+                              <span style={{ fontSize: 11, color: '#f87171', marginTop: 3 }}>
+                                Use: 42m · 2h · 1h 20m · 1:20
+                              </span>
+                            )}
+                          </label>
+                        </div>
+                        <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                          The video will link to Episode {episodeNumber || 'N'} once processed.
+                        </p>
+                      </>
+                    )}
 
-                    <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
-                      The video will automatically link to Episode {episodeNumber || 'N'} of this series once processed.
-                    </p>
+                    {/* Bulk upload queue */}
+                    {uploadMode === 'bulk' && (
+                      <div className={styles.bulkTable}>
+                        <div className={styles.bulkHeaderRow}>
+                          <span>Ep #</span>
+                          <span>Title</span>
+                          <span>Duration</span>
+                          <span>File</span>
+                          <span />
+                        </div>
+                        {bulkRows.map((row) => (
+                          <div key={row.id} className={`${styles.bulkRow} ${row.status === 'done' ? styles.bulkRowDone : row.status === 'error' ? styles.bulkRowError : row.status === 'uploading' ? styles.bulkRowUploading : ''}`}>
+                            <input
+                              className={styles.input}
+                              type="number"
+                              min="1"
+                              value={row.number}
+                              placeholder="1"
+                              disabled={bulkBusy}
+                              onChange={(e) => setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, number: e.target.value } : r))}
+                            />
+                            <input
+                              className={styles.input}
+                              value={row.title}
+                              placeholder="Episode title"
+                              disabled={bulkBusy}
+                              onChange={(e) => setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, title: e.target.value } : r))}
+                            />
+                            <input
+                              className={`${styles.input} ${row.duration && !isValidDuration(row.duration) ? styles.inputError : ''}`}
+                              value={row.duration}
+                              placeholder="42m"
+                              title="Format: 42m · 1h · 1h 20m · 1:20"
+                              disabled={bulkBusy}
+                              onChange={(e) => setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, duration: e.target.value } : r))}
+                            />
+                            <label className={styles.bulkFileBtn}>
+                              {row.status === 'uploading' ? '⟳ Uploading…'
+                                : row.status === 'done'    ? '✓ Done'
+                                : row.file                 ? row.file.name.slice(0, 20)
+                                :                            'Choose file'}
+                              <input
+                                type="file"
+                                accept=".mp4,.mov,.mkv,video/mp4,video/quicktime,video/x-matroska"
+                                style={{ display: 'none' }}
+                                disabled={bulkBusy || row.status === 'done'}
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0] || null
+                                  setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, file: f, status: 'idle', error: '' } : r))
+                                }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className={styles.epDeleteBtn}
+                              disabled={bulkBusy}
+                              onClick={() => setBulkRows((prev) => prev.filter((r) => r.id !== row.id))}
+                              aria-label="Remove row"
+                            >
+                              <X size={12} />
+                            </button>
+                            {row.error && (
+                              <p className={styles.bulkRowErrMsg}>{row.error}</p>
+                            )}
+                          </div>
+                        ))}
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                          <button
+                            type="button"
+                            className={styles.ghostBtn}
+                            disabled={bulkBusy}
+                            onClick={() => {
+                              const nextNum = bulkRows.reduce((max, r) => Math.max(max, Number(r.number) || 0), 0) + 1
+                              setBulkRows((prev) => [...prev, { id: bulkRowIdRef.current++, number: String(nextNum), title: '', duration: '', file: null, status: 'idle', error: '' }])
+                            }}
+                            style={{ fontSize: 12, padding: '5px 12px' }}
+                          >
+                            + Add Row
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.primaryBtn}
+                            disabled={bulkBusy}
+                            onClick={handleBulkUpload}
+                            style={{ fontSize: 12, padding: '5px 16px' }}
+                          >
+                            {bulkBusy ? 'Uploading…' : `Upload All (${bulkRows.filter((r) => r.number && r.file && r.status !== 'done').length})`}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-accent)', margin: '1rem 0 0.5rem' }}>
+                {uploadMode === 'single' && <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-accent)', margin: '1rem 0 0.5rem' }}>
                   STEP 3 — UPLOAD FILE
-                </p>
-                <div className={styles.label}>
+                </p>}
+                <div className={styles.label} style={uploadMode === 'bulk' ? { display: 'none' } : {}}>
                   <div
                     className={`${styles.dropZone} ${dragOver ? styles.dropZoneActive : ''}`}
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
@@ -945,9 +1429,11 @@ export default function Admin() {
                   </div>
                 </div>
 
-                <button className={styles.primaryBtn} type="submit" disabled={busy || !selectedCollection}>
-                  {busy ? 'Uploading...' : 'Upload Video'}
-                </button>
+                {uploadMode === 'single' && (
+                  <button className={styles.primaryBtn} type="submit" disabled={busy || !selectedCollection}>
+                    {busy ? 'Uploading...' : 'Upload Video'}
+                  </button>
+                )}
               </form>
             </article>
           </section>
@@ -996,7 +1482,18 @@ export default function Admin() {
           </section>
 
           <section className={styles.jobsCard}>
-            <h2 className={styles.cardTitle}>Upload Queue</h2>
+            <div className={styles.uploadQueueHeader}>
+              <h2 className={styles.cardTitle}>Upload Queue</h2>
+              <span className={styles.liveIndicator}>
+                <span className={styles.livePulseDot} />
+                Live
+                {jobsLastRefreshed && (
+                  <span className={styles.liveAgo}>
+                    · {Math.floor((Date.now() - jobsLastRefreshed.getTime()) / 1000)}s ago
+                  </span>
+                )}
+              </span>
+            </div>
             <div className={styles.jobsList}>
               {jobs.length === 0 && <p className={styles.empty}>No uploads yet.</p>}
               {jobs.map((job) => (
@@ -1024,6 +1521,194 @@ export default function Admin() {
             </div>
           </section>
         </>
+      )}
+
+      {/* ── SHELVES TAB ──────────────────────────────────────────────────── */}
+      {activeTab === 'shelves' && (
+        <section className={styles.jobsCard}>
+
+          {/* Shelf create / edit modal */}
+          {showShelfModal && (
+            <div className={styles.modalBackdrop} onClick={(e) => e.target === e.currentTarget && closeShelfModal()}>
+              <div className={styles.modalPanel} style={{ maxWidth: 680 }} role="dialog" aria-modal="true">
+                <div className={styles.modalHeader}>
+                  <h2 className={styles.modalTitle}><Layers size={14} /> {editingShelfId ? 'Edit Shelf' : 'New Shelf'}</h2>
+                  <button className={styles.modalClose} onClick={closeShelfModal}><X size={16} /></button>
+                </div>
+                {shelfNotice && <p className={`${styles.message} ${styles.notice}`}>{shelfNotice}</p>}
+                {shelfError  && <p className={`${styles.message} ${styles.error}`}>{shelfError}</p>}
+                <div className={styles.modalForm} style={{ overflowY: 'auto', maxHeight: '70vh', padding: '20px 24px' }}>
+                  <div className={styles.modalGrid}>
+                    <label className={`${styles.label} ${styles.spanFull}`}>
+                      Shelf Name *
+                      <input className={styles.input} value={shelfForm.name} onChange={(e) => setShelfForm((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Bengali Noir" autoFocus />
+                    </label>
+                    <label className={`${styles.label} ${styles.spanFull}`}>
+                      Tagline <span className={styles.labelHint}>(short descriptor)</span>
+                      <input className={styles.input} value={shelfForm.tagline} onChange={(e) => setShelfForm((p) => ({ ...p, tagline: e.target.value }))} placeholder="Dark, slow-burn thrillers" />
+                    </label>
+
+                    {/* Backdrop image */}
+                    <div className={`${styles.label} ${styles.spanFull}`}>
+                      Backdrop Image
+                      <div className={styles.shelfBackdropPreview} style={{ backgroundImage: shelfForm.backdropUrl ? `url(${shelfForm.backdropUrl})` : undefined, borderColor: shelfForm.accentColor + '44' }}>
+                        {!shelfForm.backdropUrl && <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>No backdrop — gradient will be used</span>}
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                        <label className={styles.imageUploadBtn}>
+                          {shelfImgUploading ? 'Uploading…' : 'Upload Backdrop'}
+                          <input type="file" accept="image/*" style={{ display: 'none' }} disabled={shelfImgUploading}
+                            onChange={(e) => handleShelfImageUpload(e.target.files?.[0])} />
+                        </label>
+                        <input className={styles.input} value={shelfForm.backdropUrl} onChange={(e) => setShelfForm((p) => ({ ...p, backdropUrl: e.target.value }))} placeholder="Or paste URL…" style={{ flex: 1 }} />
+                      </div>
+                    </div>
+
+                    {/* Accent color swatches */}
+                    <div className={`${styles.label} ${styles.spanFull}`}>
+                      Accent Colour
+                      <div className={styles.shelfSwatches}>
+                        {SHELF_ACCENT_COLORS.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            className={`${styles.shelfSwatch} ${shelfForm.accentColor === c ? styles.shelfSwatchActive : ''}`}
+                            style={{ background: c }}
+                            onClick={() => setShelfForm((p) => ({ ...p, accentColor: c }))}
+                            title={c}
+                          />
+                        ))}
+                        <input
+                          type="color"
+                          value={shelfForm.accentColor}
+                          onChange={(e) => setShelfForm((p) => ({ ...p, accentColor: e.target.value }))}
+                          className={styles.shelfColorInput}
+                          title="Custom colour"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Content picker */}
+                    <div className={`${styles.label} ${styles.spanFull}`}>
+                      Content <span className={styles.labelHint}>({shelfForm.contentIds.length} selected)</span>
+                      <input
+                        className={styles.input}
+                        value={shelfContentSearch}
+                        onChange={(e) => setShelfContentSearch(e.target.value)}
+                        placeholder="Search titles…"
+                        style={{ marginBottom: 8 }}
+                      />
+                      <div className={styles.shelfContentPicker}>
+                        {contentItems
+                          .filter((item) => !shelfContentSearch.trim() || item.title.toLowerCase().includes(shelfContentSearch.toLowerCase()))
+                          .map((item) => {
+                            const selected = shelfForm.contentIds.includes(String(item._id))
+                            return (
+                              <label key={item._id} className={`${styles.shelfContentRow} ${selected ? styles.shelfContentRowSelected : ''}`} style={selected ? { borderColor: shelfForm.accentColor + '55' } : {}}>
+                                <input type="checkbox" checked={selected} onChange={() => toggleShelfContent(item._id)} style={{ accentColor: shelfForm.accentColor }} />
+                                <span className={styles.shelfContentTitle}>{item.title}</span>
+                                <span className={styles.shelfContentType}>{item.type}</span>
+                              </label>
+                            )
+                          })}
+                        {contentItems.length === 0 && <p style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: 12 }}>No content in library yet.</p>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className={styles.modalFooter}>
+                  <button className={styles.ghostBtn} onClick={closeShelfModal}>Cancel</button>
+                  <button className={styles.primaryBtn} disabled={shelfBusy} onClick={handleShelfSave}>
+                    {shelfBusy ? 'Saving…' : editingShelfId ? 'Save Changes' : 'Create Shelf'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Shelf list header */}
+          <div className={styles.libraryHeader}>
+            <h2 className={styles.cardTitle}><Layers size={16} /> Curated Shelves</h2>
+            <button className={styles.primaryBtn} style={{ padding: '7px 16px', fontSize: 12 }} onClick={openCreateShelf}>
+              + New Shelf
+            </button>
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 20, marginTop: -8 }}>
+            Create themed rows that appear on the home page. Drag to reorder. Each shelf can mix films, series, and documentaries.
+          </p>
+
+          {shelvesLoading && <p className={styles.empty}>Loading shelves…</p>}
+
+          {!shelvesLoading && shelves.length === 0 && (
+            <div className={styles.creatorEmptyState}>
+              <Layers size={28} className={styles.creatorEmptyIcon} />
+              <p className={styles.creatorEmptyTitle}>No shelves yet</p>
+              <p className={styles.creatorEmptyDesc}>Create your first curated shelf to feature themed collections on the home page.</p>
+            </div>
+          )}
+
+          {shelves.map((shelf, idx) => (
+            <div
+              key={shelf._id}
+              className={[
+                styles.shelfRow,
+                dragShelfIdx === idx    ? styles.shelfRowDragging : '',
+                dragOverShelfIdx === idx && dragShelfIdx !== idx ? styles.shelfRowDragOver : '',
+              ].join(' ')}
+              draggable
+              onDragStart={() => { setDragShelfIdx(idx); setDragOverShelfIdx(null) }}
+              onDragEnter={() => setDragOverShelfIdx(idx)}
+              onDragOver={(e) => e.preventDefault()}
+              onDragLeave={() => setDragOverShelfIdx(null)}
+              onDrop={() => handleShelfDrop(idx)}
+              onDragEnd={() => { setDragShelfIdx(null); setDragOverShelfIdx(null) }}
+              style={{ borderLeftColor: shelf.accentColor }}
+            >
+              {/* Backdrop thumbnail */}
+              <div className={styles.shelfThumb} style={{
+                backgroundImage: shelf.backdropUrl ? `url(${shelf.backdropUrl})` : undefined,
+                background: shelf.backdropUrl ? undefined : `linear-gradient(135deg, ${shelf.accentColor}22, ${shelf.accentColor}08)`,
+                borderColor: shelf.accentColor + '33',
+              }} />
+
+              {/* Info */}
+              <div className={styles.shelfInfo}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <p className={styles.shelfName}>{shelf.name}</p>
+                  <span className={styles.shelfAccentDot} style={{ background: shelf.accentColor }} />
+                  {!shelf.isActive && <span style={{ fontSize: 10, color: '#f87171', fontWeight: 700, textTransform: 'uppercase' }}>Hidden</span>}
+                </div>
+                {shelf.tagline && <p className={styles.shelfTagline}>{shelf.tagline}</p>}
+                <p className={styles.shelfMeta}>{(shelf.contentIds || []).length} item{(shelf.contentIds || []).length !== 1 ? 's' : ''}</p>
+              </div>
+
+              {/* Drag handle */}
+              <GripVertical size={14} className={styles.epDragHandle} title="Drag to reorder" />
+
+              {/* Actions */}
+              <div className={styles.libraryActions}>
+                <button
+                  className={`${styles.proToggleBtn} ${shelf.isActive ? styles.proToggleBtnOn : ''}`}
+                  onClick={() => handleShelfToggleActive(shelf)}
+                  title={shelf.isActive ? 'Hide from home page' : 'Show on home page'}
+                >
+                  <Eye size={11} />
+                  {shelf.isActive ? 'Visible' : 'Hidden'}
+                </button>
+                <button className={styles.editBtn} onClick={() => openEditShelf(shelf)}>
+                  <Pencil size={12} /> Edit
+                </button>
+                <button
+                  className={styles.editBtn}
+                  style={{ background: 'rgba(248,113,113,0.12)', color: '#f87171', borderColor: 'rgba(248,113,113,0.3)' }}
+                  onClick={() => handleShelfDelete(shelf._id)}
+                >
+                  <Trash2 size={12} /> Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </section>
       )}
 
       {/* ── PAYMENTS TAB ─────────────────────────────────────────────────── */}
@@ -1263,11 +1948,25 @@ export default function Admin() {
                       {applicant.email}
                       {applicant.creatorProfile?.bio ? ` · ${applicant.creatorProfile.bio.slice(0, 80)}` : ''}
                     </p>
+                    {applicant.creatorProfile?.sampleWorkUrl && (
+                      <p className={styles.creatorAppPortfolio}>
+                        <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginRight: 4 }}>Sample:</span>
+                        <a href={applicant.creatorProfile.sampleWorkUrl} target="_blank" rel="noreferrer" style={{ color: '#a78bfa', fontSize: 12 }}>
+                          {applicant.creatorProfile.sampleWorkUrl.replace(/^https?:\/\//, '')}
+                        </a>
+                      </p>
+                    )}
                     {applicant.creatorProfile?.portfolioUrl && (
                       <p className={styles.creatorAppPortfolio}>
+                        <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginRight: 4 }}>Portfolio:</span>
                         <a href={applicant.creatorProfile.portfolioUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--color-accent)', fontSize: 12 }}>
-                          {applicant.creatorProfile.portfolioUrl}
+                          {applicant.creatorProfile.portfolioUrl.replace(/^https?:\/\//, '')}
                         </a>
+                      </p>
+                    )}
+                    {applicant.creatorProfile?.contentTypes?.length > 0 && (
+                      <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                        Plans to upload: {applicant.creatorProfile.contentTypes.join(' · ')}
                       </p>
                     )}
                     {applicant.creatorRejectionReason && (
@@ -1290,12 +1989,12 @@ export default function Admin() {
                   <div className={styles.libraryActions}>
                     {applicant.creatorStatus !== 'approved' && (
                       <button className={styles.editBtn} style={{ background: 'rgba(74,222,128,0.15)', color: '#4ade80', borderColor: 'rgba(74,222,128,0.3)' }} disabled={creatorBusy} onClick={() => handleApproveCreator(applicant._id)}>
-                        <UserCheck size={12} /> Approve
+                        <UserCheck size={12} /> {applicant.creatorStatus === 'rejected' ? 'Re-approve' : 'Approve'}
                       </button>
                     )}
                     {applicant.creatorStatus !== 'rejected' && (
                       <button className={styles.editBtn} style={{ background: 'rgba(248,113,113,0.12)', color: '#f87171', borderColor: 'rgba(248,113,113,0.3)' }} disabled={creatorBusy} onClick={() => { setRejectModal({ type: 'app', id: applicant._id, name: applicant.email }); setRejectReason('') }}>
-                        <UserX size={12} /> Reject
+                        <UserX size={12} /> {applicant.creatorStatus === 'approved' ? 'Revoke Access' : 'Reject'}
                       </button>
                     )}
                   </div>
@@ -1357,12 +2056,23 @@ export default function Admin() {
         </div>
       )}
 
-      {/* Edit metadata modal — shown on any tab */}
-      {editingId && (
+      {/* Edit / Create metadata modal — shown on any tab */}
+      {editingId && (() => {
+        const isCreateMode = editingId === NEW_CONTENT_ID
+        return (
         <div className={styles.modalBackdrop} onClick={(e) => e.target === e.currentTarget && closeEditModal()}>
-          <div className={styles.modalPanel} role="dialog" aria-modal="true" aria-label="Edit metadata">
+          <div className={styles.modalPanel} role="dialog" aria-modal="true" aria-label={isCreateMode ? 'New content' : 'Edit metadata'} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
-              <h2 className={styles.modalTitle}><Pencil size={14} /> Edit Metadata</h2>
+              <div>
+                {isCreateMode && (
+                  <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--color-accent)', margin: '0 0 4px' }}>
+                    New Content
+                  </p>
+                )}
+                <h2 className={styles.modalTitle}>
+                  {isCreateMode ? <><Plus size={14} /> Create Content</> : <><Pencil size={14} /> Edit Metadata</>}
+                </h2>
+              </div>
               <button className={styles.modalClose} onClick={closeEditModal} aria-label="Close"><X size={16} /></button>
             </div>
 
@@ -1389,6 +2099,22 @@ export default function Admin() {
                       <option value="Documentary">Documentary</option>
                     </select>
                   </label>
+                  {editForm.type !== 'Series' && (
+                    <label className={styles.label}>
+                      Duration <span className={styles.labelHint}>(e.g. 1h 45m, 105m)</span>
+                      <input
+                        className={`${styles.input} ${editForm.duration && !isValidDuration(editForm.duration) ? styles.inputError : ''}`}
+                        value={editForm.duration || ''}
+                        onChange={ef('duration')}
+                        placeholder="1h 45m"
+                      />
+                      {editForm.duration && !isValidDuration(editForm.duration) && (
+                        <span style={{ fontSize: 11, color: '#f87171', marginTop: 3 }}>
+                          Use: 42m · 2h · 1h 20m · 1:20
+                        </span>
+                      )}
+                    </label>
+                  )}
                   <label className={styles.label}>
                     Language
                     <select className={styles.select} value={editForm.contentLanguage || ''} onChange={ef('contentLanguage')}>
@@ -1469,7 +2195,19 @@ export default function Admin() {
                           <p className={styles.imageSlotLabel}>{label} <span className={styles.labelHint}>{hint}</span></p>
                           <div className={styles.imagePreviewWrap}>
                             {editForm[field]
-                              ? <img src={editForm[field]} className={styles.imagePreview} alt={`${label} preview`} />
+                              ? (
+                                <>
+                                  <img src={editForm[field]} className={styles.imagePreview} alt={`${label} preview`} />
+                                  <button
+                                    type="button"
+                                    className={styles.imageClearBtn}
+                                    onClick={() => setEditForm((prev) => ({ ...prev, [field]: '' }))}
+                                    aria-label={`Remove ${label}`}
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </>
+                              )
                               : <div className={styles.imageEmpty}><ImagePlus size={22} opacity={0.3} /><span>No image</span></div>
                             }
                           </div>
@@ -1537,7 +2275,25 @@ export default function Admin() {
                       )}
 
                       {editForm.episodes.map((ep, idx) => (
-                        <div key={idx} className={styles.episodeRow}>
+                        <div
+                          key={idx}
+                          className={`${styles.episodeRow} ${dragEpIdx === idx ? styles.episodeRowDragging : ''}`}
+                          draggable
+                          onDragStart={() => setDragEpIdx(idx)}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={() => {
+                            if (dragEpIdx === null || dragEpIdx === idx) { setDragEpIdx(null); return }
+                            setEditForm((prev) => {
+                              const eps = [...prev.episodes]
+                              const [moved] = eps.splice(dragEpIdx, 1)
+                              eps.splice(idx, 0, moved)
+                              return { ...prev, episodes: eps }
+                            })
+                            setDragEpIdx(null)
+                          }}
+                          onDragEnd={() => setDragEpIdx(null)}
+                        >
+                          <GripVertical size={13} className={styles.epDragHandle} title="Drag to reorder" />
                           <span className={styles.episodeNum}>{ep.number}</span>
                           <input
                             className={`${styles.input} ${styles.epInput}`}
@@ -1586,14 +2342,232 @@ export default function Admin() {
             )}
 
             <div className={styles.modalFooter}>
-              <button type="button" className={styles.ghostBtn} onClick={closeEditModal}>Cancel</button>
-              <button type="submit" form="edit-metadata-form" className={styles.primaryBtn} disabled={editBusy || !editForm}>
-                {editBusy ? 'Saving…' : 'Save Metadata'}
+              <button type="button" className={styles.ghostBtn} onClick={closeEditModal}>
+                {editNotice && !isCreateMode ? 'Close' : 'Cancel'}
+              </button>
+              {/* After successful creation, show a Go to Uploads CTA */}
+              {isCreateMode && editNotice && (
+                <button
+                  type="button"
+                  className={styles.primaryBtn}
+                  style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+                  onClick={() => {
+                    closeEditModal()
+                    setActiveTab('uploads')
+                  }}
+                >
+                  <UploadIcon size={13} /> Go to Uploads
+                </button>
+              )}
+              <button
+                type="submit"
+                form="edit-metadata-form"
+                className={styles.primaryBtn}
+                disabled={editBusy || !editForm || (isCreateMode && Boolean(editNotice))}
+              >
+                {editBusy
+                  ? (isCreateMode ? 'Creating…' : 'Saving…')
+                  : (isCreateMode ? 'Create Content' : 'Save Metadata')}
               </button>
             </div>
           </div>
         </div>
+        )
+      })()}
+
+      {/* ── CREATOR REVENUE TAB ─────────────────────────────────────────── */}
+      {activeTab === 'revenue' && (
+        <section className={styles.jobsCard}>
+
+          {/* Calculate modal */}
+          {showCalcModal && (
+            <div className={styles.modalBackdrop} onClick={(e) => e.target === e.currentTarget && setShowCalcModal(false)}>
+              <div className={styles.modalPanel} style={{ maxWidth: 460 }} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+                <div className={styles.modalHeader}>
+                  <h2 className={styles.modalTitle}><Calculator size={15} /> Calculate Monthly Earnings</h2>
+                  <button className={styles.modalClose} onClick={() => { setShowCalcModal(false); setCalcResult(null) }}><X size={16} /></button>
+                </div>
+                <div style={{ padding: '20px 24px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <label className={styles.label}>
+                      Month
+                      <select className={styles.select} value={calcForm.month} onChange={(e) => setCalcForm((p) => ({ ...p, month: Number(e.target.value) }))}>
+                        {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m, i) => (
+                          <option key={m} value={i + 1}>{m}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={styles.label}>
+                      Year
+                      <input className={styles.input} type="number" min="2024" max="2099" value={calcForm.year} onChange={(e) => setCalcForm((p) => ({ ...p, year: Number(e.target.value) }))} />
+                    </label>
+                  </div>
+                  <label className={styles.label}>
+                    Rate per view (paise) <span style={{ fontSize: 10, color: '#888', fontWeight: 400 }}>50 paise = ₹0.50 per view</span>
+                    <input className={styles.input} type="number" min="1" value={calcForm.ratePerViewPaise} onChange={(e) => setCalcForm((p) => ({ ...p, ratePerViewPaise: Number(e.target.value) }))} />
+                  </label>
+                  {calcResult && (
+                    <div style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 8, padding: '12px 16px', fontSize: 13, color: '#4ade80' }}>
+                      ✓ Created <strong>{calcResult.earningsCreated}</strong> earning records · skipped {calcResult.skipped}
+                    </div>
+                  )}
+                  {revenueError && <p style={{ fontSize: 13, color: '#f87171' }}>{revenueError}</p>}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                    <button className={styles.ghostBtn} onClick={() => { setShowCalcModal(false); setCalcResult(null) }}>Cancel</button>
+                    <button className={styles.primaryBtn} onClick={handleCalculateEarnings} disabled={calcBusy}>
+                      {calcBusy ? 'Calculating…' : 'Run Calculation'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Payout modal */}
+          {showPayoutModal && (
+            <div className={styles.modalBackdrop} onClick={(e) => e.target === e.currentTarget && setShowPayoutModal(null)}>
+              <div className={styles.modalPanel} style={{ maxWidth: 440 }} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+                <div className={styles.modalHeader}>
+                  <h2 className={styles.modalTitle}><Wallet size={15} /> Process Payout</h2>
+                  <button className={styles.modalClose} onClick={() => setShowPayoutModal(null)}><X size={16} /></button>
+                </div>
+                <div style={{ padding: '20px 24px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: 0 }}>
+                    Creator: <strong style={{ color: 'var(--color-text)' }}>{showPayoutModal.studioName}</strong>
+                    &nbsp;·&nbsp; Amount: <strong style={{ color: '#4ade80' }}>₹{showPayoutModal.pending.toLocaleString('en-IN')}</strong>
+                  </p>
+                  <label className={styles.label}>
+                    Payment Method
+                    <select className={styles.select} value={payoutForm.method} onChange={(e) => setPayoutForm((p) => ({ ...p, method: e.target.value }))}>
+                      <option>Bank Transfer</option>
+                      <option>UPI</option>
+                      <option>Cheque</option>
+                      <option>PayPal</option>
+                    </select>
+                  </label>
+                  <label className={styles.label}>
+                    Reference ID <span style={{ fontSize: 10, color: '#888', fontWeight: 400 }}>bank UTR / UPI txn ID</span>
+                    <input className={styles.input} value={payoutForm.referenceId} onChange={(e) => setPayoutForm((p) => ({ ...p, referenceId: e.target.value }))} placeholder="UTR123456789" />
+                  </label>
+                  <label className={styles.label}>
+                    Notes <span style={{ fontSize: 10, color: '#888', fontWeight: 400 }}>optional</span>
+                    <input className={styles.input} value={payoutForm.notes} onChange={(e) => setPayoutForm((p) => ({ ...p, notes: e.target.value }))} placeholder="May 2026 payout" />
+                  </label>
+                  {revenueError && <p style={{ fontSize: 13, color: '#f87171' }}>{revenueError}</p>}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                    <button className={styles.ghostBtn} onClick={() => setShowPayoutModal(null)}>Cancel</button>
+                    <button className={styles.primaryBtn} onClick={handleProcessPayout} disabled={payoutBusy || !payoutForm.referenceId.trim()}>
+                      {payoutBusy ? 'Processing…' : 'Confirm Payout'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Header actions */}
+          <div className={styles.libraryHeader}>
+            <h2 className={styles.cardTitle}><IndianRupee size={16} /> Creator Earnings</h2>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className={styles.refreshBtn} onClick={loadCreatorRevenue} disabled={revenueLoading}>
+                <RefreshCw size={13} /> Refresh
+              </button>
+              <button className={styles.primaryBtn} style={{ padding: '7px 14px', fontSize: 12 }} onClick={() => { setCalcResult(null); setRevenueError(''); setShowCalcModal(true) }}>
+                <Calculator size={13} /> Calculate Earnings
+              </button>
+            </div>
+          </div>
+
+          {revenueNotice && <p className={`${styles.message} ${styles.notice}`}>{revenueNotice}</p>}
+          {revenueError  && !showCalcModal && !showPayoutModal && <p className={`${styles.message} ${styles.error}`}>{revenueError}</p>}
+
+          {revenueLoading ? (
+            <p className={styles.empty}>Loading…</p>
+          ) : creatorEarnings.length === 0 ? (
+            <div className={styles.empty} style={{ padding: '48px 24px', textAlign: 'center' }}>
+              <p style={{ marginBottom: 8 }}>No earnings records yet.</p>
+              <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+                Run <strong>Calculate Earnings</strong> at month-end to generate records from view counts.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Earnings table */}
+              <div className={styles.revenueEarningsTable}>
+                <div className={styles.revenueEarningsHead}>
+                  <span>Creator / Studio</span>
+                  <span>Pending</span>
+                  <span>Total Earned</span>
+                  <span>Paid Out</span>
+                  <span>Views</span>
+                  <span>Action</span>
+                </div>
+                {creatorEarnings.map((row) => (
+                  <div key={row.creatorId} className={styles.revenueEarningsRow}>
+                    <div>
+                      <p className={styles.revenueCreatorName}>{row.studioName}</p>
+                      <p className={styles.revenueCreatorEmail}>{row.email}</p>
+                    </div>
+                    <span className={styles.revenuePending} style={{ color: row.pending > 0 ? '#fbbf24' : 'var(--color-text-muted)' }}>
+                      ₹{row.pending.toLocaleString('en-IN')}
+                    </span>
+                    <span className={styles.revenueTotal}>₹{row.totalEarned.toLocaleString('en-IN')}</span>
+                    <span className={styles.revenueTotal} style={{ color: '#4ade80' }}>₹{row.paidOut.toLocaleString('en-IN')}</span>
+                    <span className={styles.revenueTotal}>{row.totalViews.toLocaleString()}</span>
+                    <button
+                      className={styles.editBtn}
+                      disabled={row.pending < 1}
+                      title={row.pending < 1 ? 'No pending balance' : `Pay ₹${row.pending.toLocaleString('en-IN')}`}
+                      onClick={() => { setRevenueError(''); setPayoutForm({ method: 'Bank Transfer', referenceId: '', notes: '' }); setShowPayoutModal({ creatorId: row.creatorId, studioName: row.studioName, pending: row.pending }) }}
+                    >
+                      <Wallet size={12} /> Pay
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Payout history */}
+              {creatorPayouts.length > 0 && (
+                <div style={{ marginTop: 32 }}>
+                  <h2 className={styles.cardTitle} style={{ marginBottom: 12 }}><Clock size={14} /> Payout History</h2>
+                  <div className={styles.revenuePayoutHistoryTable}>
+                    <div className={styles.revenuePayoutHistoryHead}>
+                      <span>Creator</span>
+                      <span>Amount</span>
+                      <span>Method</span>
+                      <span>Reference</span>
+                      <span>Date</span>
+                      <span>Status</span>
+                    </div>
+                    {creatorPayouts.map((p) => (
+                      <div key={p._id} className={styles.revenuePayoutHistoryRow}>
+                        <div>
+                          <p className={styles.revenueCreatorName}>{p.studioName}</p>
+                          <p className={styles.revenueCreatorEmail}>{p.email}</p>
+                        </div>
+                        <span style={{ color: '#4ade80', fontWeight: 700 }}>₹{p.amountRupees.toLocaleString('en-IN')}</span>
+                        <span>{p.method}</span>
+                        <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>{p.referenceId || '—'}</span>
+                        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+                          {p.paidAt ? new Date(p.paidAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                        </span>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700,
+                          color: p.status === 'paid' ? '#4ade80' : '#fbbf24',
+                        }}>
+                          {p.status === 'paid' ? <CheckCircle2 size={11} /> : <Clock size={11} />}
+                          {p.status === 'paid' ? 'Paid' : 'Processing'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </section>
       )}
+
     </main>
   )
 }

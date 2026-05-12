@@ -7,7 +7,9 @@
     "dev":         "APP_PROFILE=dev nodemon server.js",
     "dev:staging": "APP_PROFILE=staging nodemon server.js",
     "start":       "node server.js",
-    "test":        "node --test tests/*.test.js"
+    "test":        "node --test tests/*.test.js",
+    "backup":      "node scripts/backup.js",
+    "restore":     "node scripts/restore.js"
   },
   "dependencies": {
     "cloudinary": "^2.3.1",

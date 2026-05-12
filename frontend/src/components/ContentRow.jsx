@@ -3,7 +3,7 @@ import { ChevronRight, ChevronLeft } from 'lucide-react'
 import PosterCard from './PosterCard'
 import styles from './ContentRow.module.css'
 
-export default function ContentRow({ title, items, onCardClick, isSubscribed = false }) {
+export default function ContentRow({ title, items, onCardClick, isSubscribed = false, onSeeAll }) {
   const rowRef = useRef(null)
 
   const scroll = (dir) => {
@@ -16,9 +16,11 @@ export default function ContentRow({ title, items, onCardClick, isSubscribed = f
       {/* Row header */}
       <div className={styles.header}>
         <h2 className={styles.title}>{title}</h2>
-        <button className={styles.seeAll}>
-          See all <ChevronRight size={14} />
-        </button>
+        {onSeeAll && (
+          <button className={styles.seeAll} onClick={onSeeAll}>
+            See all <ChevronRight size={14} />
+          </button>
+        )}
       </div>
 
       {/* Scrollable row */}

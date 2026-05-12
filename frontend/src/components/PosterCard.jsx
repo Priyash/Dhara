@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Play, Crown, Star, Lock } from 'lucide-react'
+import { Crown, Star } from 'lucide-react'
 import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './PosterCard.module.css'
 
@@ -8,32 +8,31 @@ function stripExtension(name = '') {
 }
 
 export default function PosterCard({ item, onClick, size = 'normal', isSubscribed = false }) {
-  const [hovered, setHovered] = useState(false)
   const [imgError, setImgError] = useState(false)
-
-  const isLocked = item.isPremium && !isSubscribed
 
   const posterSrc = item.posterUrl && !imgError
     ? cloudinaryTransform(item.posterUrl, 'w_400,h_600,c_fill,g_auto,f_auto,q_auto')
     : null
 
-  const cleanTitle = stripExtension(item.title)
+  const cleanTitle  = stripExtension(item.title)
+  const genres      = (item.genre || []).slice(0, 2)
+  const episodeInfo = item.type === 'Series' && item.episodes?.length
+    ? `${item.episodes.length} Ep`
+    : null
 
   return (
     <article
-      className={`${styles.card} ${styles[size]} ${hovered ? styles.hovered : ''} ${isLocked ? styles.premiumCard : ''}`}
+      className={`${styles.card} ${styles[size]} ${item.isPremium && !isSubscribed ? styles.premiumCard : ''}`}
       onClick={() => onClick?.(item)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       role="button"
       tabIndex={0}
       aria-label={`${cleanTitle}, ${item.type}`}
       onKeyDown={(e) => e.key === 'Enter' && onClick?.(item)}
     >
-      {/* Poster art */}
+      {/* Poster image */}
       <div
         className={styles.poster}
-        style={posterSrc ? undefined : { background: item.palette }}
+        style={posterSrc ? undefined : { background: item.palette || 'rgba(255,255,255,0.04)' }}
       >
         {posterSrc && (
           <img
@@ -45,10 +44,24 @@ export default function PosterCard({ item, onClick, size = 'normal', isSubscribe
         )}
         <div className={styles.gradient} />
 
-        {/* Meta below */}
-        <div className={styles.meta}>
-          <span className={styles.type}>{item.type}</span>
-          <span className={styles.title}>{cleanTitle}</span>
+        {/* Info area — strip fades in above title on hover */}
+        <div className={styles.info}>
+          <div className={styles.infoStrip}>
+            {genres.map(g => (
+              <span key={g} className={styles.genreChip}>{g}</span>
+            ))}
+            {item.releaseYear && (
+              <span className={styles.metaChip}>{item.releaseYear}</span>
+            )}
+            {episodeInfo && (
+              <span className={styles.metaChip}>{episodeInfo}</span>
+            )}
+          </div>
+
+          <div className={styles.meta}>
+            <span className={styles.type}>{item.type}</span>
+            <span className={styles.title}>{cleanTitle}</span>
+          </div>
         </div>
       </div>
 
@@ -60,34 +73,19 @@ export default function PosterCard({ item, onClick, size = 'normal', isSubscribe
         </div>
       )}
 
-      {/* NEW badge */}
+      {/* NEW / LIVE badge */}
       {item.badge && (
-        <div className={styles.newBadge}>{item.badge}</div>
-      )}
-
-      {/* Rating (shown when no other top-left badge) */}
-      {!item.badge && !item.isPremium && (
-        <div className={styles.ratingBadge}>
-          <Star size={10} color="#f59e0b" fill="#f59e0b" />
-          <span>{item.rating}</span>
+        <div className={`${styles.cornerBadge} ${item.badge === 'LIVE' ? styles.liveBadge : styles.newBadge}`}>
+          {item.badge === 'LIVE' && <span className={styles.liveDot} />}
+          {item.badge}
         </div>
       )}
 
-      {/* Hover overlay — lock for ungated premium, play for everything else */}
-      {hovered && (
-        <div className={`${styles.overlay} ${isLocked ? styles.overlayLocked : ''}`} aria-hidden="true">
-          {isLocked ? (
-            <div className={styles.lockContent}>
-              <div className={styles.lockIcon}>
-                <Lock size={22} strokeWidth={2} />
-              </div>
-              <span className={styles.lockLabel}>Subscribe to Watch</span>
-            </div>
-          ) : (
-            <div className={styles.playBtn}>
-              <Play size={18} color="#09090b" fill="#09090b" style={{ marginLeft: 2 }} />
-            </div>
-          )}
+      {/* Rating — only when no other top-left badge */}
+      {!item.badge && !item.isPremium && item.rating > 0 && (
+        <div className={styles.ratingBadge}>
+          <Star size={10} color="#f59e0b" fill="#f59e0b" />
+          <span>{item.rating}</span>
         </div>
       )}
     </article>

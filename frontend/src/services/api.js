@@ -69,6 +69,23 @@ export async function removeFromWatchlist(contentId) {
   return request(`/api/user/watchlist/${contentId}`, { method: 'DELETE' })
 }
 
+export async function fetchWatchlistItems() {
+  const data = await request('/api/user/watchlist-items')
+  return data.map(normalizeItem)
+}
+
+export async function saveWatchProgress(payload) {
+  return request('/api/user/watch-progress', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function fetchContinueWatching() {
+  const data = await request('/api/user/continue-watching')
+  return data.map(normalizeItem)
+}
+
 // ── Content ───────────────────────────────────────────────────────────────────
 
 export async function fetchContent(params = {}) {
@@ -78,8 +95,8 @@ export async function fetchContent(params = {}) {
 }
 
 export async function fetchFeaturedContent() {
-  const item = await request('/api/content/featured')
-  return normalizeItem(item)
+  const items = await request('/api/content/featured')
+  return Array.isArray(items) ? items.map(normalizeItem) : [normalizeItem(items)]
 }
 
 export async function fetchContentById(id) {
@@ -234,10 +251,24 @@ export async function fetchAdminContentById(id) {
   return request(`/api/admin/content/${id}`)
 }
 
+export async function createAdminContent(payload) {
+  return request('/api/admin/content', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 export async function updateAdminContent(id, payload) {
   return request(`/api/admin/content/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  })
+}
+
+export async function togglePublishContent(id, publish) {
+  return request(`/api/admin/content/${id}/publish`, {
+    method: 'PATCH',
+    body: JSON.stringify({ publish }),
   })
 }
 
@@ -248,6 +279,23 @@ export async function getAdminTransactions(params = {}) {
 
 export async function getAdminRevenue() {
   return request('/api/admin/revenue')
+}
+
+export async function listAdminCreatorEarnings(params = {}) {
+  const qs = new URLSearchParams(params).toString()
+  return request(`/api/admin/creator-earnings${qs ? `?${qs}` : ''}`)
+}
+
+export async function calculateCreatorEarnings(payload) {
+  return request('/api/admin/revenue/calculate', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function processCreatorPayout(payload) {
+  return request('/api/admin/creator-payouts', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function listAdminCreatorPayouts() {
+  return request('/api/admin/creator-payouts')
 }
 
 // ── Creator Studio ────────────────────────────────────────────────────────────
@@ -293,6 +341,21 @@ export async function deleteCreatorContent(id) {
   return request(`/api/creator/content/${id}`, { method: 'DELETE' })
 }
 
+export async function getCreatorAnalytics() {
+  return request('/api/creator/analytics')
+}
+
+export async function getCreatorRevenue() {
+  return request('/api/creator/revenue')
+}
+
+export async function recordView(id, episodeNumber = null) {
+  return request(`/api/content/${id}/view`, {
+    method: 'POST',
+    body: JSON.stringify(episodeNumber != null ? { episodeNumber } : {}),
+  })
+}
+
 // ── Admin Creator Hub ─────────────────────────────────────────────────────────
 
 export async function listCreatorApplications(params = {}) {
@@ -325,4 +388,38 @@ export async function rejectSubmission(id, reason) {
     method: 'PATCH',
     body: JSON.stringify({ reason }),
   })
+}
+
+// ── Curated Shelves (public) ──────────────────────────────────────────────────
+
+export async function fetchShelves() {
+  const shelves = await request('/api/content/shelves')
+  // Normalize _id → id on populated items so PosterCard / navigation work correctly
+  return shelves.map((s) => ({
+    ...s,
+    id: String(s._id),
+    items: (s.items || []).map(normalizeItem),
+  }))
+}
+
+// ── Curated Shelves (admin) ───────────────────────────────────────────────────
+
+export async function listAdminShelves() {
+  return request('/api/admin/shelves')
+}
+
+export async function createAdminShelf(payload) {
+  return request('/api/admin/shelves', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function updateAdminShelf(id, payload) {
+  return request(`/api/admin/shelves/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export async function deleteAdminShelf(id) {
+  return request(`/api/admin/shelves/${id}`, { method: 'DELETE' })
+}
+
+export async function reorderAdminShelves(order) {
+  return request('/api/admin/shelves/reorder', { method: 'PATCH', body: JSON.stringify({ order }) })
 }
