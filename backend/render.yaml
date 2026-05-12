@@ -22,3 +22,8 @@ services:
       # FRONTEND_URL  ← set to your Vercel URL after deploying frontend
       # ADMIN_EMAILS  ← comma-separated admin emails, e.g. admin@yourapp.com
       #                 REQUIRED — without this no one can access /admin in production
+      # RESEND_API_KEY ← from resend.com dashboard → API Keys → Create API Key
+      #                  Free tier: 3,000 emails/month, 100/day
+      #                  Without this, creator/submission emails are skipped silently
+      # RESEND_FROM   ← verified sender, e.g.  ধারা <noreply@yourdomain.com>
+      #                  Domain must be verified in Resend dashboard → Domains
