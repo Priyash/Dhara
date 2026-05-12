@@ -11,7 +11,19 @@ export async function requireAuth(req, res, next) {
     const tokenAuthTime = decoded.auth_time ? new Date(decoded.auth_time * 1000) : null
     // Attach both the decoded Firebase token and the MongoDB user
     req.firebaseUser = decoded
-    let user = await User.findOne({ firebaseUid: decoded.uid })
+
+    // Only load the fields needed for auth/subscription/creator checks.
+    // watchlist, likedContent, dislikedContent, watchProgress are large arrays
+    // that grow per user — loading them on every request wastes DB bandwidth.
+    // Routes that need those arrays (watchlist-items, continue-watching, like/dislike,
+    // /me) perform their own targeted queries.
+    const AUTH_SELECT = [
+      '_id firebaseUid email emailVerified displayName photoURL lastLoginAt',
+      'subscriptionStatus subscriptionPlan subscriptionExpiresAt trialEndsAt graceEndsAt',
+      'isCreator creatorStatus creatorProfile creatorRejectionReason creatorRejectedAt',
+    ].join(' ')
+
+    let user = await User.findOne({ firebaseUid: decoded.uid }).select(AUTH_SELECT)
 
     // Safety net: if auth succeeds but profile does not exist yet, create it.
     if (!user) {
@@ -27,7 +39,7 @@ export async function requireAuth(req, res, next) {
           },
           $setOnInsert: { firebaseUid: decoded.uid },
         },
-        { upsert: true, new: true }
+        { upsert: true, new: true, select: AUTH_SELECT }
       )
     }
 

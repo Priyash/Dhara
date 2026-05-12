@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   BadgeAlert,
@@ -12,9 +13,13 @@ import {
   RefreshCw,
   Sparkles,
   Clapperboard,
+  AlertOctagon,
+  CheckCircle2,
+  MessageSquare,
+  ChevronRight,
 } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { fetchContent, applyAsCreator, getPaymentHistory } from '../services/api'
+import { fetchWatchlistItems, applyAsCreator, getPaymentHistory } from '../services/api'
 import PosterCard from '../components/PosterCard'
 import styles from './Profile.module.css'
 
@@ -78,7 +83,11 @@ export default function Profile() {
 
   // Creator Studio application state
   const [showCreatorModal, setShowCreatorModal] = useState(false)
-  const [creatorForm, setCreatorForm] = useState({ studioName: '', bio: '', portfolioUrl: '' })
+  const [isReapplying, setIsReapplying]         = useState(false)
+  const [creatorForm, setCreatorForm] = useState({
+    studioName: '', bio: '', portfolioUrl: '', sampleWorkUrl: '',
+    contentTypes: [], rightsConfirmed: false, guidelinesConfirmed: false,
+  })
   const [creatorApplying, setCreatorApplying] = useState(false)
   const [creatorApplyError, setCreatorApplyError] = useState('')
 
@@ -103,13 +112,10 @@ export default function Profile() {
     let cancelled = false
     setLoadingWatchlist(true)
 
-    fetchContent()
+    fetchWatchlistItems()
       .then((items) => {
         if (cancelled) return
-        const selected = items
-          .filter((item) => watchlistIds.includes(item.id))
-          .slice(0, 6)
-        setWatchlistItems(selected)
+        setWatchlistItems(items.slice(0, 6))
       })
       .catch(() => {
         if (!cancelled) setWatchlistItems([])
@@ -121,7 +127,7 @@ export default function Profile() {
     return () => {
       cancelled = true
     }
-  }, [isLoggedIn, watchlistIds])
+  }, [isLoggedIn])
 
   useEffect(() => {
     if (!isLoggedIn) return
@@ -185,15 +191,68 @@ export default function Profile() {
     }
   }
 
+  const openFreshApplication = () => {
+    setIsReapplying(false)
+    setCreatorApplyError('')
+    setCreatorForm({
+      studioName: '', bio: '', portfolioUrl: '', sampleWorkUrl: '',
+      contentTypes: [], rightsConfirmed: false, guidelinesConfirmed: false,
+    })
+    setShowCreatorModal(true)
+  }
+
+  const openReapplication = () => {
+    setIsReapplying(true)
+    setCreatorApplyError('')
+    setCreatorForm({
+      studioName:        user?.creatorProfile?.studioName    || '',
+      bio:               user?.creatorProfile?.bio            || '',
+      portfolioUrl:      user?.creatorProfile?.portfolioUrl  || '',
+      sampleWorkUrl:     user?.creatorProfile?.sampleWorkUrl || '',
+      contentTypes:      user?.creatorProfile?.contentTypes  || [],
+      rightsConfirmed:   false,   // always re-confirm
+      guidelinesConfirmed: false, // always re-confirm
+    })
+    setShowCreatorModal(true)
+  }
+
+  const closeCreatorModal = () => {
+    setShowCreatorModal(false)
+    setIsReapplying(false)
+    setCreatorApplyError('')
+  }
+
+  const toggleContentType = (type) =>
+    setCreatorForm((p) => ({
+      ...p,
+      contentTypes: p.contentTypes.includes(type)
+        ? p.contentTypes.filter((t) => t !== type)
+        : [...p.contentTypes, type],
+    }))
+
   const handleCreatorApply = async () => {
-    if (!creatorForm.studioName.trim()) { setCreatorApplyError('Studio name is required.'); return }
+    if (!creatorForm.studioName.trim())      { setCreatorApplyError('Studio name is required.'); return }
+    if (!creatorForm.sampleWorkUrl.trim())   { setCreatorApplyError('Please provide a link to your sample work or channel.'); return }
+    if (creatorForm.contentTypes.length === 0) { setCreatorApplyError('Select at least one content type you plan to upload.'); return }
+    if (!creatorForm.rightsConfirmed)        { setCreatorApplyError('Please confirm you own or have licensed all content you will upload.'); return }
+    if (!creatorForm.guidelinesConfirmed)    { setCreatorApplyError('Please confirm you have read and agree to the Creator Guidelines.'); return }
     setCreatorApplying(true)
     setCreatorApplyError('')
     try {
-      await applyAsCreator(creatorForm)
+      await applyAsCreator({
+        studioName:   creatorForm.studioName,
+        bio:          creatorForm.bio,
+        portfolioUrl: creatorForm.portfolioUrl,
+        sampleWorkUrl: creatorForm.sampleWorkUrl,
+        contentTypes:  creatorForm.contentTypes,
+      })
       setCreatorStatus('applied')
       setShowCreatorModal(false)
-      setCreatorForm({ studioName: '', bio: '', portfolioUrl: '' })
+      setIsReapplying(false)
+      setCreatorForm({
+        studioName: '', bio: '', portfolioUrl: '', sampleWorkUrl: '',
+        contentTypes: [], rightsConfirmed: false, guidelinesConfirmed: false,
+      })
     } catch (err) {
       setCreatorApplyError(err?.message || 'Could not submit application.')
     } finally {
@@ -328,7 +387,7 @@ export default function Profile() {
       )}
 
       {/* ── Creator Studio section ──────────────────────────────────────── */}
-      <section className={styles.creatorCard}>
+      <section className={`${styles.creatorCard} ${creatorStatus === 'rejected' ? styles.creatorCardRejected : ''}`}>
         <div className={styles.creatorCardLeft}>
           <div className={styles.creatorCardIcon}>
             <Clapperboard size={20} />
@@ -340,114 +399,282 @@ export default function Profile() {
         </div>
 
         <div className={styles.creatorCardRight}>
+
+          {/* ── None: first-time CTA ── */}
           {creatorStatus === 'none' && (
             <>
               <p className={styles.creatorCardDesc}>
-                Upload films, documentaries & series. Submit for review — once approved, they stream to all subscribers.
+                Upload films, documentaries &amp; series. Submit for review — once approved, they stream to all subscribers.
               </p>
-              <button className={styles.primaryBtn} onClick={() => { setCreatorApplyError(''); setShowCreatorModal(true) }}>
+              <button className={styles.primaryBtn} onClick={openFreshApplication}>
                 <Clapperboard size={14} /> Become a Creator
               </button>
             </>
           )}
 
+          {/* ── Applied: under review ── */}
           {creatorStatus === 'applied' && (
             <>
               <span className={styles.creatorStatusPill} style={{ color: '#fbbf24', background: 'rgba(251,191,36,0.1)', borderColor: 'rgba(251,191,36,0.25)' }}>
-                ● Application under review
+                <span className={styles.statusDotPulse} style={{ background: '#fbbf24' }} />
+                Application under review
               </span>
-              <p className={styles.creatorCardDesc}>We'll update your status once an admin reviews your application.</p>
-            </>
-          )}
-
-          {creatorStatus === 'rejected' && (
-            <>
-              <span className={styles.creatorStatusPill} style={{ color: '#f87171', background: 'rgba(248,113,113,0.1)', borderColor: 'rgba(248,113,113,0.25)' }}>
-                ✕ Application rejected
-              </span>
-              {user?.creatorRejectionReason && (
-                <p className={styles.creatorCardDesc} style={{ color: '#f87171' }}>
-                  Reason: {user.creatorRejectionReason}
+              <p className={styles.creatorCardDesc}>
+                We'll notify you once an admin reviews your application. This typically takes 1–3 business days.
+              </p>
+              {user?.creatorProfile?.appliedAt && (
+                <p className={styles.appliedOnText}>
+                  Submitted {new Date(user.creatorProfile.appliedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
                 </p>
               )}
-              <button className={styles.ghostBtn} onClick={() => { setCreatorApplyError(''); setShowCreatorModal(true) }}>
-                <Clapperboard size={14} /> Reapply
-              </button>
             </>
           )}
 
+          {/* ── Rejected: full feedback panel ── */}
+          {creatorStatus === 'rejected' && (
+            <div className={styles.rejectionPanel}>
+
+              {/* Header */}
+              <div className={styles.rejectionHeader}>
+                <div className={styles.rejectionIconWrap}>
+                  <AlertOctagon size={16} />
+                </div>
+                <div className={styles.rejectionHeaderText}>
+                  <p className={styles.rejectionTitle}>Application Not Approved</p>
+                  {user?.creatorRejectedAt && (
+                    <p className={styles.rejectionDate}>
+                      Reviewed on {new Date(user.creatorRejectedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Application timeline */}
+              <div className={styles.applicationTimeline}>
+                <div className={`${styles.timelineStep} ${styles.timelineStepDone}`}>
+                  <div className={styles.timelineDot}><CheckCircle2 size={14} /></div>
+                  <div className={styles.timelineInfo}>
+                    <p className={styles.timelineLabel}>Applied</p>
+                    {user?.creatorProfile?.appliedAt && (
+                      <p className={styles.timelineSub}>
+                        {new Date(user.creatorProfile.appliedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className={styles.timelineConnector} />
+                <div className={`${styles.timelineStep} ${styles.timelineStepDone}`}>
+                  <div className={styles.timelineDot}><CheckCircle2 size={14} /></div>
+                  <div className={styles.timelineInfo}>
+                    <p className={styles.timelineLabel}>Reviewed</p>
+                    <p className={styles.timelineSub}>By admin</p>
+                  </div>
+                </div>
+                <div className={styles.timelineConnector} />
+                <div className={`${styles.timelineStep} ${styles.timelineStepFailed}`}>
+                  <div className={styles.timelineDot}><AlertOctagon size={14} /></div>
+                  <div className={styles.timelineInfo}>
+                    <p className={styles.timelineLabel}>Not Approved</p>
+                    <p className={styles.timelineSub}>See feedback below</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Admin feedback */}
+              <div className={styles.rejectionReasonBox}>
+                <p className={styles.rejectionReasonLabel}>
+                  <MessageSquare size={11} /> Admin Feedback
+                </p>
+                <p className={styles.rejectionReasonText}>
+                  {user?.creatorRejectionReason?.trim()
+                    ? user.creatorRejectionReason
+                    : 'No specific reason was provided. Please review our creator guidelines and ensure your application meets all requirements before reapplying.'}
+                </p>
+              </div>
+
+              {/* What to do next */}
+              <div className={styles.rejectionGuidance}>
+                <p className={styles.rejectionGuidanceTitle}>What you can do</p>
+                <ul className={styles.rejectionGuideList}>
+                  <li><ChevronRight size={11} /> Address the admin feedback above before reapplying</li>
+                  <li><ChevronRight size={11} /> Prepare original Bengali films, series, or documentaries</li>
+                  <li><ChevronRight size={11} /> Strengthen your portfolio with links to existing work</li>
+                  <li><ChevronRight size={11} /> Update your studio bio to clearly describe your creative vision</li>
+                </ul>
+              </div>
+
+              {/* CTA */}
+              <div className={styles.rejectionActions}>
+                <button
+                  className={styles.rejectionReapplyBtn}
+                  onClick={openReapplication}
+                >
+                  <Clapperboard size={14} /> Update &amp; Reapply
+                </button>
+              </div>
+
+            </div>
+          )}
+
+          {/* ── Approved ── */}
           {creatorStatus === 'approved' && isCreator && (
             <>
               <span className={styles.creatorStatusPill} style={{ color: '#4ade80', background: 'rgba(74,222,128,0.1)', borderColor: 'rgba(74,222,128,0.25)' }}>
                 ✓ Approved Creator
               </span>
+              <p className={styles.creatorCardDesc}>
+                Your creator account is active. Submit films, series, and documentaries from your studio.
+              </p>
               <button className={styles.primaryBtn} onClick={() => navigate('/creator-studio')} style={{ background: 'linear-gradient(135deg,#a78bfa,#7c3aed)', color: '#fff' }}>
                 <Clapperboard size={14} /> Open Creator Studio
               </button>
             </>
           )}
+
         </div>
       </section>
 
-      {/* Creator application modal */}
-      {showCreatorModal && (
+      {/* Creator application / reapply modal */}
+      {showCreatorModal && createPortal(
         <div className={styles.modalBackdrop} role="dialog" aria-modal="true">
-          <div className={styles.modalCard} style={{ maxWidth: 460 }}>
-            <h3 className={styles.modalTitle}>Apply as Creator</h3>
+          <div className={styles.modalCard} style={{ maxWidth: 480 }}>
+
+            <h3 className={styles.modalTitle}>
+              {isReapplying ? 'Update & Reapply' : 'Apply as Creator'}
+            </h3>
             <p className={styles.modalSub}>
-              Tell us about your studio. An admin will review your application.
+              {isReapplying
+                ? 'Address the admin feedback, update your profile, and resubmit for review.'
+                : 'Tell us about your studio. An admin will review your application.'}
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px' }}>
+
+            {/* Previous rejection context — shown only when reapplying */}
+            {isReapplying && user?.creatorRejectionReason?.trim() && (
+              <div className={styles.reapplyContextBox}>
+                <p className={styles.reapplyContextLabel}>
+                  <AlertOctagon size={11} /> Previous rejection reason
+                </p>
+                <p className={styles.reapplyContextText}>{user.creatorRejectionReason}</p>
+              </div>
+            )}
+
+            <div className={styles.applyFormFields}>
+
+              {/* Studio identity */}
+              <label className={styles.applyFieldLabel}>
                 Studio Name *
                 <input
-                  style={{ padding: '9px 12px', fontSize: 13, color: 'var(--color-text)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', outline: 'none', fontFamily: 'var(--font-body)' }}
+                  className={styles.applyInput}
                   value={creatorForm.studioName}
                   onChange={(e) => setCreatorForm((p) => ({ ...p, studioName: e.target.value }))}
                   placeholder="e.g. Kolkata Frames"
+                  autoFocus
                 />
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px' }}>
-                Bio
+
+              <label className={styles.applyFieldLabel}>
+                Bio <span className={styles.applyFieldHint}>(optional)</span>
                 <textarea
                   rows={3}
-                  style={{ padding: '9px 12px', fontSize: 13, color: 'var(--color-text)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', outline: 'none', fontFamily: 'var(--font-body)', resize: 'vertical' }}
+                  className={styles.applyTextarea}
                   value={creatorForm.bio}
                   onChange={(e) => setCreatorForm((p) => ({ ...p, bio: e.target.value }))}
-                  placeholder="Tell us about your work and what you plan to create…"
+                  placeholder="Tell us about your work and creative vision…"
                 />
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.7px' }}>
-                Portfolio URL
+
+              {/* Verification — sample work */}
+              <label className={styles.applyFieldLabel}>
+                Sample Work URL *
+                <span className={styles.applyFieldHint}> — YouTube, Vimeo, IMDb, festival page, or reel</span>
                 <input
-                  style={{ padding: '9px 12px', fontSize: 13, color: 'var(--color-text)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', outline: 'none', fontFamily: 'var(--font-body)' }}
+                  className={styles.applyInput}
+                  value={creatorForm.sampleWorkUrl}
+                  onChange={(e) => setCreatorForm((p) => ({ ...p, sampleWorkUrl: e.target.value }))}
+                  placeholder="https://youtube.com/your-channel"
+                />
+              </label>
+
+              <label className={styles.applyFieldLabel}>
+                Portfolio / Website <span className={styles.applyFieldHint}>(optional)</span>
+                <input
+                  className={styles.applyInput}
                   value={creatorForm.portfolioUrl}
                   onChange={(e) => setCreatorForm((p) => ({ ...p, portfolioUrl: e.target.value }))}
                   placeholder="https://yoursite.com"
                 />
               </label>
+
+              {/* Content types */}
+              <div className={styles.applyFieldLabel}>
+                Content you plan to upload *
+                <div className={styles.contentTypeRow}>
+                  {['Film', 'Series', 'Documentary'].map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      className={`${styles.contentTypeChip} ${creatorForm.contentTypes.includes(type) ? styles.contentTypeChipActive : ''}`}
+                      onClick={() => toggleContentType(type)}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Legal confirmations */}
+              <div className={styles.applyConfirmations}>
+                <label className={styles.applyCheckRow}>
+                  <input
+                    type="checkbox"
+                    checked={creatorForm.rightsConfirmed}
+                    onChange={(e) => setCreatorForm((p) => ({ ...p, rightsConfirmed: e.target.checked }))}
+                    className={styles.applyCheckbox}
+                  />
+                  <span className={styles.applyCheckLabel}>
+                    I confirm I own or have licensed the rights to all content I will upload to Dhara.
+                  </span>
+                </label>
+                <label className={styles.applyCheckRow}>
+                  <input
+                    type="checkbox"
+                    checked={creatorForm.guidelinesConfirmed}
+                    onChange={(e) => setCreatorForm((p) => ({ ...p, guidelinesConfirmed: e.target.checked }))}
+                    className={styles.applyCheckbox}
+                  />
+                  <span className={styles.applyCheckLabel}>
+                    I have read and agree to Dhara's Creator Guidelines and content standards.
+                  </span>
+                </label>
+              </div>
+
               {creatorApplyError && (
-                <p style={{ fontSize: 13, color: '#f87171', margin: 0 }}>{creatorApplyError}</p>
+                <p className={styles.applyError}>{creatorApplyError}</p>
               )}
             </div>
+
             <div className={styles.modalActions}>
               <button
                 className={styles.modalCancelBtn}
-                onClick={() => { setShowCreatorModal(false); setCreatorApplyError('') }}
+                onClick={closeCreatorModal}
                 disabled={creatorApplying}
               >
                 Cancel
               </button>
               <button
-                className={styles.modalConfirmBtn}
+                className={`${styles.modalConfirmBtn} ${styles.modalConfirmCreator}`}
                 onClick={handleCreatorApply}
                 disabled={creatorApplying}
               >
-                {creatorApplying ? 'Submitting…' : 'Submit Application'}
+                <Clapperboard size={13} />
+                {creatorApplying
+                  ? 'Submitting…'
+                  : isReapplying ? 'Update & Resubmit' : 'Submit Application'}
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Payment History ── */}
@@ -522,7 +749,7 @@ export default function Profile() {
         )}
       </section>
 
-      {showSignOutConfirm && (
+      {showSignOutConfirm && createPortal(
         <div className={styles.modalBackdrop} role="dialog" aria-modal="true" aria-label="Confirm sign out">
           <div className={styles.modalCard}>
             <h3 className={styles.modalTitle}>Sign out now?</h3>
@@ -547,7 +774,8 @@ export default function Profile() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </main>
   )

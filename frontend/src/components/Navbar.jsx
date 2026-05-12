@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Search, Crown, Clapperboard } from 'lucide-react'
 import { useStore } from '../store/useStore'
@@ -7,19 +6,29 @@ import { NAV_LINKS } from '../data/content'
 import styles from './Navbar.module.css'
 
 const NAV_ROUTES = {
-  Home: '/',
-  Movies: '/browse',
-  Series: '/browse',
-  Originals: '/browse',
-  Live: '/browse',
+  Home:      '/',
+  Movies:    '/browse?type=Film',
+  Series:    '/browse?type=Series',
+  Originals: '/browse?type=Documentary',
+  Live:      '/browse?type=Live',
+}
+
+function getActiveLink(location) {
+  if (location.pathname !== '/browse') return location.pathname === '/' ? 'Home' : null
+  const type = new URLSearchParams(location.search).get('type')
+  if (type === 'Film')         return 'Movies'
+  if (type === 'Series')       return 'Series'
+  if (type === 'Documentary')  return 'Originals'
+  if (type === 'Live')         return 'Live'
+  return null
 }
 
 export default function Navbar() {
   const scrolled = useScrolled(60)
-  const [activeLink, setActiveLink] = useState('Home')
   const { setShowSearch, openPaywall, openAuth, isLoggedIn, isSubscribed, isAdmin, isCreator, creatorStatus, user } = useStore()
   const navigate = useNavigate()
   const location = useLocation()
+  const activeLink = getActiveLink(location)
   const onAdminPage = location.pathname === '/admin'
   const onCreatorPage = location.pathname === '/creator-studio'
 
@@ -35,7 +44,7 @@ export default function Navbar() {
       <button
         className={styles.logo}
         aria-label="Dhara home"
-        onClick={() => { setActiveLink('Home'); navigate('/') }}
+        onClick={() => navigate('/')}
       >
         ধারা
       </button>
@@ -46,7 +55,7 @@ export default function Navbar() {
           <li key={link}>
             <button
               className={`${styles.link} ${activeLink === link ? styles.linkActive : ''}`}
-              onClick={() => { setActiveLink(link); navigate(NAV_ROUTES[link] || '/') }}
+              onClick={() => navigate(NAV_ROUTES[link] || '/')}
             >
               {link}
             </button>

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Clapperboard, Users, Globe, Play } from 'lucide-react'
+import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Clapperboard, Users, Globe, Play, SkipForward } from 'lucide-react'
 import VideoPlayer from '../components/VideoPlayer'
-import { fetchContentById, fetchStreamUrl } from '../services/api'
+import PosterCard from '../components/PosterCard'
+import { fetchContentById, fetchStreamUrl, saveWatchProgress, recordView, fetchContent } from '../services/api'
 import { useStore } from '../store/useStore'
 import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './Watch.module.css'
@@ -14,19 +15,31 @@ function stripExtension(name = '') {
 export default function Watch() {
   const { id }   = useParams()
   const navigate = useNavigate()
-  const { isLoggedIn, isSubscribed, user, openPaywall, openVerifyEmailGate, openAuth } = useStore()
+  const { isLoggedIn, isSubscribed, user, openPaywall, openVerifyEmailGate, openAuth, openItem, authLoading } = useStore()
 
-  const [content,  setContent]  = useState(null)
-  const [hlsUrl,   setHlsUrl]   = useState(null)
-  const [activeEp, setActiveEp] = useState(0)
-  const [showList, setShowList] = useState(false)
-  const [loading,  setLoading]  = useState(true)
-  const [error,    setError]    = useState(null)
+  const [content,        setContent]       = useState(null)
+  const [hlsUrl,         setHlsUrl]        = useState(null)
+  const [activeEp,       setActiveEp]      = useState(0)
+  const [showList,       setShowList]      = useState(false)
+  const [loading,        setLoading]       = useState(true)
+  const [error,          setError]         = useState(null)
+  const [related,        setRelated]       = useState([])
 
   useEffect(() => {
     setLoading(true)
+    setRelated([])
     fetchContentById(id)
-      .then(setContent)
+      .then((c) => {
+        setContent(c)
+        // Load related content from same type/genre, excluding this title
+        const genre = c.genre?.[0]
+        fetchContent({ type: c.type, ...(genre ? { genre } : {}), sort: 'rating', page: 1, limit: 7 })
+          .then((res) => {
+            const items = Array.isArray(res) ? res : (res.items ?? [])
+            setRelated(items.filter((r) => r._id !== id && r.id !== id).slice(0, 6))
+          })
+          .catch(() => {})
+      })
       .catch(() => setError('Content not found.'))
       .finally(() => setLoading(false))
   }, [id])
@@ -36,18 +49,58 @@ export default function Watch() {
     if (!user?.emailVerified) return
     if (content.isPremium && !isSubscribed) return
 
-    fetchStreamUrl(id)
-      .then(({ hlsUrl }) => setHlsUrl(hlsUrl))
-      .catch(() => setError('Could not load stream. Please try again.'))
-  }, [content, id, isLoggedIn, isSubscribed, user?.emailVerified])
+    // For Series, pass the active episode number so the backend returns
+    // the correct per-episode HLS stream rather than the root bunnyVideoId.
+    const epNumber = content.episodes?.length > 0
+      ? (content.episodes[activeEp]?.number ?? null)
+      : null
 
-  if (loading) return <div className={styles.state}>Loading…</div>
-  if (error)   return <div className={styles.state}>{error}</div>
+    setHlsUrl(null)  // clear previous stream while new one loads
+    fetchStreamUrl(id, epNumber)
+      .then(({ hlsUrl }) => { setHlsUrl(hlsUrl) })
+      .catch(() => setError('Could not load stream. Please try again.'))
+  }, [content, id, activeEp, isLoggedIn, isSubscribed, user?.emailVerified])
+
+  // Record a view (and episode view) each time the active stream changes
+  useEffect(() => {
+    if (!hlsUrl) return
+    const epNumber = content?.episodes?.length > 0
+      ? (content.episodes[activeEp]?.number ?? null)
+      : null
+    recordView(id, epNumber).catch(() => {})
+  }, [hlsUrl, id])  // intentionally omit activeEp — hlsUrl change is the signal
+
+  // Persist watch progress to backend every 30 s while playing
+  useEffect(() => {
+    if (!hlsUrl || !isLoggedIn) return
+    const STORAGE_KEY = `dhara_progress_${id}`
+
+    const tick = () => {
+      const pos = parseFloat(localStorage.getItem(STORAGE_KEY) || '0')
+      const dur = parseFloat(localStorage.getItem(`${STORAGE_KEY}_dur`) || '0')
+      if (pos < 10) return
+      // Don't save if within last 45 s — treat as finished, remove from continue-watching
+      if (dur > 0 && pos > dur - 45) return
+      saveWatchProgress({
+        contentId:     id,
+        episodeNumber: content?.episodes?.length > 0 ? (content.episodes[activeEp]?.number ?? null) : null,
+        positionSecs:  Math.floor(pos),
+        durationSecs:  Math.floor(dur),
+      }).catch(() => {})
+    }
+
+    const timer = setInterval(tick, 30_000)
+    return () => clearInterval(timer)
+  }, [hlsUrl, isLoggedIn, id, activeEp, content])
+
+  if (loading || authLoading) return <div className={styles.state}>Loading…</div>
+  if (error)                  return <div className={styles.state}>{error}</div>
 
   const cleanTitle    = stripExtension(content.title)
   const episodes      = content?.episodes || []
   const activeEpisode = episodes[activeEp]
   const playerTitle   = activeEpisode ? `${cleanTitle} — ${activeEpisode.title}` : cleanTitle
+  const hasNextEp     = episodes.length > 0 && activeEp < episodes.length - 1
 
   const hasGenre    = content.genre?.length > 0
   const hasCast     = content.cast?.length > 0
@@ -258,6 +311,16 @@ export default function Watch() {
         )}
 
         <div className={styles.info}>
+          {hasNextEp && (
+            <button
+              className={styles.nextEpBtn}
+              onClick={() => { setActiveEp(activeEp + 1); setShowList(false) }}
+            >
+              <SkipForward size={15} />
+              Next: Ep {episodes[activeEp + 1].number}
+              {episodes[activeEp + 1].title ? ` · ${episodes[activeEp + 1].title}` : ''}
+            </button>
+          )}
           {episodes.length > 0 && (
             <button className={styles.listToggle} onClick={() => setShowList((s) => !s)}>
               <List size={16} />
@@ -286,6 +349,27 @@ export default function Watch() {
             </div>
           </div>
         )}
+      {/* ── Related content ── */}
+      {related.length > 0 && (
+        <div className={styles.related}>
+          <h2 className={styles.relatedTitle}>More Like This</h2>
+          <div className={styles.relatedGrid}>
+            {related.map((item) => (
+              <PosterCard
+                key={item._id || item.id}
+                item={item}
+                size="normal"
+                isSubscribed={isSubscribed}
+                onClick={(clicked) => {
+                  if (clicked.isPremium && !isSubscribed) { openItem(clicked); return }
+                  navigate(`/watch/${clicked._id || clicked.id}`)
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       </div>
     </div>
   )

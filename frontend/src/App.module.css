@@ -12,3 +12,8 @@
     transform: translateY(0);
   }
 }
+
+.pageFallback {
+  min-height: 100vh;
+  background: var(--color-bg);
+}

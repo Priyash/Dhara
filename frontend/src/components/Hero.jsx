@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
-import { Play, Info, Volume2, VolumeX, Star } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Play, Info, Volume2, VolumeX, Star, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { fetchFeaturedContent } from '../services/api'
 import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './Hero.module.css'
+
+const SLIDE_DURATION = 6000
 
 function stripExtension(name = '') {
   return name.replace(/\.(mp4|mkv|mov|avi|webm|m4v|flv|wmv|ts|mts|3gp)$/i, '').trim()
@@ -17,48 +19,100 @@ function formatReviewCount(n) {
   return String(n)
 }
 
+function getHeroImage(item) {
+  const src = item.backdropUrl || item.posterUrl || null
+  return src
+    ? cloudinaryTransform(src, 'w_1400,h_800,c_fill,g_auto,f_auto,q_auto')
+    : null
+}
+
 export default function Hero() {
   const { muted, toggleMuted, openItem } = useStore()
-  const navigate = useNavigate()
-  const [featured, setFeatured] = useState(null)
+  const navigate   = useNavigate()
+  const [items,     setItems]     = useState([])
+  const [active,    setActive]    = useState(0)
+  const [paused,    setPaused]    = useState(false)
+  const timerRef = useRef(null)
 
   useEffect(() => {
-    fetchFeaturedContent().then(setFeatured).catch(() => {})
+    fetchFeaturedContent().then(setItems).catch(() => {})
   }, [])
 
-  if (!featured) return <div className={styles.hero} aria-hidden="true" />
+  const goTo = useCallback((idx) => {
+    setActive(idx)
+  }, [])
 
-  const cleanTitle   = stripExtension(featured.title)
+  const prev = useCallback(() => {
+    setActive(i => (i - 1 + items.length) % items.length)
+    setPaused(true)
+  }, [items.length])
 
-  const heroImageUrl = featured.backdropUrl
-    ? cloudinaryTransform(featured.backdropUrl, 'w_1400,h_800,c_fill,g_auto,f_auto,q_auto')
-    : featured.posterUrl
-    ? cloudinaryTransform(featured.posterUrl,   'w_1400,h_800,c_fill,g_auto,f_auto,q_auto')
-    : null
+  const next = useCallback(() => {
+    setActive(i => (i + 1) % items.length)
+    setPaused(true)
+  }, [items.length])
 
-  const genreStr     = Array.isArray(featured.genre) ? featured.genre.join(' · ') : (featured.genre ?? '')
-  const episodeStr   = featured.episodes?.length ? `${featured.episodes.length} Episodes` : featured.type
-  const rating       = featured.rating ?? 0
-  const reviewCount  = formatReviewCount(featured.reviewCount)
-  const fullStars    = Math.floor(rating)
-  const halfStar     = rating - fullStars >= 0.5
+  // Auto-advance
+  useEffect(() => {
+    if (items.length <= 1 || paused) return
+    timerRef.current = setInterval(() => {
+      setActive(i => (i + 1) % items.length)
+    }, SLIDE_DURATION)
+    return () => clearInterval(timerRef.current)
+  }, [items.length, paused])
 
-  const handleWatch = () => navigate(`/watch/${featured.id}`)
+  // Resume auto-advance 10s after manual interaction
+  useEffect(() => {
+    if (!paused) return
+    const resume = setTimeout(() => setPaused(false), 10_000)
+    return () => clearTimeout(resume)
+  }, [paused])
 
-  const heroStyle = heroImageUrl
-    ? { backgroundImage: `url(${heroImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-    : { background: featured.palette }
+  if (items.length === 0) return <div className={styles.hero} aria-hidden="true" />
+
+  const featured    = items[active]
+  const cleanTitle  = stripExtension(featured.title)
+  const genreStr    = Array.isArray(featured.genre) ? featured.genre.join(' · ') : (featured.genre ?? '')
+  const episodeStr  = featured.episodes?.length ? `${featured.episodes.length} Episodes` : featured.type
+  const rating      = featured.rating ?? 0
+  const reviewCount = formatReviewCount(featured.reviewCount)
+  const fullStars   = Math.floor(rating)
+  const halfStar    = rating - fullStars >= 0.5
+  const multi       = items.length > 1
 
   return (
-    <section className={styles.hero} style={heroStyle} aria-label="Featured content">
+    <section
+      className={styles.hero}
+      aria-label="Featured content"
+      onMouseEnter={() => multi && setPaused(true)}
+      onMouseLeave={() => multi && setPaused(false)}
+    >
+      {/* Background slides — crossfade between them */}
+      {items.map((item, i) => {
+        const img = getHeroImage(item)
+        return (
+          <div
+            key={item.id || item._id}
+            className={`${styles.slide} ${i === active ? styles.slideActive : ''}`}
+            style={img
+              ? { backgroundImage: `url(${img})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+              : { background: item.palette || '#09090b' }
+            }
+            aria-hidden={i !== active}
+          />
+        )
+      })}
+
+      {/* Overlays */}
       <div className={styles.radialOverlay} />
       <div className={styles.sideOverlay} />
       <div className={styles.bottomFade} />
       <div className={styles.ring1} aria-hidden="true" />
       <div className={styles.ring2} aria-hidden="true" />
-      <div className={styles.dot} aria-hidden="true" />
+      <div className={styles.dot}   aria-hidden="true" />
 
-      <div className={styles.content}>
+      {/* Content — keyed by active so it fades in on each slide */}
+      <div key={active} className={styles.content}>
         <div className={styles.eyebrow}>
           <div className={styles.eyebrowBar} />
           <span>Featured Original</span>
@@ -96,7 +150,10 @@ export default function Hero() {
         {featured.desc && <p className={styles.desc}>{featured.desc}</p>}
 
         <div className={styles.actions}>
-          <button className={styles.watchBtn} onClick={handleWatch}>
+          <button
+            className={styles.watchBtn}
+            onClick={() => navigate(`/watch/${featured._id || featured.id}`)}
+          >
             <Play size={18} color="#000" fill="#000" />
             Watch Now
           </button>
@@ -111,6 +168,39 @@ export default function Hero() {
           </button>
         </div>
       </div>
+
+      {/* Prev / Next arrows — only when multiple items */}
+      {multi && (
+        <>
+          <button className={`${styles.navBtn} ${styles.navPrev}`} onClick={prev} aria-label="Previous">
+            <ChevronLeft size={22} />
+          </button>
+          <button className={`${styles.navBtn} ${styles.navNext}`} onClick={next} aria-label="Next">
+            <ChevronRight size={22} />
+          </button>
+        </>
+      )}
+
+      {/* Dot indicators + progress bar — only when multiple items */}
+      {multi && (
+        <div className={styles.indicators}>
+          {items.map((_, i) => (
+            <button
+              key={i}
+              className={`${styles.indicatorDot} ${i === active ? styles.indicatorDotActive : ''}`}
+              onClick={() => { goTo(i); setPaused(true) }}
+              aria-label={`Go to slide ${i + 1}`}
+            >
+              {i === active && !paused && (
+                <span
+                  className={styles.indicatorProgress}
+                  style={{ animationDuration: `${SLIDE_DURATION}ms` }}
+                />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </section>
   )
 }

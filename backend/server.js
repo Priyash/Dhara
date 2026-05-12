@@ -1,6 +1,7 @@
 // env.js must be the very first import — it populates process.env before anything reads it
 import './src/config/env.js'
 import express from 'express'
+import compression from 'compression'
 import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
@@ -8,6 +9,7 @@ import rateLimit from 'express-rate-limit'
 import './src/config/firebase.js'          // initialise Firebase Admin on startup
 import { connectMongoDB } from './src/config/mongodb.js'
 import { syncAdminClaims } from './src/config/adminSync.js'
+import { startSubscriptionExpiryJob } from './src/config/subscriptionExpiry.js'
 
 import authRoutes    from './src/routes/auth.js'
 import contentRoutes from './src/routes/content.js'
@@ -21,6 +23,9 @@ import { errorHandler } from './src/middleware/errorHandler.js'
 const app  = express()
 const PORT = process.env.PORT || 4000
 
+// Gzip compress all responses — typically saves 70-80% on JSON API responses.
+// Must come before routes so every handler benefits automatically.
+app.use(compression())
 app.use(helmet())
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
@@ -39,9 +44,12 @@ app.use('/api/admin', rateLimit({
   legacyHeaders: false,
 }))
 
+// 1000 req/15min per IP — handles users behind shared NAT (office/campus/hostel).
+// A heavy user session (load + browse + watch 30min) uses ~70 requests total,
+// so 1000/15min supports ~14 simultaneous heavy users on the same IP before throttling.
 app.use('/api', rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
 }))
@@ -62,5 +70,6 @@ app.use(errorHandler)
 
 connectMongoDB().then(async () => {
   await syncAdminClaims()
+  startSubscriptionExpiryJob()
   app.listen(PORT, () => console.log(`Dhara backend → http://localhost:${PORT}`))
 })

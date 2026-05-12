@@ -4,13 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev":         "APP_PROFILE=dev nodemon server.js",
+    "dev": "APP_PROFILE=dev nodemon server.js",
     "dev:staging": "APP_PROFILE=staging nodemon server.js",
-    "start":       "node server.js",
-    "test":        "node --test tests/*.test.js"
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js",
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js"
   },
   "dependencies": {
     "cloudinary": "^2.3.1",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
