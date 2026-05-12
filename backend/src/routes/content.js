@@ -134,11 +134,10 @@ router.get('/:id', async (req, res, next) => {
 router.get('/:id/stream', requireAuth, async (req, res, next) => {
   try {
     const item = await Content.findById(req.params.id)
-      .select('isPremium bunnyVideoId submissionStatus isPublished creatorId')
+      .select('isPremium bunnyVideoId submissionStatus isPublished creatorId episodes')
       .lean()
 
-    if (!item)              return res.status(404).json({ error: 'Content not found' })
-    if (!item.bunnyVideoId) return res.status(404).json({ error: 'No video attached to this title' })
+    if (!item) return res.status(404).json({ error: 'Content not found' })
 
     const isOwnContent = item?.creatorId && req.user?._id?.toString() === item.creatorId.toString()
     const isHidden = ['pending', 'rejected'].includes(item?.submissionStatus) || !item.isPublished
@@ -146,13 +145,23 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
       return res.status(404).json({ error: 'Content not found' })
     }
 
+    // For Series, resolve the per-episode bunnyVideoId when ?episode=N is supplied
+    let videoId = item.bunnyVideoId
+    const epNum = req.query.episode != null ? Number(req.query.episode) : null
+    if (epNum != null && item.episodes?.length) {
+      const ep = item.episodes.find((e) => e.number === epNum)
+      if (ep?.bunnyVideoId) videoId = ep.bunnyVideoId
+    }
+
+    if (!videoId) return res.status(404).json({ error: 'No video attached to this title' })
+
     if (item.isPremium) {
       return requireSubscription(req, res, () => {
-        res.json({ hlsUrl: buildHlsUrl(item.bunnyVideoId, true) })
+        res.json({ hlsUrl: buildHlsUrl(videoId, true) })
       })
     }
 
-    res.json({ hlsUrl: buildHlsUrl(item.bunnyVideoId, false) })
+    res.json({ hlsUrl: buildHlsUrl(videoId, false) })
   } catch (err) {
     next(err)
   }

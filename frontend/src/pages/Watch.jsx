@@ -36,16 +36,26 @@ export default function Watch() {
     if (!user?.emailVerified) return
     if (content.isPremium && !isSubscribed) return
 
-    fetchStreamUrl(id)
+    // For Series, pass the active episode number so the backend returns
+    // the correct per-episode HLS stream rather than the root bunnyVideoId.
+    const epNumber = content.episodes?.length > 0
+      ? (content.episodes[activeEp]?.number ?? null)
+      : null
+
+    setHlsUrl(null)  // clear previous stream while new one loads
+    fetchStreamUrl(id, epNumber)
       .then(({ hlsUrl }) => { setHlsUrl(hlsUrl) })
       .catch(() => setError('Could not load stream. Please try again.'))
-  }, [content, id, isLoggedIn, isSubscribed, user?.emailVerified])
+  }, [content, id, activeEp, isLoggedIn, isSubscribed, user?.emailVerified])
 
-  // Record a view once when the stream becomes available
+  // Record a view (and episode view) each time the active stream changes
   useEffect(() => {
     if (!hlsUrl) return
-    recordView(id).catch(() => {})
-  }, [hlsUrl, id])
+    const epNumber = content?.episodes?.length > 0
+      ? (content.episodes[activeEp]?.number ?? null)
+      : null
+    recordView(id, epNumber).catch(() => {})
+  }, [hlsUrl, id])  // intentionally omit activeEp — hlsUrl change is the signal
 
   // Persist watch progress to backend every 30 s while playing
   useEffect(() => {

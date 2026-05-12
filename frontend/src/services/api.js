@@ -104,8 +104,9 @@ export async function fetchContentById(id) {
   return normalizeItem(item)
 }
 
-export async function fetchStreamUrl(contentId) {
-  return request(`/api/content/${contentId}/stream`)
+export async function fetchStreamUrl(contentId, episodeNumber = null) {
+  const qs = episodeNumber != null ? `?episode=${episodeNumber}` : ''
+  return request(`/api/content/${contentId}/stream${qs}`)
 }
 
 export async function likeContent(contentId) {
