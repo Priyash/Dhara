@@ -53,9 +53,14 @@ const contentSchema = new mongoose.Schema(
 )
 
 contentSchema.index({ title: 'text', desc: 'text', genre: 'text' })
-contentSchema.index({ isPublished: 1, submissionStatus: 1 })
+// Browsing queries: type + premium filter + sort
+contentSchema.index({ isPublished: 1, submissionStatus: 1, type: 1, isPremium: 1, rating: -1 })
+contentSchema.index({ isPublished: 1, submissionStatus: 1, type: 1, isPremium: 1, releaseYear: -1 })
+contentSchema.index({ isPublished: 1, submissionStatus: 1, type: 1, isPremium: 1, title: 1 })
+// Genre facet aggregation
+contentSchema.index({ isPublished: 1, submissionStatus: 1, genre: 1 })
 contentSchema.index({ creatorId: 1, submissionStatus: 1 })
-contentSchema.index({ isPublished: 1, type: 1 })
-contentSchema.index({ isPublished: 1, isPremium: 1 })
+contentSchema.index({ isPublished: 1, isFeatured: 1 })
+contentSchema.index({ isPublished: 1, badge: 1 })
 
 export const Content = mongoose.model('Content', contentSchema)

@@ -42,24 +42,83 @@ const PUBLIC_FIELDS = '-bunnyVideoId -trailerVideoId -episodes.bunnyVideoId'
 
 /**
  * GET /api/content
- * Public. Query: type, filter, sort
+ * Public. Query: type, filter, genre, sort, page, limit
+ *
+ * When `page` is supplied → paginated response { items, total, page, pages, limit }
+ * When `page` is absent  → flat array (backward-compatible for Home.jsx)
  */
 router.get('/', async (req, res, next) => {
   try {
-    const { type, filter, sort = 'rating' } = req.query
-    const query = {}
-    query.isPublished = true
-    query.submissionStatus = { $nin: ['pending', 'rejected'] }
+    const { type, filter, genre, sort = 'rating', page, limit: rawLimit } = req.query
 
-    if (type   && type   !== 'All') query.type     = type
-    if (filter === 'Free')          query.isPremium = false
-    if (filter === 'Premium')       query.isPremium = true
-    if (filter === 'New')           query.badge     = 'NEW'
+    const query = {
+      isPublished:      true,
+      submissionStatus: { $nin: ['pending', 'rejected'] },
+    }
 
-    const sortObj = sort === 'title' ? { title: 1 } : { rating: -1 }
+    // 'Live' is not a type enum value — it maps to badge:'LIVE'
+    if (type === 'Live')            query.badge      = 'LIVE'
+    else if (type && type !== 'All') query.type      = type
 
+    if (filter === 'Free')          query.isPremium  = false
+    if (filter === 'Premium')       query.isPremium  = true
+    if (filter === 'New')           query.badge      = 'NEW'
+    if (genre  && genre  !== 'All') query.genre      = genre  // genre[] array field — Mongo matches if element equals value
+
+    const sortObj =
+      sort === 'title'  ? { title: 1 } :
+      sort === 'newest' ? { releaseYear: -1, createdAt: -1 } :
+                          { rating: -1 }
+
+    // ── Paginated mode ────────────────────────────────────────────────────────
+    if (page != null) {
+      const pageNum  = Math.max(1, parseInt(page,     10) || 1)
+      const limitNum = Math.min(48, Math.max(1, parseInt(rawLimit, 10) || 24))
+      const skip     = (pageNum - 1) * limitNum
+
+      const [items, total] = await Promise.all([
+        Content.find(query).sort(sortObj).skip(skip).limit(limitNum).select(PUBLIC_FIELDS).lean(),
+        Content.countDocuments(query),
+      ])
+
+      return res.json({ items, total, page: pageNum, pages: Math.ceil(total / limitNum), limit: limitNum })
+    }
+
+    // ── Legacy flat-array mode (Home.jsx) ─────────────────────────────────────
     const items = await Content.find(query).sort(sortObj).select(PUBLIC_FIELDS).lean()
     res.json(items)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/content/genres
+ * Public. Returns available genres with per-genre counts for the given type/filter combo.
+ * Must be declared before /:id to avoid Express matching "genres" as an ObjectId.
+ */
+router.get('/genres', async (req, res, next) => {
+  try {
+    const { type, filter } = req.query
+
+    const match = {
+      isPublished:      true,
+      submissionStatus: { $nin: ['pending', 'rejected'] },
+    }
+    if (type === 'Live')             match.badge     = 'LIVE'
+    else if (type && type !== 'All') match.type      = type
+    if (filter === 'Free')           match.isPremium = false
+    if (filter === 'Premium')        match.isPremium = true
+    if (filter === 'New')            match.badge     = 'NEW'
+
+    const facets = await Content.aggregate([
+      { $match: match },
+      { $unwind: '$genre' },
+      { $group: { _id: '$genre', count: { $sum: 1 } } },
+      { $sort:  { _id: 1 } },
+    ])
+
+    res.json(facets.map((f) => ({ genre: f._id, count: f.count })))
   } catch (err) {
     next(err)
   }

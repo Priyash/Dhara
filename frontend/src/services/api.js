@@ -89,9 +89,24 @@ export async function fetchContinueWatching() {
 // ── Content ───────────────────────────────────────────────────────────────────
 
 export async function fetchContent(params = {}) {
-  const qs = new URLSearchParams(params).toString()
+  const qs = new URLSearchParams(
+    // strip undefined / null / empty-string values so they don't pollute the query string
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
   const data = await request(`/api/content${qs ? `?${qs}` : ''}`)
+  // Paginated response { items, total, page, pages, limit }
+  if (data && typeof data === 'object' && !Array.isArray(data) && Array.isArray(data.items)) {
+    return { ...data, items: data.items.map(normalizeItem) }
+  }
+  // Legacy flat array (Home.jsx, no page param)
   return data.map(normalizeItem)
+}
+
+export async function fetchContentGenres(params = {}) {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  return request(`/api/content/genres${qs ? `?${qs}` : ''}`)
 }
 
 export async function fetchFeaturedContent() {
