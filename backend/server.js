@@ -43,9 +43,12 @@ app.use('/api/admin', rateLimit({
   legacyHeaders: false,
 }))
 
+// 1000 req/15min per IP — handles users behind shared NAT (office/campus/hostel).
+// A heavy user session (load + browse + watch 30min) uses ~70 requests total,
+// so 1000/15min supports ~14 simultaneous heavy users on the same IP before throttling.
 app.use('/api', rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
 }))

@@ -52,10 +52,14 @@ router.get('/me', async (req, res, next) => {
 router.post('/watchlist/:id', async (req, res, next) => {
   try {
     const contentId = req.params.id
+    // Two-step: addToSet prevents duplicates, then slice caps the array at 500.
+    // Without the cap, a power user could accumulate thousands of IDs and bloat
+    // their document beyond practical query limits.
+    await User.findByIdAndUpdate(req.user._id, { $addToSet: { watchlist: contentId } })
     const user = await User.findByIdAndUpdate(
       req.user._id,
-      { $addToSet: { watchlist: contentId } },
-      { new: true }
+      { $push: { watchlist: { $each: [], $slice: -500 } } },
+      { new: true, select: 'watchlist' }
     )
     res.json({ watchlist: user.watchlist })
   } catch (err) {

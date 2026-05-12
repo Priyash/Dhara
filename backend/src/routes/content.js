@@ -270,9 +270,15 @@ router.post('/:id/like', requireAuth, async (req, res, next) => {
       ? { likeCount: -1 }
       : { likeCount: 1, ...(alreadyDisliked ? { dislikeCount: -1 } : {}) }
 
+    // Cap likedContent at 2000 entries — prevents document bloat for power users.
+    // $addToSet deduplicates; the $slice keeps only the 2000 most-recent.
     const userOp = alreadyLiked
       ? { $pull: { likedContent: contentId } }
-      : { $addToSet: { likedContent: contentId }, $pull: { dislikedContent: contentId } }
+      : {
+          $addToSet: { likedContent: contentId },
+          $pull:     { dislikedContent: contentId },
+          $push:     { likedContent: { $each: [], $slice: -2000 } },
+        }
 
     const [content, user] = await Promise.all([
       Content.findByIdAndUpdate(contentId, { $inc: contentInc }, { new: true })
@@ -314,7 +320,11 @@ router.post('/:id/dislike', requireAuth, async (req, res, next) => {
 
     const userOp = alreadyDisliked
       ? { $pull: { dislikedContent: contentId } }
-      : { $addToSet: { dislikedContent: contentId }, $pull: { likedContent: contentId } }
+      : {
+          $addToSet: { dislikedContent: contentId },
+          $pull:     { likedContent: contentId },
+          $push:     { dislikedContent: { $each: [], $slice: -2000 } },
+        }
 
     const [content, user] = await Promise.all([
       Content.findByIdAndUpdate(contentId, { $inc: contentInc }, { new: true })
