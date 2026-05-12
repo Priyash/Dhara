@@ -31,9 +31,11 @@ router.get('/me', async (req, res, next) => {
       updates.lastLoginAt = tokenAuthTime
     }
 
+    // Always load the full document for /me — it includes watchlist, likedContent,
+    // dislikedContent which are excluded from req.user for performance on every other route.
     const u = Object.keys(updates).length > 0
       ? await User.findByIdAndUpdate(req.user._id, { $set: updates }, { new: true })
-      : req.user
+      : await User.findById(req.user._id)
 
     if (!u) return res.status(404).json({ error: 'User not found' })
 
@@ -85,7 +87,8 @@ router.delete('/watchlist/:id', async (req, res, next) => {
  */
 router.get('/watchlist-items', async (req, res, next) => {
   try {
-    const ids = req.user.watchlist || []
+    const u   = await User.findById(req.user._id).select('watchlist').lean()
+    const ids = u?.watchlist || []
     if (ids.length === 0) return res.json([])
     const items = await Content.find({
       _id: { $in: ids },
@@ -141,7 +144,8 @@ router.post('/watch-progress', async (req, res, next) => {
  */
 router.get('/continue-watching', async (req, res, next) => {
   try {
-    const progress = (req.user.watchProgress || [])
+    const u        = await User.findById(req.user._id).select('watchProgress').lean()
+    const progress = (u?.watchProgress || [])
       .filter((p) => p.positionSecs > 30 && (p.durationSecs === 0 || p.positionSecs < p.durationSecs - 30))
       .slice(0, 8)
 

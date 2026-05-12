@@ -2,6 +2,10 @@ import express, { Router } from 'express'
 import { Content } from '../models/Content.js'
 import { CuratedShelf } from '../models/CuratedShelf.js'
 import { StreamCollection } from '../models/StreamCollection.js'
+import { cache } from '../config/cache.js'
+
+// Bust the Browse/Home content cache whenever admin mutates the catalog
+function bustContentCache() { cache.deleteByPrefix('/api/content') }
 import { UploadJob } from '../models/UploadJob.js'
 import { PaymentConfig } from '../models/PaymentConfig.js'
 import { Transaction } from '../models/Transaction.js'
@@ -540,6 +544,7 @@ router.patch('/content/:id', async (req, res, next) => {
     ).lean()
 
     if (!item) return res.status(404).json({ error: 'Content not found' })
+    bustContentCache()
     res.json(item)
   } catch (err) {
     next(err)
@@ -571,6 +576,7 @@ router.patch('/content/:id/publish', async (req, res, next) => {
       { new: true }
     ).select('title isPublished').lean()
 
+    bustContentCache()
     res.json(updated)
   } catch (err) {
     next(err)
@@ -897,6 +903,7 @@ router.patch('/submissions/:id/approve', async (req, res, next) => {
     ).lean()
 
     if (!content) return res.status(404).json({ error: 'Submission not found' })
+    bustContentCache()
     res.json({ success: true, content })
   } catch (err) {
     next(err)

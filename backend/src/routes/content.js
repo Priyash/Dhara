@@ -4,6 +4,7 @@ import { Content } from '../models/Content.js'
 import { CuratedShelf } from '../models/CuratedShelf.js'
 import { User } from '../models/User.js'
 import { requireAuth, requireSubscription } from '../middleware/auth.js'
+import { withCache } from '../config/cache.js'
 
 const router = Router()
 
@@ -47,7 +48,7 @@ const PUBLIC_FIELDS = '-bunnyVideoId -trailerVideoId -episodes.bunnyVideoId'
  * When `page` is supplied → paginated response { items, total, page, pages, limit }
  * When `page` is absent  → flat array (backward-compatible for Home.jsx)
  */
-router.get('/', async (req, res, next) => {
+router.get('/', withCache(60), async (req, res, next) => {
   try {
     const { type, filter, genre, sort = 'rating', page, limit: rawLimit } = req.query
 
@@ -97,7 +98,7 @@ router.get('/', async (req, res, next) => {
  * Public. Returns available genres with per-genre counts for the given type/filter combo.
  * Must be declared before /:id to avoid Express matching "genres" as an ObjectId.
  */
-router.get('/genres', async (req, res, next) => {
+router.get('/genres', withCache(300), async (req, res, next) => {
   try {
     const { type, filter } = req.query
 
@@ -129,7 +130,7 @@ router.get('/genres', async (req, res, next) => {
  * Public. Returns the title marked isFeatured=true (Hero section).
  * Must stay BEFORE /:id — otherwise Express casts "featured" as a MongoDB ObjectId → 500.
  */
-router.get('/featured', async (req, res, next) => {
+router.get('/featured', withCache(60), async (req, res, next) => {
   try {
     const items = await Content.find({ isFeatured: true, isPublished: true, submissionStatus: { $nin: ['pending', 'rejected'] } })
       .select(PUBLIC_FIELDS)
@@ -148,7 +149,7 @@ router.get('/featured', async (req, res, next) => {
  * Public. Returns active curated shelves with populated (published) content.
  * Must be declared before /:id to avoid Express matching "shelves" as an id param.
  */
-router.get('/shelves', async (req, res, next) => {
+router.get('/shelves', withCache(60), async (req, res, next) => {
   try {
     const shelves = await CuratedShelf.find({ isActive: true })
       .sort({ displayOrder: 1 })
@@ -260,8 +261,10 @@ router.post('/:id/like', requireAuth, async (req, res, next) => {
     const contentId = String(req.params.id)
     const userId    = req.user._id
 
-    const alreadyLiked    = (req.user.likedContent    ?? []).includes(contentId)
-    const alreadyDisliked = (req.user.dislikedContent ?? []).includes(contentId)
+    // Fetch only the reaction arrays — excluded from req.user for perf on every request
+    const userReact = await User.findById(userId).select('likedContent dislikedContent').lean()
+    const alreadyLiked    = (userReact?.likedContent    ?? []).includes(contentId)
+    const alreadyDisliked = (userReact?.dislikedContent ?? []).includes(contentId)
 
     const contentInc = alreadyLiked
       ? { likeCount: -1 }
@@ -301,8 +304,9 @@ router.post('/:id/dislike', requireAuth, async (req, res, next) => {
     const contentId = String(req.params.id)
     const userId    = req.user._id
 
-    const alreadyLiked    = (req.user.likedContent    ?? []).includes(contentId)
-    const alreadyDisliked = (req.user.dislikedContent ?? []).includes(contentId)
+    const userReact = await User.findById(userId).select('likedContent dislikedContent').lean()
+    const alreadyLiked    = (userReact?.likedContent    ?? []).includes(contentId)
+    const alreadyDisliked = (userReact?.dislikedContent ?? []).includes(contentId)
 
     const contentInc = alreadyDisliked
       ? { dislikeCount: -1 }

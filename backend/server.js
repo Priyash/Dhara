@@ -1,6 +1,7 @@
 // env.js must be the very first import — it populates process.env before anything reads it
 import './src/config/env.js'
 import express from 'express'
+import compression from 'compression'
 import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
@@ -21,6 +22,9 @@ import { errorHandler } from './src/middleware/errorHandler.js'
 const app  = express()
 const PORT = process.env.PORT || 4000
 
+// Gzip compress all responses — typically saves 70-80% on JSON API responses.
+// Must come before routes so every handler benefits automatically.
+app.use(compression())
 app.use(helmet())
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',

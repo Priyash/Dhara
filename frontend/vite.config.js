@@ -58,6 +58,30 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, './src'),
       },
     },
+
+    build: {
+      // Target modern browsers — enables smaller output by skipping legacy transforms
+      target: 'es2020',
+      // Raise the warning threshold slightly; our chunking keeps individual chunks small
+      chunkSizeWarningLimit: 600,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            // React runtime — tiny, cached forever
+            'react-core':    ['react', 'react-dom', 'react-router-dom'],
+            // Icon library is large (~800 KB raw) — separate so it's cached independently
+            'icons':         ['lucide-react'],
+            // HLS player — only needed on /watch
+            'hls':           ['hls.js'],
+            // Firebase SDK — large, rarely changes
+            'firebase':      ['firebase/app', 'firebase/auth'],
+            // State management
+            'zustand':       ['zustand'],
+          },
+        },
+      },
+    },
+
     // No envDir — resolved VITE_* vars are in process.env; Vite picks them up via loadEnv.
     // On Vercel, the platform injects them directly into process.env before build.
     test: {

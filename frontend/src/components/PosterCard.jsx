@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import { Crown, Star } from 'lucide-react'
 import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './PosterCard.module.css'
@@ -7,7 +7,7 @@ function stripExtension(name = '') {
   return name.replace(/\.(mp4|mkv|mov|avi|webm|m4v|flv|wmv|ts|mts|3gp)$/i, '').trim()
 }
 
-export default function PosterCard({ item, onClick, size = 'normal', isSubscribed = false }) {
+function PosterCard({ item, onClick, size = 'normal', isSubscribed = false }) {
   const [imgError, setImgError] = useState(false)
 
   const posterSrc = item.posterUrl && !imgError
@@ -39,6 +39,8 @@ export default function PosterCard({ item, onClick, size = 'normal', isSubscribe
             src={posterSrc}
             alt={cleanTitle}
             className={styles.posterImg}
+            loading="lazy"
+            decoding="async"
             onError={() => setImgError(true)}
           />
         )}
@@ -91,3 +93,5 @@ export default function PosterCard({ item, onClick, size = 'normal', isSubscribe
     </article>
   )
 }
+
+export default memo(PosterCard)
