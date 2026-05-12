@@ -13,9 +13,14 @@ export default function Home() {
   const [content,          setContent]          = useState([])
   const [shelves,          setShelves]          = useState([])
   const [continueWatching, setContinueWatching] = useState([])
+  const [contentLoading,   setContentLoading]   = useState(true)
 
   useEffect(() => {
-    fetchContent({ sort: 'rating' }).then(setContent).catch(() => {})
+    // Cap at 48 — enough for all Home rows. Browse handles full paginated exploration.
+    fetchContent({ sort: 'rating', page: 1, limit: 48 })
+      .then((res) => setContent(Array.isArray(res) ? res : (res.items ?? [])))
+      .catch(() => {})
+      .finally(() => setContentLoading(false))
     fetchShelves().then(setShelves).catch(() => {})
   }, [])
 
@@ -56,7 +61,20 @@ export default function Home() {
           />
         )}
 
-        {trending.length > 0 && (
+        {contentLoading ? (
+          <div className={styles.skeletonRows}>
+            {[1, 2, 3].map((r) => (
+              <div key={r} className={styles.skeletonRow}>
+                <div className={styles.skeletonRowTitle} />
+                <div className={styles.skeletonCards}>
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className={styles.skeletonCard} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : trending.length > 0 && (
           <ContentRow
             title="Trending Now"
             items={trending}

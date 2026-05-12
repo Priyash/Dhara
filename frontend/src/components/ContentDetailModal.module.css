@@ -517,3 +517,65 @@
 
   .epThumb { width: 90px; height: 52px; }
 }
+
+/* ── Trailer ──────────────────────────────────────────────────────────────── */
+.trailerWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.trailerFrame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+.trailerClose {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0,0,0,0.72);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: rgba(255,255,255,0.85);
+  font-family: var(--font-body, sans-serif);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.trailerClose:hover { background: rgba(0,0,0,0.9); color: #fff; }
+
+.trailerBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  padding: 11px 20px;
+  color: rgba(255,255,255,0.9);
+  font-family: var(--font-body, sans-serif);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  white-space: nowrap;
+}
+
+.trailerBtn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.18);
+  border-color: rgba(255,255,255,0.35);
+  color: #fff;
+}
+
+.trailerBtn:disabled { opacity: 0.5; cursor: default; }

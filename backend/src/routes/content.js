@@ -98,6 +98,31 @@ router.get('/', withCache(60), async (req, res, next) => {
  * Public. Returns available genres with per-genre counts for the given type/filter combo.
  * Must be declared before /:id to avoid Express matching "genres" as an ObjectId.
  */
+/**
+ * GET /api/content/:id/trailer
+ * Public. Returns the Bunny embed URL for the trailer if one is set.
+ * Cached for 1 hour — trailers don't change often.
+ * Must be before /:id to avoid "trailer" being cast as an ObjectId.
+ */
+router.get('/:id/trailer', withCache(3600), async (req, res, next) => {
+  try {
+    const item = await Content.findOne(
+      { _id: req.params.id, isPublished: true },
+      'trailerVideoId'
+    ).lean()
+    if (!item?.trailerVideoId) return res.status(404).json({ error: 'No trailer available' })
+
+    const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID
+    if (!libraryId) return res.status(404).json({ error: 'No trailer available' })
+
+    res.json({
+      embedUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${item.trailerVideoId}?autoplay=true&muted=true&loop=false&preload=true`,
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
 router.get('/genres', withCache(300), async (req, res, next) => {
   try {
     const { type, filter } = req.query

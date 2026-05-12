@@ -119,6 +119,10 @@ export async function fetchContentById(id) {
   return normalizeItem(item)
 }
 
+export async function fetchTrailerUrl(id) {
+  return request(`/api/content/${id}/trailer`)
+}
+
 export async function fetchStreamUrl(contentId, episodeNumber = null) {
   const qs = episodeNumber != null ? `?episode=${episodeNumber}` : ''
   return request(`/api/content/${contentId}/stream${qs}`)

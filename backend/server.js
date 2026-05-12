@@ -9,6 +9,7 @@ import rateLimit from 'express-rate-limit'
 import './src/config/firebase.js'          // initialise Firebase Admin on startup
 import { connectMongoDB } from './src/config/mongodb.js'
 import { syncAdminClaims } from './src/config/adminSync.js'
+import { startSubscriptionExpiryJob } from './src/config/subscriptionExpiry.js'
 
 import authRoutes    from './src/routes/auth.js'
 import contentRoutes from './src/routes/content.js'
@@ -69,5 +70,6 @@ app.use(errorHandler)
 
 connectMongoDB().then(async () => {
   await syncAdminClaims()
+  startSubscriptionExpiryJob()
   app.listen(PORT, () => console.log(`Dhara backend → http://localhost:${PORT}`))
 })

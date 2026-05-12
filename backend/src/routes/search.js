@@ -13,8 +13,10 @@ const HIDE_STREAM = '-bunnyVideoId -trailerVideoId -episodes.bunnyVideoId'
  */
 router.get('/', async (req, res, next) => {
   try {
-    const q = (req.query.q || '').trim()
-    if (q.length < 2) return res.json([])
+    const raw = (req.query.q || '').trim()
+    if (raw.length < 2) return res.json([])
+    // Escape regex metacharacters — prevents ReDoS from crafted inputs like (((a+)+)+)
+    const q = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
     let results
 
@@ -31,7 +33,7 @@ router.get('/', async (req, res, next) => {
         .lean()
     } else {
       results = await Content
-        .find({ ...approvedOnly, $text: { $search: q } }, { score: { $meta: 'textScore' } })
+        .find({ ...approvedOnly, $text: { $search: raw } }, { score: { $meta: 'textScore' } })
         .sort({ score: { $meta: 'textScore' } })
         .limit(20)
         .select(HIDE_STREAM)

@@ -3,6 +3,10 @@ import { Content } from '../models/Content.js'
 import { CuratedShelf } from '../models/CuratedShelf.js'
 import { StreamCollection } from '../models/StreamCollection.js'
 import { cache } from '../config/cache.js'
+import {
+  emailCreatorApproved, emailCreatorRejected,
+  emailSubmissionApproved, emailSubmissionRejected,
+} from '../config/email.js'
 
 // Bust the Browse/Home content cache whenever admin mutates the catalog
 function bustContentCache() { cache.deleteByPrefix('/api/content') }
@@ -844,6 +848,8 @@ router.patch('/creator-applications/:userId/approve', async (req, res, next) => 
     ).select('email displayName creatorStatus isCreator creatorProfile')
 
     if (!user) return res.status(404).json({ error: 'User not found' })
+    // Fire-and-forget — email failure must never block the API response
+    emailCreatorApproved(user.creatorProfile?.studioName || user.displayName, user.email)
     res.json({ success: true, user })
   } catch (err) {
     next(err)
@@ -863,6 +869,7 @@ router.patch('/creator-applications/:userId/reject', async (req, res, next) => {
     ).select('email displayName creatorStatus isCreator creatorProfile')
 
     if (!user) return res.status(404).json({ error: 'User not found' })
+    emailCreatorRejected(user.creatorProfile?.studioName || user.displayName, user.email, reason)
     res.json({ success: true, user })
   } catch (err) {
     next(err)
@@ -900,10 +907,20 @@ router.patch('/submissions/:id/approve', async (req, res, next) => {
       { _id: req.params.id, creatorId: { $ne: null } },
       { $set: { submissionStatus: 'approved', rejectionReason: '' } },
       { new: true }
-    ).lean()
+    ).populate('creatorId', 'email displayName creatorProfile').lean()
 
     if (!content) return res.status(404).json({ error: 'Submission not found' })
     bustContentCache()
+
+    if (content.creatorId) {
+      const creator = content.creatorId
+      emailSubmissionApproved(
+        creator.creatorProfile?.studioName || creator.displayName,
+        creator.email,
+        content.title
+      )
+    }
+
     res.json({ success: true, content })
   } catch (err) {
     next(err)
@@ -922,9 +939,20 @@ router.patch('/submissions/:id/reject', async (req, res, next) => {
       { _id: req.params.id, creatorId: { $ne: null } },
       { $set: { submissionStatus: 'rejected', rejectionReason: reason.trim() } },
       { new: true }
-    ).lean()
+    ).populate('creatorId', 'email displayName creatorProfile').lean()
 
     if (!content) return res.status(404).json({ error: 'Submission not found' })
+
+    if (content.creatorId) {
+      const creator = content.creatorId
+      emailSubmissionRejected(
+        creator.creatorProfile?.studioName || creator.displayName,
+        creator.email,
+        content.title,
+        reason
+      )
+    }
+
     res.json({ success: true, content })
   } catch (err) {
     next(err)

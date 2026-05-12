@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { X, Play, Plus, Check, ThumbsUp, ThumbsDown, Crown, Globe, Star } from 'lucide-react'
+import { X, Play, Plus, Check, ThumbsUp, ThumbsDown, Crown, Globe, Star, Clapperboard } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
-import { addToWatchlist, removeFromWatchlist, likeContent, dislikeContent } from '../services/api'
+import { addToWatchlist, removeFromWatchlist, likeContent, dislikeContent, fetchTrailerUrl } from '../services/api'
 import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './ContentDetailModal.module.css'
 
@@ -34,6 +34,8 @@ export default function ContentDetailModal() {
   const [disliked,     setDisliked]     = useState(() => Boolean(user?.dislikedContent?.includes(item?.id)))
   const [likeCount,    setLikeCount]    = useState(item?.likeCount    ?? 0)
   const [dislikeCount, setDislikeCount] = useState(item?.dislikeCount ?? 0)
+  const [trailerEmbed, setTrailerEmbed] = useState(null)
+  const [trailerLoading, setTrailerLoading] = useState(false)
 
   if (!item) return null
 
@@ -51,6 +53,19 @@ export default function ContentDetailModal() {
   const heroTransformed = heroUrl
     ? cloudinaryTransform(heroUrl, 'w_1200,h_675,c_fill,g_auto,f_auto,q_auto')
     : null
+
+  const handleTrailer = async () => {
+    if (trailerEmbed) { setTrailerEmbed(null); return }
+    setTrailerLoading(true)
+    try {
+      const { embedUrl } = await fetchTrailerUrl(item.id)
+      setTrailerEmbed(embedUrl)
+    } catch {
+      // No trailer available — button should not show, but fail silently
+    } finally {
+      setTrailerLoading(false)
+    }
+  }
 
   const handleWatch = (episodeBunnyId = null) => {
     if (!isLoggedIn) { openAuth('signin'); return }
@@ -113,13 +128,29 @@ export default function ContentDetailModal() {
     >
       <div className={styles.modal}>
 
+        {/* ── Trailer iframe (replaces hero when active) ── */}
+        {trailerEmbed && (
+          <div className={styles.trailerWrap}>
+            <iframe
+              src={trailerEmbed}
+              className={styles.trailerFrame}
+              allow="autoplay; fullscreen"
+              allowFullScreen
+              title="Trailer"
+            />
+            <button className={styles.trailerClose} onClick={() => setTrailerEmbed(null)} aria-label="Close trailer">
+              <X size={14} /> Close trailer
+            </button>
+          </div>
+        )}
+
         {/* ── Hero: title + buttons overlaid at bottom ── */}
         <div
           className={styles.hero}
-          style={heroTransformed
-            ? { backgroundImage: `url(${heroTransformed})` }
-            : { background: item.palette || '#1a1a22' }
-          }
+          style={{
+            ...(heroTransformed ? { backgroundImage: `url(${heroTransformed})` } : { background: item.palette || '#1a1a22' }),
+            ...(trailerEmbed ? { display: 'none' } : {}),
+          }}
         >
           <div className={styles.heroScrim} />
 
@@ -153,6 +184,17 @@ export default function ContentDetailModal() {
                   : <><Play size={15} color="#000" fill="#000" /> Play</>
                 }
               </button>
+
+              {item.trailerVideoId && (
+                <button
+                  className={styles.trailerBtn}
+                  onClick={handleTrailer}
+                  disabled={trailerLoading}
+                >
+                  <Clapperboard size={14} />
+                  {trailerLoading ? 'Loading…' : trailerEmbed ? 'Hide Trailer' : 'Watch Trailer'}
+                </button>
+              )}
 
               <button
                 className={`${styles.circleBtn} ${inWatchlist ? styles.circleBtnSaved : ''}`}
