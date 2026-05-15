@@ -1,12 +1,68 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Clapperboard, Users, Globe, Play, SkipForward } from 'lucide-react'
+import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Clapperboard, Users, Globe, Play, SkipForward, VideoOff, RotateCcw } from 'lucide-react'
 import VideoPlayer from '../components/VideoPlayer'
 import PosterCard from '../components/PosterCard'
-import { fetchContentById, fetchStreamUrl, saveWatchProgress, recordView, fetchContent } from '../services/api'
+import { fetchContentById, fetchStreamUrl, saveWatchProgress, recordView, fetchContent, rateContent } from '../services/api'
 import { useStore } from '../store/useStore'
 import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './Watch.module.css'
+
+function formatTime(secs) {
+  if (!secs || !isFinite(secs)) return ''
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = Math.floor(secs % 60).toString().padStart(2, '0')
+  return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s}` : `${m}:${s}`
+}
+
+function StarRating({ contentId, initialScore, communityRating, communityRatingCount }) {
+  const { isLoggedIn } = useStore()
+  const [hovered, setHovered] = useState(0)
+  const [selected, setSelected] = useState(initialScore || 0)
+  const [submitted, setSubmitted] = useState(Boolean(initialScore))
+  const [community, setCommunity] = useState({ rating: communityRating, count: communityRatingCount })
+
+  const handleRate = async (score) => {
+    if (!isLoggedIn) return
+    setSelected(score)
+    setSubmitted(true)
+    try {
+      const res = await rateContent(contentId, score)
+      setCommunity({ rating: res.communityRating, count: res.communityRatingCount })
+    } catch {}
+  }
+
+  const display = hovered || selected
+  return (
+    <div className={styles.starRating}>
+      <div className={styles.starRow}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            className={styles.starBtn}
+            onMouseEnter={() => !submitted && setHovered(n)}
+            onMouseLeave={() => !submitted && setHovered(0)}
+            onClick={() => handleRate(n)}
+            aria-label={`Rate ${n} out of 5`}
+          >
+            <Star
+              size={18}
+              fill={n <= display ? '#f59e0b' : 'none'}
+              color={n <= display ? '#f59e0b' : 'rgba(255,255,255,0.25)'}
+              strokeWidth={1.5}
+            />
+          </button>
+        ))}
+      </div>
+      {community.count > 0 && (
+        <span className={styles.starMeta}>
+          {community.rating.toFixed(1)} · {community.count.toLocaleString()} {community.count === 1 ? 'rating' : 'ratings'}
+        </span>
+      )}
+    </div>
+  )
+}
 
 function stripExtension(name = '') {
   return name.replace(/\.(mp4|mkv|mov|avi|webm|m4v|flv|wmv|ts|mts|3gp)$/i, '').trim()
@@ -22,16 +78,20 @@ export default function Watch() {
   const [activeEp,       setActiveEp]      = useState(0)
   const [showList,       setShowList]      = useState(false)
   const [loading,        setLoading]       = useState(true)
-  const [error,          setError]         = useState(null)
+  const [contentError,   setContentError]  = useState(null)
+  const [streamError,    setStreamError]   = useState(null)
   const [related,        setRelated]       = useState([])
+  const [resumePos,      setResumePos]     = useState(null)
+  const resumeTimerRef = useRef(null)
 
   useEffect(() => {
     setLoading(true)
     setRelated([])
+    setStreamError(null)
+    setResumePos(null)
     fetchContentById(id)
       .then((c) => {
         setContent(c)
-        // Load related content from same type/genre, excluding this title
         const genre = c.genre?.[0]
         fetchContent({ type: c.type, ...(genre ? { genre } : {}), sort: 'rating', page: 1, limit: 7 })
           .then((res) => {
@@ -40,25 +100,44 @@ export default function Watch() {
           })
           .catch(() => {})
       })
-      .catch(() => setError('Content not found.'))
+      .catch(() => setContentError('This title could not be found.'))
       .finally(() => setLoading(false))
   }, [id])
+
+  // Pre-populate localStorage from server-side watch progress for cross-device resume
+  useEffect(() => {
+    if (!content || !user?.watchProgress) return
+    const epNum = content.episodes?.length > 0
+      ? (content.episodes[activeEp]?.number ?? null)
+      : null
+    const saved = user.watchProgress.find(
+      (p) => String(p.contentId) === id && (p.episodeNumber ?? null) === epNum
+    )
+    if (!saved || saved.positionSecs < 30) return
+
+    const key   = `dhara_progress_${id}`
+    const local = parseFloat(localStorage.getItem(key) || '0')
+    if (saved.positionSecs > local) {
+      localStorage.setItem(key, String(saved.positionSecs))
+      if (saved.durationSecs) localStorage.setItem(`${key}_dur`, String(saved.durationSecs))
+    }
+    setResumePos(saved.positionSecs)
+  }, [content, user, id, activeEp])
 
   useEffect(() => {
     if (!content || !isLoggedIn) return
     if (!user?.emailVerified) return
     if (content.isPremium && !isSubscribed) return
 
-    // For Series, pass the active episode number so the backend returns
-    // the correct per-episode HLS stream rather than the root bunnyVideoId.
     const epNumber = content.episodes?.length > 0
       ? (content.episodes[activeEp]?.number ?? null)
       : null
 
-    setHlsUrl(null)  // clear previous stream while new one loads
+    setHlsUrl(null)
+    setStreamError(null)
     fetchStreamUrl(id, epNumber)
       .then(({ hlsUrl }) => { setHlsUrl(hlsUrl) })
-      .catch(() => setError('Could not load stream. Please try again.'))
+      .catch(() => setStreamError('Video temporarily unavailable · We\'re working on it'))
   }, [content, id, activeEp, isLoggedIn, isSubscribed, user?.emailVerified])
 
   // Record a view (and episode view) each time the active stream changes
@@ -90,11 +169,28 @@ export default function Watch() {
     }
 
     const timer = setInterval(tick, 30_000)
-    return () => clearInterval(timer)
+    return () => { clearInterval(timer); tick() }  // flush final position on navigate-away
   }, [hlsUrl, isLoggedIn, id, activeEp, content])
 
+  // Auto-dismiss resume prompt after 8 s
+  useEffect(() => {
+    if (!resumePos) return
+    resumeTimerRef.current = setTimeout(() => setResumePos(null), 8000)
+    return () => clearTimeout(resumeTimerRef.current)
+  }, [resumePos])
+
+  const dismissResume = useCallback((startOver) => {
+    clearTimeout(resumeTimerRef.current)
+    if (startOver) {
+      const key = `dhara_progress_${id}`
+      localStorage.removeItem(key)
+      localStorage.removeItem(`${key}_dur`)
+    }
+    setResumePos(null)
+  }, [id])
+
   if (loading || authLoading) return <div className={styles.state}>Loading…</div>
-  if (error)                  return <div className={styles.state}>{error}</div>
+  if (contentError)           return <div className={styles.state}>{contentError}</div>
 
   const cleanTitle    = stripExtension(content.title)
   const episodes      = content?.episodes || []
@@ -217,12 +313,49 @@ export default function Watch() {
       </div>
 
       <div className={styles.playerWrap}>
-        <VideoPlayer
-          src={hlsUrl}
-          title={playerTitle}
-          poster={content.posterUrl || null}
-          storageKey={id}
-        />
+        {streamError ? (
+          <div className={styles.streamUnavailable}>
+            <VideoOff size={32} className={styles.streamUnavailableIcon} />
+            <p className={styles.streamUnavailableTitle}>Video temporarily unavailable</p>
+            <p className={styles.streamUnavailableDesc}>{streamError}</p>
+            <button
+              className={styles.streamRetryBtn}
+              onClick={() => {
+                setStreamError(null)
+                const epNumber = content.episodes?.length > 0
+                  ? (content.episodes[activeEp]?.number ?? null) : null
+                setHlsUrl(null)
+                fetchStreamUrl(id, epNumber)
+                  .then(({ hlsUrl }) => setHlsUrl(hlsUrl))
+                  .catch(() => setStreamError('Video temporarily unavailable · We\'re working on it'))
+              }}
+            >
+              <RotateCcw size={14} /> Retry
+            </button>
+          </div>
+        ) : (
+          <div style={{ position: 'relative' }}>
+            <VideoPlayer
+              src={hlsUrl}
+              title={playerTitle}
+              poster={content.posterUrl || null}
+              storageKey={id}
+            />
+            {resumePos && (
+              <div className={styles.resumePrompt}>
+                <span className={styles.resumeText}>
+                  Resume from <strong>{formatTime(resumePos)}</strong>?
+                </span>
+                <button className={styles.resumeBtn} onClick={() => dismissResume(false)}>
+                  Continue
+                </button>
+                <button className={styles.resumeBtnGhost} onClick={() => dismissResume(true)}>
+                  Start over
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className={styles.below}>
@@ -277,6 +410,15 @@ export default function Watch() {
 
               {content.desc && (
                 <p className={styles.synopsis}>{content.desc}</p>
+              )}
+
+              {isLoggedIn && (
+                <StarRating
+                  contentId={id}
+                  initialScore={null}
+                  communityRating={content.communityRating ?? 0}
+                  communityRatingCount={content.communityRatingCount ?? 0}
+                />
               )}
             </div>
 

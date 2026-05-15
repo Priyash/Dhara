@@ -247,6 +247,20 @@
   user-select: none;
 }
 
+/* Auth skeleton — shown while Firebase resolves the session */
+.navAuthSkeleton {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  animation: navSkeletonPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes navSkeletonPulse {
+  0%, 100% { opacity: 0.35; }
+  50%       { opacity: 0.75; }
+}
+
 @media (max-width: 900px) {
   .links {
     display: none;

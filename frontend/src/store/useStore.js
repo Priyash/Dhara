@@ -14,9 +14,13 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 let refreshProfileInFlight = null
 let verificationSyncInFlight = null
 
+// Optimistic hint: avoids sign-in flash for returning users.
+// Set when the user logs in; cleared on sign-out or expired session.
+const _authHint = typeof localStorage !== 'undefined' && localStorage.getItem('dhara:authed') === '1'
+
 export const useStore = create((set, get) => ({
   // Auth
-  isLoggedIn: false,
+  isLoggedIn: _authHint,  // optimistic for returning users; confirmed by Firebase shortly after
   isSubscribed: false,
   isAdmin: false,
   subscriptionStatus: 'free',   // free | trial | active | grace | lapsed
@@ -46,6 +50,7 @@ export const useStore = create((set, get) => ({
   initAuth: () => {
     const syncSession = async (firebaseUser, { forceFreshToken = false } = {}) => {
       if (!firebaseUser) {
+        localStorage.removeItem('dhara:authed')
         set({ isLoggedIn: false, isSubscribed: false, user: null, authLoading: false })
         return
       }
@@ -57,6 +62,7 @@ export const useStore = create((set, get) => ({
 
         const idToken = await firebaseUser.getIdToken(forceFreshToken)
         const { user } = await loginWithBackend(idToken) // upsert in MongoDB
+        localStorage.setItem('dhara:authed', '1')
         set({
           isLoggedIn:         true,
           isAdmin:            Boolean(user.isAdmin),
@@ -71,6 +77,7 @@ export const useStore = create((set, get) => ({
           authLoading:        false,
         })
       } catch {
+        localStorage.removeItem('dhara:authed')
         set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, subscriptionStatus: 'free', trialEndsAt: null, graceEndsAt: null, creatorStatus: 'none', isCreator: false, creatorProfile: null, user: null, authLoading: false })
       }
     }
@@ -129,6 +136,7 @@ export const useStore = create((set, get) => ({
     const credential = await signInWithEmailAndPassword(auth, email, password)
     const idToken    = await credential.user.getIdToken()
     const { user }   = await loginWithBackend(idToken)
+    localStorage.setItem('dhara:authed', '1')
     set({
       isLoggedIn:         true,
       isAdmin:            Boolean(user.isAdmin),
@@ -155,6 +163,7 @@ export const useStore = create((set, get) => ({
     }
     const idToken    = await credential.user.getIdToken()
     const { user }   = await loginWithBackend(idToken)
+    localStorage.setItem('dhara:authed', '1')
     set({
       isLoggedIn:         true,
       isAdmin:            Boolean(user.isAdmin),
@@ -171,6 +180,7 @@ export const useStore = create((set, get) => ({
 
   signOut: async () => {
     await firebaseSignOut(auth)
+    localStorage.removeItem('dhara:authed')
     set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, subscriptionStatus: 'free', trialEndsAt: null, graceEndsAt: null, creatorStatus: 'none', isCreator: false, creatorProfile: null, user: null })
   },
 

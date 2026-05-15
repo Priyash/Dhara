@@ -258,9 +258,13 @@ router.post('/webhook', async (req, res, next) => {
       }
 
       case 'subscription.charged': {
-        const entity = event.payload.subscription.entity
+        const entity    = event.payload.subscription.entity
+        const paymentId = event.payload.payment?.entity?.id
         const { userId, plan } = entity.notes || {}
         if (!userId || !PLANS[plan]) break
+
+        // Idempotency: skip if this payment was already processed
+        if (paymentId && await Transaction.exists({ paymentId })) break
 
         const user = await User.findById(userId)
         if (!user) break

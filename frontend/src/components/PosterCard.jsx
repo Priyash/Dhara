@@ -1,6 +1,8 @@
-import { useState, memo } from 'react'
+import { useState, useRef, memo } from 'react'
+import Hls from 'hls.js'
 import { Crown, Star } from 'lucide-react'
 import { cloudinaryTransform } from '../services/cloudinary'
+import { fetchTrailerUrl } from '../services/api'
 import styles from './PosterCard.module.css'
 
 function stripExtension(name = '') {
@@ -8,7 +10,44 @@ function stripExtension(name = '') {
 }
 
 function PosterCard({ item, onClick, size = 'normal', isSubscribed = false }) {
-  const [imgError, setImgError] = useState(false)
+  const [imgError,    setImgError]    = useState(false)
+  const [trailerSrc,  setTrailerSrc]  = useState(null)
+  const hoverTimer = useRef(null)
+  const videoRef   = useRef(null)
+  const hlsRef     = useRef(null)
+
+  const startTrailer = async () => {
+    if (!item.trailerVideoId) return
+    try {
+      const { hlsUrl } = await fetchTrailerUrl(item._id || item.id)
+      if (!hlsUrl) return
+      setTrailerSrc(hlsUrl)
+    } catch {}
+  }
+
+  const handleMouseEnter = () => {
+    hoverTimer.current = setTimeout(startTrailer, 700)
+  }
+
+  const handleMouseLeave = () => {
+    clearTimeout(hoverTimer.current)
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
+    setTrailerSrc(null)
+  }
+
+  // Wire up HLS when trailerSrc is set
+  const onVideoRef = (el) => {
+    videoRef.current = el
+    if (!el || !trailerSrc) return
+    if (el.canPlayType('application/vnd.apple.mpegurl')) {
+      el.src = trailerSrc
+    } else if (Hls.isSupported()) {
+      const hls = new Hls({ maxBufferLength: 10, startLevel: 0 })
+      hls.loadSource(trailerSrc)
+      hls.attachMedia(el)
+      hlsRef.current = hls
+    }
+  }
 
   const posterSrc = item.posterUrl && !imgError
     ? cloudinaryTransform(item.posterUrl, 'w_400,h_600,c_fill,g_auto,f_auto,q_auto')
@@ -20,6 +59,11 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false }) {
     ? `${item.episodes.length} Ep`
     : null
 
+  const progress     = item._progress
+  const progressPct  = progress?.durationSecs > 0
+    ? Math.min(Math.round((progress.positionSecs / progress.durationSecs) * 100), 99)
+    : null
+
   return (
     <article
       className={`${styles.card} ${styles[size]} ${item.isPremium && !isSubscribed ? styles.premiumCard : ''}`}
@@ -28,6 +72,8 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false }) {
       tabIndex={0}
       aria-label={`${cleanTitle}, ${item.type}`}
       onKeyDown={(e) => e.key === 'Enter' && onClick?.(item)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {/* Poster image */}
       <div
@@ -44,7 +90,19 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false }) {
             onError={() => setImgError(true)}
           />
         )}
+        {trailerSrc && (
+          <video
+            ref={onVideoRef}
+            className={styles.trailerVideo}
+            autoPlay muted playsInline loop
+          />
+        )}
         <div className={styles.gradient} />
+        {progressPct !== null && (
+          <div className={styles.progressBar}>
+            <div className={styles.progressFill} style={{ width: `${progressPct}%` }} />
+          </div>
+        )}
 
         {/* Info area — strip fades in above title on hover */}
         <div className={styles.info}>
@@ -55,9 +113,10 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false }) {
             {item.releaseYear && (
               <span className={styles.metaChip}>{item.releaseYear}</span>
             )}
-            {episodeInfo && (
-              <span className={styles.metaChip}>{episodeInfo}</span>
-            )}
+            {progress?.episodeNumber != null
+              ? <span className={styles.metaChip}>Ep {progress.episodeNumber}</span>
+              : episodeInfo && <span className={styles.metaChip}>{episodeInfo}</span>
+            }
           </div>
 
           <div className={styles.meta}>

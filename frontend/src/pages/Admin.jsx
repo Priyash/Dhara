@@ -5,7 +5,7 @@ import {
   CreditCard, Check, Copy, AlertTriangle, Zap, Code2, Crown,
   UserCheck, UserX, FileCheck, FileX, ListPlus, Trash2, Eye,
   GripVertical, Layers, Plus, UploadIcon, IndianRupee,
-  Calculator, Wallet, Clock, ChevronDown,
+  Calculator, Wallet, Clock, ChevronDown, TrendingUp, Users, BarChart2,
 } from 'lucide-react'
 import { uploadToCloudinary } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
@@ -20,9 +20,193 @@ import {
   listAdminSubmissions, approveSubmission, rejectSubmission,
   listAdminShelves, createAdminShelf, updateAdminShelf, deleteAdminShelf, reorderAdminShelves,
   listAdminCreatorEarnings, calculateCreatorEarnings, processCreatorPayout, listAdminCreatorPayouts,
+  getAdminRevenue,
 } from '../services/api'
 import styles from './Admin.module.css'
 import { isValidDuration } from '../utils/duration'
+
+// ── Revenue dashboard — tier colours ─────────────────────────────────────────
+const TIER_COLORS = {
+  'Featured':    '#c4b5fd',
+  'Established': '#a78bfa',
+  'Rising Star': '#8b5cf6',
+  'Newcomer':    '#6366f1',
+}
+
+// ── 12-month revenue bar chart ────────────────────────────────────────────────
+function RevMonthlyBarsChart({ data }) {
+  const ABBR = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const W = 560, H = 110, PT = 22, PB = 20, PL = 6, PR = 6
+  const iW = W - PL - PR, iH = H - PT - PB
+  const now = new Date()
+  // Generate 12 calendar months, filling gaps with 0
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1)
+    const y = d.getFullYear(), m = d.getMonth() + 1
+    const found = (data || []).find(x => x.year === y && x.month === m)
+    return { y, m, rev: found?.revenuePaise || 0 }
+  })
+  const maxV = Math.max(...months.map(x => x.rev), 1)
+  const gap  = iW / 12, barW = gap * 0.58
+  const fmt  = (p) => {
+    const r = p / 100
+    return r >= 100000 ? `₹${(r/100000).toFixed(1)}L` : r >= 1000 ? `₹${(r/1000).toFixed(1)}k` : `₹${Math.round(r)}`
+  }
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display:'block', overflow:'visible', marginTop:8 }}>
+      {months.map(({ y, m, rev }, i) => {
+        const cx   = PL + gap * i + gap / 2
+        const barH = Math.max((rev / maxV) * iH, rev > 0 ? 3 : 1)
+        const vy   = PT + iH - barH
+        const isCur = y === now.getFullYear() && m === now.getMonth() + 1
+        return (
+          <g key={`${y}-${m}`}>
+            <rect x={cx - barW/2} y={vy} width={barW} height={barH} rx="3"
+              fill={isCur ? '#f59e0b' : 'rgba(245,158,11,0.32)'}
+              style={isCur ? { filter:'drop-shadow(0 0 6px rgba(245,158,11,0.5))' } : undefined} />
+            {rev > 0 && (
+              <text x={cx} y={vy - 5} textAnchor="middle" fontSize="8" fontWeight="600"
+                fill="rgba(245,158,11,0.85)" fontFamily="system-ui,sans-serif">{fmt(rev)}</text>
+            )}
+            <text x={cx} y={H - 2} textAnchor="middle" fontSize="8"
+              fill={isCur ? 'rgba(245,158,11,0.9)' : 'rgba(255,255,255,0.28)'}
+              fontWeight={isCur ? '700' : '400'} fontFamily="system-ui,sans-serif">{ABBR[m]}</text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+// ── Plan mix donut ────────────────────────────────────────────────────────────
+function PlanDonutChart({ data }) {
+  const PLANS = [
+    { key: 'monthly', label: 'Monthly ₹99',  color: '#f59e0b' },
+    { key: 'annual',  label: 'Annual ₹599',  color: '#fb923c' },
+    { key: 'family',  label: 'Family ₹999',  color: '#fbbf24' },
+  ].map(p => ({
+    ...p,
+    paise: (data || []).find(d => d.plan === p.key)?.revenuePaise || 0,
+    count: (data || []).find(d => d.plan === p.key)?.transactionCount || 0,
+  })).filter(p => p.paise > 0)
+
+  const total = PLANS.reduce((s, p) => s + p.paise, 0) || 1
+  const r = 38, cx = 50, cy = 50, C = 2 * Math.PI * r
+  let cum = 0
+  const segs = PLANS.map(p => {
+    const len = (p.paise / total) * C
+    const off = -(C * 0.25) - cum
+    cum += len
+    return { ...p, len, off, pct: Math.round((p.paise / total) * 100) }
+  })
+  const fmtRs = (p) => {
+    const r = p / 100
+    return r >= 100000 ? `₹${(r/100000).toFixed(1)}L` : r >= 1000 ? `₹${(r/1000).toFixed(1)}k` : `₹${Math.round(r)}`
+  }
+  if (!segs.length) return <p style={{ fontSize:12, color:'rgba(255,255,255,0.25)', margin:0 }}>No plan data yet.</p>
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:16, padding:'8px 0' }}>
+      <svg viewBox="0 0 100 100" width="110" height="110" style={{ flexShrink:0 }}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="14" />
+        {segs.map(seg => (
+          <circle key={seg.key} cx={cx} cy={cy} r={r} fill="none"
+            stroke={seg.color} strokeWidth="13"
+            strokeDasharray={`${seg.len - 1.5} ${C - seg.len + 1.5}`}
+            strokeDashoffset={seg.off}
+            style={{ filter:`drop-shadow(0 0 4px ${seg.color}55)` }} />
+        ))}
+        <text x={cx} y={cy - 5} textAnchor="middle" fontSize="11" fontWeight="700" fill="white" fontFamily="system-ui,sans-serif">
+          {fmtRs(total)}
+        </text>
+        <text x={cx} y={cy + 8} textAnchor="middle" fontSize="7.5" fill="rgba(255,255,255,0.38)" fontFamily="system-ui,sans-serif">total</text>
+      </svg>
+      <div style={{ display:'flex', flexDirection:'column', gap:9, flex:1 }}>
+        {segs.map(seg => (
+          <div key={seg.key} style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ width:8, height:8, borderRadius:'50%', background:seg.color, flexShrink:0 }} />
+            <span style={{ fontFamily:'var(--font-body)', fontSize:12, color:'var(--color-text)', flex:1 }}>{seg.label}</span>
+            <strong style={{ fontFamily:'var(--font-display)', fontSize:13, color:seg.color }}>{seg.pct}%</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Subscriber health stacked bar ─────────────────────────────────────────────
+function SubHealthBarChart({ data }) {
+  const STATUSES = [
+    { key: 'active', label: 'Active',  color: '#4ade80' },
+    { key: 'trial',  label: 'Trial',   color: '#38bdf8' },
+    { key: 'grace',  label: 'Grace',   color: '#fbbf24' },
+    { key: 'lapsed', label: 'Lapsed',  color: '#f87171' },
+    { key: 'free',   label: 'Free',    color: 'rgba(255,255,255,0.12)' },
+  ]
+  const counts = STATUSES.map(s => ({ ...s, n: (data || {})[s.key] || 0 }))
+  const total  = counts.reduce((s, x) => s + x.n, 0) || 1
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:12, marginTop:10 }}>
+      <div style={{ height:10, borderRadius:99, overflow:'hidden', display:'flex', background:'rgba(255,255,255,0.04)' }}>
+        {counts.filter(s => s.n > 0).map(s => (
+          <div key={s.key}
+            style={{ width:`${(s.n / total) * 100}%`, minWidth:2, height:'100%', background:s.color, transition:'width 0.6s ease' }}
+            title={`${s.label}: ${s.n}`} />
+        ))}
+      </div>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:'8px 20px' }}>
+        {counts.filter(s => s.n > 0).map(s => (
+          <span key={s.key} style={{ display:'flex', alignItems:'center', gap:6, fontFamily:'var(--font-body)', fontSize:12, color:'var(--color-text-muted)' }}>
+            <span style={{ width:8, height:8, borderRadius:'50%', background:s.color, flexShrink:0 }} />
+            {s.label} <strong style={{ color:'var(--color-text)' }}>{s.n.toLocaleString()}</strong>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Top creators horizontal bars ──────────────────────────────────────────────
+function CreatorEarningsBarsChart({ data }) {
+  if (!data?.length) return <p style={{ fontSize:12, color:'rgba(255,255,255,0.25)', margin:'8px 0 0', textAlign:'center' }}>No creator earnings yet.</p>
+  const sorted  = [...data].sort((a, b) => b.totalEarned - a.totalEarned).slice(0, 8)
+  const maxEarn = Math.max(...sorted.map(c => c.totalEarned), 1)
+  const fmt     = (n) => n >= 1000 ? `₹${(n/1000).toFixed(1)}k` : `₹${n}`
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:10, marginTop:8 }}>
+      {sorted.map(c => {
+        const totalPct = Math.max((c.totalEarned / maxEarn) * 100, 1)
+        const paidPct  = c.totalEarned > 0 ? (c.paidOut / c.totalEarned) * totalPct : 0
+        const color    = TIER_COLORS[c.tier] || '#6366f1'
+        return (
+          <div key={String(c.creatorId)} style={{ display:'grid', gridTemplateColumns:'160px 1fr 110px', alignItems:'center', gap:12 }}>
+            <div style={{ overflow:'hidden' }}>
+              <p style={{ margin:0, fontFamily:'var(--font-body)', fontSize:12, fontWeight:600, color:'var(--color-text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                {c.studioName}
+              </p>
+              <span style={{ fontFamily:'var(--font-body)', fontSize:10, fontWeight:600, padding:'1px 6px', borderRadius:99, border:`1px solid ${color}44`, color, background:'transparent' }}>
+                {c.tier}
+              </span>
+            </div>
+            <div style={{ position:'relative', height:20, background:'rgba(255,255,255,0.04)', borderRadius:4, overflow:'hidden' }}>
+              <div style={{ position:'absolute', top:0, left:0, height:'100%', width:`${totalPct}%`, background:`${color}22`, border:`1px solid ${color}33`, borderRadius:4 }} />
+              <div style={{ position:'absolute', top:0, left:0, height:'100%', width:`${paidPct}%`, background:color, borderRadius:4, transition:'width 0.6s ease' }} />
+            </div>
+            <div style={{ textAlign:'right' }}>
+              <div style={{ fontFamily:'var(--font-display)', fontSize:13, fontWeight:700, color }}>{fmt(c.totalEarned)}</div>
+              {c.pending > 0 && (
+                <div style={{ fontFamily:'var(--font-body)', fontSize:10, color:'#fbbf24' }}>₹{c.pending.toLocaleString('en-IN')} pending</div>
+              )}
+            </div>
+          </div>
+        )
+      })}
+      <div style={{ display:'flex', gap:16, fontFamily:'var(--font-body)', fontSize:11, color:'rgba(255,255,255,0.35)', marginTop:4 }}>
+        <span><span style={{ display:'inline-block', width:12, height:8, borderRadius:2, background:'rgba(99,102,241,0.2)', marginRight:5, verticalAlign:'middle' }}/>Total Earned</span>
+        <span><span style={{ display:'inline-block', width:12, height:8, borderRadius:2, background:'#6366f1', marginRight:5, verticalAlign:'middle' }}/>Paid Out</span>
+      </div>
+    </div>
+  )
+}
 
 const TABS = [
   { id: 'content',  label: 'Content',         icon: Library      },
@@ -108,7 +292,6 @@ export default function Admin() {
   const [dragOver, setDragOver]               = useState(false)
   const [toast, setToast]                     = useState(null)
   const [jobsLastRefreshed, setJobsLastRefreshed] = useState(null)
-  const [refreshTick, setRefreshTick]             = useState(0)
 
   // ── Payment provider ──────────────────────────────────────────────────────
   const [paymentConfig, setPaymentConfig]   = useState(null)
@@ -140,6 +323,7 @@ export default function Admin() {
   const [payoutBusy,         setPayoutBusy]         = useState(false)
   const [revenueNotice,      setRevenueNotice]      = useState('')
   const [revenueError,       setRevenueError]       = useState('')
+  const [platformRevenue,    setPlatformRevenue]    = useState(null)
 
   // ── Curated Shelves ───────────────────────────────────────────────────────
   const [shelves,          setShelves]          = useState([])
@@ -181,11 +365,13 @@ export default function Admin() {
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadData = async () => {
+    // Bunny and payments are external services — catch individually so a
+    // misconfigured API key never blocks access to the rest of the admin panel.
     const [collectionData, contentData, jobData, bunnyCollectionData, paymentData] = await Promise.all([
       listAdminCollections(),
       listAdminContent(),
-      listUploadJobs(40),
-      listBunnyCollections(),
+      listUploadJobs(40).catch(() => []),
+      listBunnyCollections().catch(() => []),
       getPaymentConfig().catch(() => null),
     ])
     setCollections(collectionData)
@@ -218,8 +404,10 @@ export default function Admin() {
         await getAdminSession()
         if (!active) return
         setAdminAllowed(true)
-        await loadData()
+        // loadData failures (e.g. Bunny unavailable) must not revoke admin access
+        await loadData().catch(() => {})
       } catch (err) {
+        // Only auth errors reach here — data errors are swallowed in loadData
         if (!active) return
         setAdminAllowed(false)
         setSessionError(err?.message || 'Admin access required.')
@@ -241,12 +429,6 @@ export default function Admin() {
     return () => clearInterval(timer)
   }, [adminAllowed, requestPermission, checkTransitions])
 
-  // 1-second ticker so "Xs ago" label stays current
-  useEffect(() => {
-    if (!jobsLastRefreshed) return undefined
-    const t = setInterval(() => setRefreshTick((n) => n + 1), 1000)
-    return () => clearInterval(t)
-  }, [jobsLastRefreshed])
 
   useEffect(() => {
     if (editForm && modalFormRef.current) modalFormRef.current.scrollTop = 0
@@ -740,13 +922,16 @@ export default function Admin() {
   // ── Creator Revenue handlers ──────────────────────────────────────────────
   const loadCreatorRevenue = async () => {
     setRevenueLoading(true)
+    setRevenueError('')
     try {
-      const [earnings, payouts] = await Promise.all([
+      const [earnings, payouts, platform] = await Promise.all([
         listAdminCreatorEarnings(),
         listAdminCreatorPayouts(),
+        getAdminRevenue(),
       ])
       setCreatorEarnings(earnings)
       setCreatorPayouts(payouts)
+      setPlatformRevenue(platform)
     } catch (err) {
       setRevenueError(err?.message || 'Could not load revenue data.')
     } finally {
@@ -1487,11 +1672,6 @@ export default function Admin() {
               <span className={styles.liveIndicator}>
                 <span className={styles.livePulseDot} />
                 Live
-                {jobsLastRefreshed && (
-                  <span className={styles.liveAgo}>
-                    · {Math.floor((Date.now() - jobsLastRefreshed.getTime()) / 1000)}s ago
-                  </span>
-                )}
               </span>
             </div>
             <div className={styles.jobsList}>
@@ -2375,9 +2555,26 @@ export default function Admin() {
         )
       })()}
 
-      {/* ── CREATOR REVENUE TAB ─────────────────────────────────────────── */}
-      {activeTab === 'revenue' && (
-        <section className={styles.jobsCard}>
+      {/* ── REVENUE TAB ─────────────────────────────────────────────────── */}
+      {activeTab === 'revenue' && (() => {
+        const pr   = platformRevenue || {}
+        const mo   = pr.monthlyRevenue || []
+        const thisM = mo.at(-1) || { revenuePaise: 0, count: 0 }
+        const lastM = mo.at(-2) || { revenuePaise: 0, count: 0 }
+        const momPct = lastM.revenuePaise > 0
+          ? Math.round((thisM.revenuePaise - lastM.revenuePaise) / lastM.revenuePaise * 100)
+          : null
+        const activeSubs = pr.subscribersByStatus?.active || 0
+        const arpu = activeSubs > 0 ? Math.round(thisM.revenuePaise / activeSubs / 100) : 0
+        const cs   = pr.creatorSummary || {}
+        const fmtRs = (paise) => {
+          const r = (paise || 0) / 100
+          if (r >= 100000) return `₹${(r / 100000).toFixed(1)}L`
+          if (r >= 1000)   return `₹${(r / 1000).toFixed(1)}k`
+          return `₹${Math.round(r).toLocaleString('en-IN')}`
+        }
+        return (
+        <section className={styles.revDashboard}>
 
           {/* Calculate modal */}
           {showCalcModal && (
@@ -2465,108 +2662,209 @@ export default function Admin() {
             </div>
           )}
 
-          {/* Header actions */}
-          <div className={styles.libraryHeader}>
-            <h2 className={styles.cardTitle}><IndianRupee size={16} /> Creator Earnings</h2>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className={styles.refreshBtn} onClick={loadCreatorRevenue} disabled={revenueLoading}>
-                <RefreshCw size={13} /> Refresh
-              </button>
-              <button className={styles.primaryBtn} style={{ padding: '7px 14px', fontSize: 12 }} onClick={() => { setCalcResult(null); setRevenueError(''); setShowCalcModal(true) }}>
-                <Calculator size={13} /> Calculate Earnings
-              </button>
+          {/* ── Section 1: Dhara Platform Revenue ── */}
+          <div className={styles.revSection}>
+            <div className={styles.revSectionHeader}>
+              <div>
+                <h2 className={styles.revSectionTitle}><IndianRupee size={16} /> Dhara Platform Revenue</h2>
+                <p className={styles.revSectionSub}>Subscription income from end users · all figures from DB</p>
+              </div>
             </div>
+
+            {revenueLoading ? <p className={styles.empty}>Loading…</p> : (
+              <>
+                <div className={styles.revKpiRow}>
+                  <div className={`${styles.revKpiCard} ${styles.revKpiAccent}`}>
+                    <div className={styles.revKpiCardIcon}><IndianRupee size={13} /></div>
+                    <p className={styles.revKpiValue}>{fmtRs(pr.totalRevenuePaise)}</p>
+                    <p className={styles.revKpiLabel}>All-time Revenue</p>
+                    <p className={styles.revKpiSub}>{(pr.totalTransactions || 0).toLocaleString()} transactions</p>
+                  </div>
+                  <div className={styles.revKpiCard}>
+                    <div className={styles.revKpiCardIcon}><TrendingUp size={13} /></div>
+                    <p className={styles.revKpiValue}>{fmtRs(thisM.revenuePaise)}</p>
+                    <p className={styles.revKpiLabel}>This Month</p>
+                    {momPct !== null && (
+                      <p className={`${styles.revKpiSub} ${momPct >= 0 ? styles.revKpiSubUp : styles.revKpiSubDown}`}>
+                        {momPct >= 0 ? '↑' : '↓'} {Math.abs(momPct)}% vs last month
+                      </p>
+                    )}
+                  </div>
+                  <div className={styles.revKpiCard}>
+                    <div className={`${styles.revKpiCardIcon} ${styles.revKpiCardIconGreen}`}><Users size={13} /></div>
+                    <p className={styles.revKpiValue}>{activeSubs.toLocaleString()}</p>
+                    <p className={styles.revKpiLabel}>Active Subscribers</p>
+                    <p className={styles.revKpiSub}>+ {(pr.subscribersByStatus?.trial || 0)} on trial</p>
+                  </div>
+                  <div className={styles.revKpiCard}>
+                    <div className={styles.revKpiCardIcon}><BarChart2 size={13} /></div>
+                    <p className={styles.revKpiValue}>₹{arpu}</p>
+                    <p className={styles.revKpiLabel}>ARPU this month</p>
+                    <p className={styles.revKpiSub}>avg. revenue per active user</p>
+                  </div>
+                </div>
+
+                <div className={styles.revChartRow}>
+                  <div className={styles.revChartCard}>
+                    <p className={styles.revChartTitle}><BarChart2 size={12} /> Monthly Revenue</p>
+                    <p className={styles.revChartSub}>Last 12 months · ₹ INR · current month highlighted</p>
+                    <RevMonthlyBarsChart data={pr.monthlyRevenue} />
+                  </div>
+                  <div className={styles.revChartCard}>
+                    <p className={styles.revChartTitle}><IndianRupee size={12} /> Revenue by Plan</p>
+                    <p className={styles.revChartSub}>Share of all-time subscription revenue</p>
+                    <PlanDonutChart data={pr.planBreakdown} />
+                  </div>
+                </div>
+
+                <div className={styles.revChartCard}>
+                  <p className={styles.revChartTitle}><Users size={12} /> Subscriber Health</p>
+                  <p className={styles.revChartSub}>Current distribution across all subscription states</p>
+                  <SubHealthBarChart data={pr.subscribersByStatus} />
+                </div>
+              </>
+            )}
           </div>
 
-          {revenueNotice && <p className={`${styles.message} ${styles.notice}`}>{revenueNotice}</p>}
-          {revenueError  && !showCalcModal && !showPayoutModal && <p className={`${styles.message} ${styles.error}`}>{revenueError}</p>}
-
-          {revenueLoading ? (
-            <p className={styles.empty}>Loading…</p>
-          ) : creatorEarnings.length === 0 ? (
-            <div className={styles.empty} style={{ padding: '48px 24px', textAlign: 'center' }}>
-              <p style={{ marginBottom: 8 }}>No earnings records yet.</p>
-              <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                Run <strong>Calculate Earnings</strong> at month-end to generate records from view counts.
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Earnings table */}
-              <div className={styles.revenueEarningsTable}>
-                <div className={styles.revenueEarningsHead}>
-                  <span>Creator / Studio</span>
-                  <span>Pending</span>
-                  <span>Total Earned</span>
-                  <span>Paid Out</span>
-                  <span>Views</span>
-                  <span>Action</span>
-                </div>
-                {creatorEarnings.map((row) => (
-                  <div key={row.creatorId} className={styles.revenueEarningsRow}>
-                    <div>
-                      <p className={styles.revenueCreatorName}>{row.studioName}</p>
-                      <p className={styles.revenueCreatorEmail}>{row.email}</p>
-                    </div>
-                    <span className={styles.revenuePending} style={{ color: row.pending > 0 ? '#fbbf24' : 'var(--color-text-muted)' }}>
-                      ₹{row.pending.toLocaleString('en-IN')}
-                    </span>
-                    <span className={styles.revenueTotal}>₹{row.totalEarned.toLocaleString('en-IN')}</span>
-                    <span className={styles.revenueTotal} style={{ color: '#4ade80' }}>₹{row.paidOut.toLocaleString('en-IN')}</span>
-                    <span className={styles.revenueTotal}>{row.totalViews.toLocaleString()}</span>
-                    <button
-                      className={styles.editBtn}
-                      disabled={row.pending < 1}
-                      title={row.pending < 1 ? 'No pending balance' : `Pay ₹${row.pending.toLocaleString('en-IN')}`}
-                      onClick={() => { setRevenueError(''); setPayoutForm({ method: 'Bank Transfer', referenceId: '', notes: '' }); setShowPayoutModal({ creatorId: row.creatorId, studioName: row.studioName, pending: row.pending }) }}
-                    >
-                      <Wallet size={12} /> Pay
-                    </button>
-                  </div>
-                ))}
+          {/* ── Section 2: Creator Payouts ── */}
+          <div className={styles.revSection}>
+            <div className={styles.revSectionHeader}>
+              <div>
+                <h2 className={styles.revSectionTitle}><Wallet size={16} /> Creator Payouts</h2>
+                <p className={styles.revSectionSub}>Revenue share distributed to content creators · stored in DB</p>
               </div>
+              <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
+                <button className={styles.refreshBtn} onClick={loadCreatorRevenue} disabled={revenueLoading}>
+                  <RefreshCw size={13} /> Refresh
+                </button>
+                <button className={styles.primaryBtn} style={{ padding:'7px 14px', fontSize:12 }}
+                  onClick={() => { setCalcResult(null); setRevenueError(''); setShowCalcModal(true) }}>
+                  <Calculator size={13} /> Calculate Earnings
+                </button>
+              </div>
+            </div>
 
-              {/* Payout history */}
-              {creatorPayouts.length > 0 && (
-                <div style={{ marginTop: 32 }}>
-                  <h2 className={styles.cardTitle} style={{ marginBottom: 12 }}><Clock size={14} /> Payout History</h2>
-                  <div className={styles.revenuePayoutHistoryTable}>
-                    <div className={styles.revenuePayoutHistoryHead}>
-                      <span>Creator</span>
-                      <span>Amount</span>
-                      <span>Method</span>
-                      <span>Reference</span>
-                      <span>Date</span>
-                      <span>Status</span>
+            {revenueNotice && <p className={`${styles.message} ${styles.notice}`}>{revenueNotice}</p>}
+            {revenueError && !showCalcModal && !showPayoutModal && <p className={`${styles.message} ${styles.error}`}>{revenueError}</p>}
+
+            {revenueLoading ? <p className={styles.empty}>Loading…</p> : (
+              <>
+                <div className={styles.revKpiRow}>
+                  <div className={`${styles.revKpiCard} ${styles.revKpiAccentPurple}`}>
+                    <div className={`${styles.revKpiCardIcon} ${styles.revKpiCardIconPurple}`}><Wallet size={13} /></div>
+                    <p className={styles.revKpiValue}>{fmtRs(cs.totalPaidPaise)}</p>
+                    <p className={styles.revKpiLabel}>Total Paid Out</p>
+                    <p className={styles.revKpiSub}>all time to creators</p>
+                  </div>
+                  <div className={styles.revKpiCard}>
+                    <div className={styles.revKpiCardIcon} style={{ background:'rgba(251,191,36,0.1)', borderColor:'rgba(251,191,36,0.2)', color:'#fbbf24' }}><Clock size={13} /></div>
+                    <p className={styles.revKpiValue} style={{ color: cs.totalPendingPaise > 0 ? '#fbbf24' : undefined }}>{fmtRs(cs.totalPendingPaise)}</p>
+                    <p className={styles.revKpiLabel}>Pending Payouts</p>
+                    <p className={styles.revKpiSub}>awaiting processing</p>
+                  </div>
+                  <div className={styles.revKpiCard}>
+                    <div className={`${styles.revKpiCardIcon} ${styles.revKpiCardIconGreen}`}><UserCheck size={13} /></div>
+                    <p className={styles.revKpiValue}>{cs.earningCreators || 0}</p>
+                    <p className={styles.revKpiLabel}>Earning Creators</p>
+                    <p className={styles.revKpiSub}>with at least one record</p>
+                  </div>
+                  <div className={styles.revKpiCard}>
+                    <div className={styles.revKpiCardIcon}><Film size={13} /></div>
+                    <p className={styles.revKpiValue}>{creatorEarnings.reduce((s, c) => s + c.recordCount, 0)}</p>
+                    <p className={styles.revKpiLabel}>Earning Records</p>
+                    <p className={styles.revKpiSub}>monthly calculation entries</p>
+                  </div>
+                </div>
+
+                {creatorEarnings.length > 0 && (
+                  <div className={styles.revChartCard}>
+                    <p className={styles.revChartTitle}><BarChart2 size={12} /> Top Creators by Earnings</p>
+                    <p className={styles.revChartSub}>Paid vs pending · tier colour-coded · data from CreatorEarning collection</p>
+                    <CreatorEarningsBarsChart data={creatorEarnings} />
+                  </div>
+                )}
+
+                {creatorEarnings.length === 0 ? (
+                  <div className={styles.empty} style={{ padding:'36px 24px', textAlign:'center' }}>
+                    <p style={{ marginBottom:8 }}>No earnings records yet.</p>
+                    <p style={{ fontSize:12, color:'var(--color-text-muted)' }}>
+                      Run <strong>Calculate Earnings</strong> at month-end to generate records.
+                    </p>
+                  </div>
+                ) : (
+                  <div className={styles.revenueEarningsTable}>
+                    <div className={styles.revenueEarningsHead}>
+                      <span>Creator / Studio</span>
+                      <span>Pending</span>
+                      <span>Total Earned</span>
+                      <span>Paid Out</span>
+                      <span>Views</span>
+                      <span>Action</span>
                     </div>
-                    {creatorPayouts.map((p) => (
-                      <div key={p._id} className={styles.revenuePayoutHistoryRow}>
+                    {creatorEarnings.map((row) => (
+                      <div key={String(row.creatorId)} className={styles.revenueEarningsRow}>
                         <div>
-                          <p className={styles.revenueCreatorName}>{p.studioName}</p>
-                          <p className={styles.revenueCreatorEmail}>{p.email}</p>
+                          <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                            <p className={styles.revenueCreatorName}>{row.studioName}</p>
+                            {row.tier && (
+                              <span style={{ fontFamily:'var(--font-body)', fontSize:10, fontWeight:600, padding:'1px 7px', borderRadius:99, border:`1px solid ${(TIER_COLORS[row.tier] || '#6366f1')}44`, color: TIER_COLORS[row.tier] || '#6366f1', background:'transparent' }}>
+                                {row.tier}
+                              </span>
+                            )}
+                          </div>
+                          <p className={styles.revenueCreatorEmail}>{row.email}</p>
                         </div>
-                        <span style={{ color: '#4ade80', fontWeight: 700 }}>₹{p.amountRupees.toLocaleString('en-IN')}</span>
-                        <span>{p.method}</span>
-                        <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>{p.referenceId || '—'}</span>
-                        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                          {p.paidAt ? new Date(p.paidAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                        <span className={styles.revenuePending} style={{ color: row.pending > 0 ? '#fbbf24' : 'var(--color-text-muted)' }}>
+                          ₹{row.pending.toLocaleString('en-IN')}
                         </span>
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700,
-                          color: p.status === 'paid' ? '#4ade80' : '#fbbf24',
-                        }}>
-                          {p.status === 'paid' ? <CheckCircle2 size={11} /> : <Clock size={11} />}
-                          {p.status === 'paid' ? 'Paid' : 'Processing'}
-                        </span>
+                        <span className={styles.revenueTotal}>₹{row.totalEarned.toLocaleString('en-IN')}</span>
+                        <span className={styles.revenueTotal} style={{ color:'#4ade80' }}>₹{row.paidOut.toLocaleString('en-IN')}</span>
+                        <span className={styles.revenueTotal}>{row.totalViews.toLocaleString()}</span>
+                        <button className={styles.editBtn} disabled={row.pending < 1}
+                          title={row.pending < 1 ? 'No pending balance' : `Pay ₹${row.pending.toLocaleString('en-IN')}`}
+                          onClick={() => { setRevenueError(''); setPayoutForm({ method:'Bank Transfer', referenceId:'', notes:'' }); setShowPayoutModal({ creatorId:row.creatorId, studioName:row.studioName, pending:row.pending }) }}>
+                          <Wallet size={12} /> Pay
+                        </button>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-            </>
-          )}
+                )}
+
+                {creatorPayouts.length > 0 && (
+                  <div>
+                    <p className={styles.revChartTitle} style={{ margin:'8px 0 12px' }}><Clock size={13} /> Payout History</p>
+                    <div className={styles.revenuePayoutHistoryTable}>
+                      <div className={styles.revenuePayoutHistoryHead}>
+                        <span>Creator</span><span>Amount</span><span>Method</span>
+                        <span>Reference</span><span>Date</span><span>Status</span>
+                      </div>
+                      {creatorPayouts.map((p) => (
+                        <div key={p._id} className={styles.revenuePayoutHistoryRow}>
+                          <div>
+                            <p className={styles.revenueCreatorName}>{p.studioName}</p>
+                            <p className={styles.revenueCreatorEmail}>{p.email}</p>
+                          </div>
+                          <span style={{ color:'#4ade80', fontWeight:700 }}>₹{p.amountRupees.toLocaleString('en-IN')}</span>
+                          <span>{p.method}</span>
+                          <span style={{ fontSize:11, color:'var(--color-text-muted)', fontFamily:'monospace' }}>{p.referenceId || '—'}</span>
+                          <span style={{ fontSize:12, color:'var(--color-text-muted)' }}>
+                            {p.paidAt ? new Date(p.paidAt).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '—'}
+                          </span>
+                          <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:700, color: p.status === 'paid' ? '#4ade80' : '#fbbf24' }}>
+                            {p.status === 'paid' ? <CheckCircle2 size={11} /> : <Clock size={11} />}
+                            {p.status === 'paid' ? 'Paid' : 'Processing'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </section>
-      )}
+        )
+      })()}
 
     </main>
   )

@@ -754,45 +754,64 @@ router.get('/transactions', async (req, res, next) => {
  */
 router.get('/revenue', async (req, res, next) => {
   try {
-    const [planBreakdown, monthlyRevenue, subscriberCounts, totalPaid] = await Promise.all([
-      // Revenue per plan (paid only)
+    const twelveMonthsAgo = new Date(Date.now() - 365 * 86_400_000)
+
+    const [
+      planBreakdown, monthlyRevenue, subscriberCounts, totalPaid,
+      creatorSummaryAgg, monthlyCreatorPayoutsAgg,
+    ] = await Promise.all([
       Transaction.aggregate([
         { $match: { status: 'paid' } },
         { $group: { _id: '$plan', revenue: { $sum: '$amount' }, count: { $sum: 1 } } },
         { $sort: { revenue: -1 } },
       ]),
-
-      // Last 12 months monthly revenue
       Transaction.aggregate([
-        { $match: { status: 'paid', createdAt: { $gte: new Date(Date.now() - 365 * 86_400_000) } } },
+        { $match: { status: 'paid', createdAt: { $gte: twelveMonthsAgo } } },
         {
           $group: {
-            _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+            _id:     { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
             revenue: { $sum: '$amount' },
             count:   { $sum: 1 },
           },
         },
         { $sort: { '_id.year': 1, '_id.month': 1 } },
       ]),
-
-      // Subscriber counts by status
       User.aggregate([
         { $group: { _id: '$subscriptionStatus', count: { $sum: 1 } } },
       ]),
-
-      // Total paid revenue (all time)
       Transaction.aggregate([
         { $match: { status: 'paid' } },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
       ]),
+      // Aggregate creator earnings totals from DB
+      CreatorEarning.aggregate([
+        { $group: {
+          _id:          null,
+          pendingPaise: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$netAmountPaise', 0] } },
+          paidPaise:    { $sum: { $cond: [{ $eq: ['$status', 'paid']    }, '$netAmountPaise', 0] } },
+          creatorIds:   { $addToSet: '$creatorId' },
+        }},
+      ]),
+      // Monthly creator payout trend (last 12 months) from DB
+      CreatorPayout.aggregate([
+        { $match: { status: 'paid', paidAt: { $gte: twelveMonthsAgo } } },
+        { $group: {
+          _id:         { year: { $year: '$paidAt' }, month: { $month: '$paidAt' } },
+          amountPaise: { $sum: '$amountPaise' },
+          count:       { $sum: 1 },
+        }},
+        { $sort: { '_id.year': 1, '_id.month': 1 } },
+      ]),
     ])
+
+    const cs = creatorSummaryAgg[0] ?? {}
 
     res.json({
       totalRevenuePaise: totalPaid[0]?.total || 0,
       totalTransactions: totalPaid[0]?.count || 0,
       planBreakdown: planBreakdown.map((p) => ({
-        plan:           p._id,
-        revenuePaise:   p.revenue,
+        plan:             p._id,
+        revenuePaise:     p.revenue,
         transactionCount: p.count,
       })),
       monthlyRevenue: monthlyRevenue.map((m) => ({
@@ -804,6 +823,17 @@ router.get('/revenue', async (req, res, next) => {
       subscribersByStatus: Object.fromEntries(
         subscriberCounts.map((s) => [s._id, s.count])
       ),
+      creatorSummary: {
+        totalPendingPaise: cs.pendingPaise      || 0,
+        totalPaidPaise:    cs.paidPaise         || 0,
+        earningCreators:   cs.creatorIds?.length || 0,
+      },
+      monthlyCreatorPayouts: monthlyCreatorPayoutsAgg.map((m) => ({
+        year:        m._id.year,
+        month:       m._id.month,
+        amountPaise: m.amountPaise,
+        count:       m.count,
+      })),
     })
   } catch (err) {
     next(err)
@@ -1148,14 +1178,15 @@ router.get('/creator-earnings', requireAuth, requireAdmin, async (req, res, next
     ])
 
     res.json(rows.map((r) => ({
-      creatorId:    r._id,
-      studioName:   r.studioName || '—',
-      email:        r.email,
-      totalEarned:  Math.round(r.totalNetPaise / 100),
-      pending:      Math.round(r.pendingPaise  / 100),
-      paidOut:      Math.round(r.paidPaise     / 100),
-      totalViews:   r.totalViews,
-      recordCount:  r.recordCount,
+      creatorId:   r._id,
+      studioName:  r.studioName || '—',
+      email:       r.email,
+      totalEarned: Math.round(r.totalNetPaise / 100),
+      pending:     Math.round(r.pendingPaise  / 100),
+      paidOut:     Math.round(r.paidPaise     / 100),
+      totalViews:  r.totalViews,
+      recordCount: r.recordCount,
+      tier:        tierFor(r.totalViews).name,
     })))
   } catch (err) {
     next(err)

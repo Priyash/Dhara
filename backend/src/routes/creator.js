@@ -3,7 +3,14 @@ import { User } from '../models/User.js'
 import { Content } from '../models/Content.js'
 import { CreatorEarning } from '../models/CreatorEarning.js'
 import { CreatorPayout } from '../models/CreatorPayout.js'
+import { ViewEvent } from '../models/ViewEvent.js'
+import { ContentRankSnapshot } from '../models/ContentRankSnapshot.js'
 import { requireAuth } from '../middleware/auth.js'
+
+// Returns 'YYYY-MM-DD' in IST for a given UTC Date (default: now)
+function istDate(d = new Date()) {
+  return new Date(d.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10)
+}
 
 const router = Router()
 
@@ -142,7 +149,9 @@ router.get('/me', requireAuth, requireCreator, async (req, res, next) => {
  */
 router.get('/analytics', requireAuth, requireCreator, async (req, res, next) => {
   try {
-    const items = await Content.find({ creatorId: req.user._id })
+    const creatorId = req.user._id
+
+    const items = await Content.find({ creatorId })
       .select('title type posterUrl submissionStatus viewCount likeCount revisionCount episodes createdAt')
       .lean()
 
@@ -157,21 +166,78 @@ router.get('/analytics', requireAuth, requireCreator, async (req, res, next) => 
       .filter((i) => i.type === 'Series')
       .reduce((s, i) => s + (i.episodes?.length || 0), 0)
 
-    // Approval rate excludes pending — only settled (approved + rejected) count
     const settled      = approved.length + rejected.length
     const approvalRate = settled > 0 ? Math.round((approved.length / settled) * 100) : 0
-
     const engagementRate = totalViews > 0
-      ? Number(((totalLikes / totalViews) * 100).toFixed(1))
-      : 0
+      ? Number(((totalLikes / totalViews) * 100).toFixed(1)) : 0
+    const avgViewsPerTitle = approved.length > 0 ? Math.round(totalViews / approved.length) : 0
+    const topContent = approved.slice().sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0))[0] || null
 
-    const avgViewsPerTitle = approved.length > 0
-      ? Math.round(totalViews / approved.length)
-      : 0
+    // ── ViewEvent aggregations ─────────────────────────────────────────────────
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000)
 
-    const topContent = approved
+    const [dailyAgg, hourlyAgg, stateAgg] = await Promise.all([
+      ViewEvent.aggregate([
+        { $match: { creatorId, viewedAt: { $gte: sevenDaysAgo } } },
+        { $group: {
+            _id:   { $dateToString: { format: '%Y-%m-%d', date: '$viewedAt', timezone: 'Asia/Kolkata' } },
+            views: { $sum: 1 },
+        }},
+        { $sort: { _id: 1 } },
+      ]),
+      ViewEvent.aggregate([
+        { $match: { creatorId } },
+        { $group: { _id: '$hour', views: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+      ]),
+      ViewEvent.aggregate([
+        { $match: { creatorId } },
+        { $group: { _id: '$state', views: { $sum: 1 } } },
+        { $sort: { views: -1 } },
+        { $limit: 10 },
+      ]),
+    ])
+
+    // Fill 7-day array (all days present, zeros for missing)
+    const viewsByDay = Array.from({ length: 7 }, (_, i) => {
+      const dateStr = istDate(new Date(Date.now() - (6 - i) * 86_400_000))
+      const found   = dailyAgg.find((a) => a._id === dateStr)
+      return { date: dateStr, views: found?.views || 0 }
+    })
+
+    // Fill 24-hour slots
+    const viewsByHour = Array.from({ length: 24 }, (_, h) => {
+      const found = hourlyAgg.find((a) => a._id === h)
+      return { hour: h, views: found?.views || 0 }
+    })
+
+    const viewsByState = stateAgg.map((a) => ({ state: a._id, views: a.views }))
+
+    // ── Ranking deltas (yesterday's snapshot vs current) ───────────────────────
+    const todayStr     = istDate()
+    const yesterdayStr = istDate(new Date(Date.now() - 86_400_000))
+
+    const currentRankings = items
       .slice()
-      .sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0))[0] || null
+      .sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0))
+      .map((item, idx) => ({ contentId: item._id, rank: idx + 1, viewCount: item.viewCount || 0 }))
+
+    // Lazily persist today's snapshot only once per day
+    ContentRankSnapshot.findOneAndUpdate(
+      { creatorId, snapshotDate: todayStr },
+      { $setOnInsert: { creatorId, snapshotDate: todayStr, rankings: currentRankings } },
+      { upsert: true }
+    ).catch(() => {})
+
+    const yesterdaySnap = await ContentRankSnapshot.findOne({ creatorId, snapshotDate: yesterdayStr }).lean()
+    const rankingDeltas = {}
+    if (yesterdaySnap) {
+      const yMap = Object.fromEntries(yesterdaySnap.rankings.map((r) => [String(r.contentId), r.rank]))
+      for (const r of currentRankings) {
+        const cid = String(r.contentId)
+        rankingDeltas[cid] = yMap[cid] != null ? yMap[cid] - r.rank : 0
+      }
+    }
 
     res.json({
       overview: {
@@ -208,14 +274,14 @@ router.get('/analytics', requireAuth, requireCreator, async (req, res, next) => 
         likeCount:        i.likeCount     || 0,
         revisionCount:    i.revisionCount || 0,
         episodes: i.type === 'Series'
-          ? (i.episodes || []).map((ep) => ({
-              number:    ep.number,
-              title:     ep.title,
-              viewCount: ep.viewCount || 0,
-            }))
+          ? (i.episodes || []).map((ep) => ({ number: ep.number, title: ep.title, viewCount: ep.viewCount || 0 }))
           : [],
         createdAt: i.createdAt,
       })),
+      viewsByDay,
+      viewsByHour,
+      viewsByState,
+      rankingDeltas,
     })
   } catch (err) {
     next(err)

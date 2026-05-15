@@ -2215,3 +2215,178 @@
   font-weight: 600;
   color: var(--color-text-muted);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Revenue Dashboard — two-section layout
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+.revDashboard {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 8px 32px 64px;
+  display: flex;
+  flex-direction: column;
+}
+
+.revSection {
+  padding: 32px 0 40px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.revSection:last-child { border-bottom: none; }
+
+.revSectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.revSectionTitle {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.revSectionSub {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+/* ── KPI cards ── */
+.revKpiRow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.revKpiCard {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: var(--radius-md);
+  padding: 18px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.2s;
+}
+
+.revKpiCard:hover { border-color: rgba(255,255,255,0.13); }
+
+.revKpiAccent {
+  background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(217,119,6,0.05));
+  border-color: rgba(245,158,11,0.22) !important;
+}
+
+.revKpiAccentPurple {
+  background: linear-gradient(135deg, rgba(167,139,250,0.1), rgba(124,58,237,0.05));
+  border-color: rgba(167,139,250,0.22) !important;
+}
+
+.revKpiCardIcon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(245,158,11,0.12);
+  border: 1px solid rgba(245,158,11,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent, #f59e0b);
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+
+.revKpiCardIconPurple {
+  background: rgba(167,139,250,0.12) !important;
+  border-color: rgba(167,139,250,0.2) !important;
+  color: #a78bfa !important;
+}
+
+.revKpiCardIconGreen {
+  background: rgba(74,222,128,0.1) !important;
+  border-color: rgba(74,222,128,0.2) !important;
+  color: #4ade80 !important;
+}
+
+.revKpiValue {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+
+.revKpiLabel {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.revKpiSub {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: rgba(255,255,255,0.22);
+  margin: 0;
+}
+
+.revKpiSubUp   { color: #4ade80 !important; }
+.revKpiSubDown { color: #f87171 !important; }
+
+/* ── Chart cards ── */
+.revChartRow {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+}
+
+.revChartCard {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: var(--radius-md);
+  padding: 18px 20px 16px;
+}
+
+.revChartTitle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--color-accent, #f59e0b);
+  margin: 0 0 3px;
+}
+
+.revChartSub {
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  margin: 0 0 2px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .revDashboard   { padding: 8px 20px 48px; }
+  .revKpiRow      { grid-template-columns: 1fr 1fr; }
+  .revChartRow    { grid-template-columns: 1fr; }
+}

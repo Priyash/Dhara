@@ -136,6 +136,13 @@ export async function dislikeContent(contentId) {
   return request(`/api/content/${contentId}/dislike`, { method: 'POST' })
 }
 
+export async function rateContent(contentId, score) {
+  return request(`/api/content/${contentId}/rate`, {
+    method: 'POST',
+    body: JSON.stringify({ score }),
+  })
+}
+
 // ── Search ────────────────────────────────────────────────────────────────────
 
 export async function searchContent(q) {

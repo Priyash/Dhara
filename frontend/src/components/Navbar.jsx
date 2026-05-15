@@ -25,7 +25,7 @@ function getActiveLink(location) {
 
 export default function Navbar() {
   const scrolled = useScrolled(60)
-  const { setShowSearch, openPaywall, openAuth, isLoggedIn, isSubscribed, isAdmin, isCreator, creatorStatus, user } = useStore()
+  const { setShowSearch, openPaywall, openAuth, isLoggedIn, isSubscribed, isAdmin, isCreator, creatorStatus, user, authLoading } = useStore()
   const navigate = useNavigate()
   const location = useLocation()
   const activeLink = getActiveLink(location)
@@ -73,7 +73,9 @@ export default function Navbar() {
           <Search size={16} />
         </button>
 
-        {isLoggedIn ? (
+        {authLoading ? (
+          <div className={styles.navAuthSkeleton} aria-hidden="true" />
+        ) : isLoggedIn ? (
           <>
             {isAdmin && (
               <button

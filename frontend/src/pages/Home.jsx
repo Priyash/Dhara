@@ -25,8 +25,13 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    if (!isLoggedIn) return
+    if (!isLoggedIn) { setContinueWatching([]); return }
     fetchContinueWatching().then(setContinueWatching).catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])  // runs on every mount — App remounts routes on each navigation via key={location.key}
+
+  useEffect(() => {
+    if (!isLoggedIn) setContinueWatching([])
   }, [isLoggedIn])
 
   const trending    = content.slice(0, 8)

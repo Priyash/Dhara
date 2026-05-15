@@ -1,10 +1,33 @@
 import { Router } from 'express'
 import { createHash } from 'crypto'
+import { createRequire } from 'module'
+import { Types } from 'mongoose'
 import { Content } from '../models/Content.js'
 import { CuratedShelf } from '../models/CuratedShelf.js'
 import { User } from '../models/User.js'
+import { ViewEvent } from '../models/ViewEvent.js'
+import { UserRating } from '../models/UserRating.js'
 import { requireAuth, requireSubscription } from '../middleware/auth.js'
 import { withCache } from '../config/cache.js'
+
+const _require = createRequire(import.meta.url)
+const geoip    = _require('geoip-lite')
+
+// ISO 3166-2:IN region codes → display names
+const IN_STATES = {
+  AN: 'Andaman & Nicobar', AP: 'Andhra Pradesh',   AR: 'Arunachal Pradesh',
+  AS: 'Assam',             BR: 'Bihar',             CH: 'Chandigarh',
+  CT: 'Chhattisgarh',      DL: 'Delhi',             DN: 'Dadra & Nagar Haveli',
+  GA: 'Goa',               GJ: 'Gujarat',           HP: 'Himachal Pradesh',
+  HR: 'Haryana',           JH: 'Jharkhand',         JK: 'J&K',
+  KA: 'Karnataka',         KL: 'Kerala',            LA: 'Ladakh',
+  LD: 'Lakshadweep',       MH: 'Maharashtra',       ML: 'Meghalaya',
+  MN: 'Manipur',           MP: 'Madhya Pradesh',    MZ: 'Mizoram',
+  NL: 'Nagaland',          OR: 'Odisha',            PB: 'Punjab',
+  PY: 'Puducherry',        RJ: 'Rajasthan',         SK: 'Sikkim',
+  TG: 'Telangana',         TN: 'Tamil Nadu',        TR: 'Tripura',
+  UP: 'Uttar Pradesh',     UT: 'Uttarakhand',       WB: 'West Bengal',
+}
 
 const router = Router()
 
@@ -116,8 +139,49 @@ router.get('/:id/trailer', withCache(3600), async (req, res, next) => {
     if (!libraryId) return res.status(404).json({ error: 'No trailer available' })
 
     res.json({
+      hlsUrl:   buildHlsUrl(item.trailerVideoId, false),
       embedUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${item.trailerVideoId}?autoplay=true&muted=true&loop=false&preload=true`,
     })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/content/:id/rate
+ * Auth required. Body: { score: 1–5 }
+ * Upserts the user's rating and recomputes the community average on Content.
+ */
+router.post('/:id/rate', requireAuth, async (req, res, next) => {
+  try {
+    const score = Number(req.body.score)
+    if (!Number.isInteger(score) || score < 1 || score > 5) {
+      return res.status(400).json({ error: 'Score must be an integer between 1 and 5' })
+    }
+
+    const contentId = req.params.id
+
+    // Upsert this user's rating
+    await UserRating.findOneAndUpdate(
+      { userId: req.user._id, contentId },
+      { $set: { score } },
+      { upsert: true }
+    )
+
+    // Recompute aggregate from all ratings for this content
+    const [agg] = await UserRating.aggregate([
+      { $match: { contentId: new Types.ObjectId(contentId) } },
+      { $group: { _id: null, sum: { $sum: '$score' }, count: { $sum: 1 } } },
+    ])
+
+    const communityRating      = agg ? Math.round((agg.sum / agg.count) * 10) / 10 : score
+    const communityRatingCount = agg?.count ?? 1
+
+    await Content.findByIdAndUpdate(contentId, {
+      $set: { communityRating, communityRatingCount },
+    })
+
+    res.json({ communityRating, communityRatingCount, userScore: score })
   } catch (err) {
     next(err)
   }
@@ -254,22 +318,52 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
 
 /**
  * POST /api/content/:id/view
- * No auth required. Increments viewCount atomically.
+ * No auth required. Increments viewCount atomically and logs a ViewEvent for analytics.
  * Optionally increments episode viewCount when episodeNumber is provided.
  */
 router.post('/:id/view', async (req, res, next) => {
   try {
     const { episodeNumber } = req.body
+    const id = req.params.id
+    let doc
+
     if (episodeNumber != null) {
-      await Content.findByIdAndUpdate(
-        req.params.id,
+      doc = await Content.findByIdAndUpdate(
+        id,
         { $inc: { viewCount: 1, 'episodes.$[ep].viewCount': 1 } },
-        { arrayFilters: [{ 'ep.number': Number(episodeNumber) }] }
+        { arrayFilters: [{ 'ep.number': Number(episodeNumber) }], select: 'creatorId' }
       )
     } else {
-      await Content.findByIdAndUpdate(req.params.id, { $inc: { viewCount: 1 } })
+      doc = await Content.findByIdAndUpdate(id, { $inc: { viewCount: 1 } }, { select: 'creatorId' })
     }
+
     res.json({ ok: true })
+
+    // Fire-and-forget: log view event for creator analytics
+    if (doc?.creatorId) {
+      const now   = new Date()
+      const rawIp = (req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() || req.socket?.remoteAddress || ''
+      const geo   = geoip.lookup(rawIp) || {}
+      const ua    = req.headers['user-agent'] || ''
+      const device = /smart-tv|webos|tizen|roku|firetv|tv/i.test(ua) ? 'tv'
+        : /mobile|android|iphone|ipad|ipod/i.test(ua) ? 'mobile' : 'desktop'
+      const state = geo.country === 'IN' && geo.region
+        ? (IN_STATES[geo.region] || geo.region)
+        : (geo.country || 'Unknown')
+
+      ViewEvent.create({
+        contentId:     id,
+        episodeNumber: episodeNumber ?? null,
+        creatorId:     doc.creatorId,
+        viewedAt:      now,
+        hour:          now.getHours(),
+        dayOfWeek:     now.getDay(),
+        state,
+        city:          geo.city    || 'Unknown',
+        country:       geo.country || 'Unknown',
+        device,
+      }).catch(() => {})
+    }
   } catch (err) {
     next(err)
   }

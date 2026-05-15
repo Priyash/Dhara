@@ -6,6 +6,7 @@ import {
   Clock, TrendingUp, ArrowRight, GripVertical, ListPlus, Trash2,
   BarChart2, ThumbsUp, ChevronDown, ChevronRight, Award,
   IndianRupee, Wallet, Banknote, Trophy, CalendarDays, Sparkles,
+  MapPin, Clock3, Activity, Flame, Minus, TrendingDown, Zap,
 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { uploadToCloudinary } from '../services/cloudinary'
@@ -365,6 +366,251 @@ function EngagementScatter({ items }) {
   )
 }
 
+// ── Health score (derived, no server round-trip) ──────────────────────────────
+function calcHealth(item, avgViews) {
+  if (item.submissionStatus !== 'approved' || item.viewCount === 0) return null
+  const viewRatio = Math.min(item.viewCount / Math.max(avgViews, 1), 2) / 2
+  const engRatio  = Math.min((item.likeCount / item.viewCount) / 0.15, 1)
+  const score     = viewRatio * 60 + engRatio * 40
+  if (score >= 70) return { label: 'Hot',     color: '#f59e0b', Icon: Flame        }
+  if (score >= 45) return { label: 'Rising',  color: '#4ade80', Icon: TrendingUp   }
+  if (score >= 25) return { label: 'Steady',  color: '#a78bfa', Icon: Minus        }
+  return              { label: 'Cooling', color: '#94a3b8', Icon: TrendingDown }
+}
+
+// ── Rank delta chip ───────────────────────────────────────────────────────────
+function RankDelta({ delta }) {
+  if (!delta) return <span className={styles.rankDeltaNeutral}><Minus size={8} /></span>
+  return delta > 0
+    ? <span className={styles.rankDeltaUp}>▲{Math.abs(delta)}</span>
+    : <span className={styles.rankDeltaDown}>▼{Math.abs(delta)}</span>
+}
+
+// ── Auto-generated insights row ───────────────────────────────────────────────
+function InsightsRow({ overview, content }) {
+  const ov      = overview || {}
+  const cards   = []
+
+  if (ov.topContent && ov.avgViewsPerTitle > 0) {
+    const mult = (ov.topContent.viewCount / ov.avgViewsPerTitle).toFixed(1)
+    if (Number(mult) >= 1.5)
+      cards.push({ color: '#f59e0b', text: `"${ov.topContent.title}" pulls ${mult}× more views than your average title` })
+  }
+
+  const films  = content.filter((c) => c.type === 'Film'   && c.viewCount > 0)
+  const series = content.filter((c) => c.type === 'Series' && c.viewCount > 0)
+  if (films.length > 0 && series.length > 0) {
+    const fEng = films.reduce((s, c) => s + c.likeCount / c.viewCount, 0) / films.length
+    const sEng = series.reduce((s, c) => s + c.likeCount / c.viewCount, 0) / series.length
+    const diff = Math.round(Math.abs(sEng - fEng) / Math.min(fEng, sEng) * 100)
+    if (diff >= 10)
+      cards.push({ color: '#a78bfa', text: sEng > fEng
+        ? `Series get ${diff}% higher engagement than your films`
+        : `Films outperform series by ${diff}% in audience engagement` })
+  }
+
+  if (ov.approvalRate >= 80)
+    cards.push({ color: '#4ade80', text: `${ov.approvalRate}% approval rate — strong quality consistency` })
+  else if (ov.approvalRate > 0 && ov.approvalRate < 50)
+    cards.push({ color: '#f87171', text: `${ov.approvalRate}% approval — review submission guidelines to improve` })
+
+  if (ov.engagementRate >= 10 && cards.length < 3)
+    cards.push({ color: '#38bdf8', text: `${ov.engagementRate}% engagement rate — your audience is highly active` })
+
+  if (!cards.length) return null
+  return (
+    <div className={styles.insightsRow}>
+      {cards.slice(0, 3).map((c, i) => (
+        <div key={i} className={styles.insightCard} style={{ borderColor: `${c.color}22`, background: `${c.color}08` }}>
+          <Zap size={13} style={{ color: c.color, flexShrink: 0 }} />
+          <p className={styles.insightText}>{c.text}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── 7-day daily views bar chart ───────────────────────────────────────────────
+// Ghost heights for the no-data state — gentle sine-wave rhythm so the chart
+// looks intentional rather than broken when all values are zero.
+const GHOST_HEIGHTS = [0.38, 0.55, 0.44, 0.68, 0.5, 0.35, 0.6]
+
+function DailyViewsChart({ data }) {
+  if (!data?.length) return null
+  const W = 600, H = 96, PT = 18, PB = 20, PL = 4, PR = 4
+  const iW = W - PL - PR, iH = H - PT - PB
+  const hasAny = data.some((d) => d.views > 0)
+  const maxV   = Math.max(...data.map((d) => d.views), 1)
+  const gap    = iW / data.length
+  const barW   = gap * 0.55
+  const today  = new Date().toISOString().slice(0, 10)
+  const DAY    = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  return (
+    <>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" className={styles.dailyChart}>
+        {data.map((d, i) => {
+          const cx    = PL + gap * i + gap / 2
+          const x     = cx - barW / 2
+          const isNow = d.date === today
+          const lbl   = DAY[new Date(d.date + 'T12:00:00Z').getDay()]
+
+          let barH, y, fill
+          if (!hasAny) {
+            barH = Math.round(GHOST_HEIGHTS[i] * iH)
+            y    = PT + iH - barH
+            fill = isNow ? 'rgba(167,139,250,0.18)' : 'rgba(255,255,255,0.06)'
+          } else {
+            const pct = d.views / maxV
+            barH = Math.max(pct * iH, d.views > 0 ? 3 : 2)
+            y    = PT + iH - barH
+            fill = isNow ? '#a78bfa' : 'rgba(167,139,250,0.38)'
+          }
+
+          return (
+            <g key={d.date}>
+              <rect x={x} y={y} width={barW} height={barH} rx="3" fill={fill}
+                style={isNow && hasAny ? { filter: 'drop-shadow(0 0 7px rgba(167,139,250,0.55))' } : undefined} />
+              {d.views > 0 && (
+                <text x={cx} y={y - 5} textAnchor="middle" fontSize="9" fontWeight="600"
+                  fill="rgba(167,139,250,0.85)" fontFamily="system-ui,sans-serif">{d.views}</text>
+              )}
+              <text x={cx} y={H - 3} textAnchor="middle" fontSize="9"
+                fill={isNow ? 'rgba(167,139,250,0.9)' : 'rgba(255,255,255,0.28)'}
+                fontWeight={isNow ? '700' : '400'} fontFamily="system-ui,sans-serif">{lbl}</text>
+            </g>
+          )
+        })}
+      </svg>
+      {!hasAny && (
+        <p className={styles.chartNoData}>Views from new plays will appear here</p>
+      )}
+    </>
+  )
+}
+
+// ── Hour-of-day histogram ─────────────────────────────────────────────────────
+function HourHistogram({ data }) {
+  if (!data?.length) return null
+  const W = 560, H = 72, PT = 4, PB = 14, PL = 2, PR = 2
+  const iW = W - PL - PR, iH = H - PT - PB
+  const hasAny = data.some((d) => d.views > 0)
+  const maxV   = Math.max(...data.map((d) => d.views), 1)
+  const gap    = iW / 24
+  const barW   = gap * 0.7
+  const peak   = data.reduce((b, d) => d.views > b.views ? d : b, data[0])
+  const fmtH   = (h) => h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`
+  return (
+    <>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" className={styles.hourChart}>
+        {data.map((d) => {
+          const cx   = PL + gap * d.hour + gap / 2
+          const x    = cx - barW / 2
+          const barH = hasAny ? Math.max((d.views / maxV) * iH, d.views > 0 ? 2 : 1) : 3
+          const y    = PT + iH - barH
+          const isPk = hasAny && d.hour === peak.hour && peak.views > 0
+          const show = d.hour % 6 === 0
+          return (
+            <g key={d.hour}>
+              <rect x={x} y={y} width={barW} height={barH} rx="2"
+                fill={isPk ? '#f59e0b' : hasAny && d.views > 0 ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.07)'}
+                style={isPk ? { filter: 'drop-shadow(0 0 4px rgba(245,158,11,0.55))' } : undefined} />
+              {show && (
+                <text x={cx} y={H - 1} textAnchor="middle" fontSize="8"
+                  fill={isPk ? 'rgba(245,158,11,0.9)' : 'rgba(255,255,255,0.22)'}
+                  fontWeight={isPk ? '700' : '400'} fontFamily="system-ui,sans-serif">
+                  {fmtH(d.hour)}
+                </text>
+              )}
+            </g>
+          )
+        })}
+      </svg>
+      {!hasAny && (
+        <p className={styles.chartNoData}>Posting patterns will appear as views accumulate</p>
+      )}
+    </>
+  )
+}
+
+// ── Geography bars ────────────────────────────────────────────────────────────
+function GeographyBars({ data }) {
+  if (!data?.length) return (
+    <p className={styles.analyticsEmptyNote}>No location data yet — accumulates as views come in.</p>
+  )
+  const maxV = Math.max(...data.map((d) => d.views), 1)
+  const fmtV = (v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)
+  return (
+    <div className={styles.geoList}>
+      {data.slice(0, 8).map((d, i) => {
+        const pct   = (d.views / maxV) * 100
+        const alpha = i === 0 ? 1 : i < 3 ? 0.7 : 0.45
+        return (
+          <div key={d.state} className={styles.geoRow}>
+            <span className={styles.geoRank}>#{i + 1}</span>
+            <span className={styles.geoState}>{d.state}</span>
+            <div className={styles.geoTrack}>
+              <div className={styles.geoFill}
+                style={{ width: `${pct}%`, background: `rgba(167,139,250,${alpha})` }} />
+            </div>
+            <span className={styles.geoCount}>{fmtV(d.views)}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Episode retention line chart ──────────────────────────────────────────────
+function EpisodeDropoff({ episodes }) {
+  const sorted = [...episodes].sort((a, b) => a.number - b.number)
+  if (sorted.length < 3) return null
+  const W = 280, H = 72, P = 14
+  const iW = W - P * 2, iH = H - P * 2
+  const base = sorted[0].viewCount || 1
+  const pts  = sorted.map((ep, i) => ({
+    x:   P + (sorted.length > 1 ? i / (sorted.length - 1) : 0.5) * iW,
+    y:   P + iH - Math.min(Math.max((ep.viewCount / base), 0), 1) * iH * 0.9,
+    pct: Math.round((ep.viewCount / base) * 100),
+    num: ep.number,
+  }))
+  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
+  const area = `${line} L ${pts.at(-1).x} ${P + iH} L ${pts[0].x} ${P + iH} Z`
+  let bigIdx = 0, bigDrop = 0
+  for (let i = 1; i < pts.length; i++) {
+    const drop = pts[i - 1].pct - pts[i].pct
+    if (drop > bigDrop) { bigDrop = drop; bigIdx = i }
+  }
+  return (
+    <div className={styles.episodeDropoff}>
+      <p className={styles.episodeDropoffLabel}><TrendingDown size={11} /> Episode Retention</p>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" className={styles.dropoffChart}>
+        <defs>
+          <linearGradient id="dopG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="#a78bfa" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#a78bfa" stopOpacity="0"    />
+          </linearGradient>
+        </defs>
+        <path d={area} fill="url(#dopG)" />
+        <path d={line} fill="none" stroke="#a78bfa" strokeWidth="1.5"
+          strokeLinecap="round" strokeLinejoin="round" />
+        {pts.map((p, i) => (
+          <g key={i}>
+            <circle cx={p.x} cy={p.y} r={i === bigIdx && bigDrop > 5 ? 4 : 2.5}
+              fill={i === bigIdx && bigDrop > 5 ? '#f87171' : '#a78bfa'}
+              stroke="#0d0d14" strokeWidth="1" />
+            <text x={p.x} y={H - 1} textAnchor="middle" fontSize="8"
+              fill="rgba(255,255,255,0.22)" fontFamily="system-ui,sans-serif">E{p.num}</text>
+          </g>
+        ))}
+        {bigDrop > 5 && (
+          <text x={pts[bigIdx].x} y={pts[bigIdx].y - 8} textAnchor="middle"
+            fontSize="8" fill="#f87171" fontFamily="system-ui,sans-serif">▼{bigDrop}%</text>
+        )}
+      </svg>
+    </div>
+  )
+}
+
 const STEPS_BASE = [
   { id: 'basics',   label: 'Basics'   },
   { id: 'media',    label: 'Media'    },
@@ -701,6 +947,13 @@ export default function CreatorStudio() {
         const counts  = ov.submissionCounts || {}
         const maxViews = Math.max(...content.map((i) => i.viewCount), 1)
         const fmtN = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n ?? 0)
+        // Fallback empty arrays for new fields — gracefully handles old backend responses
+        const viewsByDay  = analytics?.viewsByDay  ?? Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(Date.now() - (6 - i) * 86_400_000)
+          return { date: d.toISOString().slice(0, 10), views: 0 }
+        })
+        const viewsByHour  = analytics?.viewsByHour  ?? Array.from({ length: 24 }, (_, h) => ({ hour: h, views: 0 }))
+        const viewsByState = analytics?.viewsByState ?? []
         return (
           <section className={styles.analytics}>
             {analyticsLoading ? (
@@ -753,7 +1006,10 @@ export default function CreatorStudio() {
                   </div>
                 </div>
 
-                {/* ── Row 2: Pipeline funnel (full width) ── */}
+                {/* ── Row 2: Insights ── */}
+                <InsightsRow overview={ov} content={content} />
+
+                {/* ── Row 3: Pipeline funnel (full width) ── */}
                 {counts.total > 0 && (
                   <div className={styles.analyticsPipelineCard}>
                     <p className={styles.analyticsChartTitle}>
@@ -764,9 +1020,18 @@ export default function CreatorStudio() {
                   </div>
                 )}
 
+                {/* ── Row 4: 7-Day view trend ── */}
+                <div className={styles.analyticsDailyCard}>
+                  <p className={styles.analyticsChartTitle}>
+                    <Activity size={13} /> 7-Day View Trend
+                  </p>
+                  <p className={styles.analyticsChartSub}>Daily views over the last 7 days · IST</p>
+                  <DailyViewsChart data={viewsByDay} />
+                </div>
+
                 {content.length > 0 && (
                   <>
-                    {/* ── Row 3: Ranking bars + Donut + Scatter ── */}
+                    {/* ── Row 5: Ranking bars + Donut + Scatter ── */}
                     <div className={styles.analyticsChartRow}>
                       <div className={styles.analyticsChartCard}>
                         <p className={styles.analyticsChartTitle}>
@@ -801,7 +1066,32 @@ export default function CreatorStudio() {
                       </div>
                     </div>
 
-                    {/* ── Row 4: Content performance list ── */}
+                    {/* ── Row 6: Geography + Best Time ── */}
+                    <div className={styles.analyticsRow2}>
+                      <div className={styles.analyticsChartCard}>
+                        <p className={styles.analyticsChartTitle}>
+                          <MapPin size={13} /> Audience by Region
+                        </p>
+                        <p className={styles.analyticsChartSub}>Top states · based on viewer location</p>
+                        <GeographyBars data={viewsByState} />
+                      </div>
+                      <div className={styles.analyticsChartCard}>
+                        <p className={styles.analyticsChartTitle}>
+                          <Clock3 size={13} /> Best Time to Post
+                        </p>
+                        <p className={styles.analyticsChartSub}>View activity by hour · IST</p>
+                        <HourHistogram data={viewsByHour} />
+                        {(() => {
+                          const peak = viewsByHour.reduce((b, d) => d.views > b.views ? d : b, viewsByHour[0])
+                          if (!peak?.views) return null
+                          const h = peak.hour
+                          const lbl = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`
+                          return <p className={styles.peakHourNote}>Peak: {lbl} — plan posts 1–2 hrs before</p>
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* ── Row 7: Content performance list ── */}
                     <div className={styles.analyticsContentList}>
                       {content
                         .slice()
@@ -815,9 +1105,14 @@ export default function CreatorStudio() {
                           const epMax       = hasEpisodes
                             ? Math.max(...item.episodes.map((e) => e.viewCount), 1) : 1
                           const eColor      = likePct >= 10 ? '#4ade80' : likePct >= 4 ? '#fbbf24' : 'rgba(255,255,255,0.28)'
+                          const health      = calcHealth(item, ov.avgViewsPerTitle)
+                          const delta       = analytics?.rankingDeltas?.[String(item._id)] ?? null
                           return (
                             <div key={item._id} className={styles.analyticsContentRow}>
-                              <span className={styles.analyticsContentRank}>#{rank + 1}</span>
+                              <div className={styles.analyticsRankCell}>
+                                <span className={styles.analyticsContentRank}>#{rank + 1}</span>
+                                <RankDelta delta={delta} />
+                              </div>
 
                               <div className={styles.analyticsContentPoster}>
                                 {item.posterUrl
@@ -836,6 +1131,12 @@ export default function CreatorStudio() {
                                       style={{ color: eColor, borderColor: `${eColor}40` }}>
                                       {likePct}% eng
                                     </span>
+                                    {health && (
+                                      <span className={styles.healthBadge}
+                                        style={{ color: health.color, borderColor: `${health.color}40` }}>
+                                        <health.Icon size={9} /> {health.label}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
 
@@ -864,6 +1165,8 @@ export default function CreatorStudio() {
                                       {isExpanded ? 'Hide episodes' : `${item.episodes.length} episodes`}
                                     </button>
                                     {isExpanded && (
+                                      <>
+                                      <EpisodeDropoff episodes={item.episodes} />
                                       <div className={styles.analyticsEpWaterfall}>
                                         {item.episodes
                                           .slice()
@@ -881,6 +1184,7 @@ export default function CreatorStudio() {
                                             )
                                           })}
                                       </div>
+                                      </>
                                     )}
                                   </div>
                                 )}

@@ -1421,8 +1421,214 @@
 }
 
 
+/* ── Insight cards row ────────────────────────────────────────────────────── */
+.insightsRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.insightCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 15px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: border-color 0.2s;
+}
+
+.insightCard:hover { border-color: rgba(167,139,250,0.22); }
+
+.insightText {
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text);
+  margin: 0;
+}
+
+/* ── 7-day daily views ────────────────────────────────────────────────────── */
+.analyticsDailyCard {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: var(--radius-md);
+  padding: 18px 20px 14px;
+  margin-bottom: 20px;
+}
+
+.dailyChart {
+  display: block;
+  overflow: visible;
+  margin-top: 6px;
+}
+
+.chartNoData {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.2);
+  text-align: center;
+  margin: 6px 0 0;
+}
+
+/* ── Geography + Best-time 2-col row ─────────────────────────────────────── */
+.analyticsRow2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+/* Geography list */
+.geoList {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.geoRow {
+  display: grid;
+  grid-template-columns: 22px 1fr 72px 38px;
+  align-items: center;
+  gap: 8px;
+}
+
+.geoRank {
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: rgba(255,255,255,0.22);
+  text-align: right;
+}
+
+.geoState {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.geoTrack {
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.geoFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.65s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+.geoCount {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--creator-accent);
+  text-align: right;
+}
+
+/* Hour chart */
+.hourChart {
+  display: block;
+  overflow: visible;
+  margin-top: 8px;
+}
+
+.peakHourNote {
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: rgba(245,158,11,0.75);
+  margin: 6px 0 0;
+  text-align: center;
+}
+
+/* Empty state note */
+.analyticsEmptyNote {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: rgba(255,255,255,0.22);
+  text-align: center;
+  padding: 18px 0;
+  margin: 0;
+}
+
+/* ── Rank delta + health badges ───────────────────────────────────────────── */
+.analyticsRankCell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.rankDeltaUp {
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 700;
+  color: #4ade80;
+  line-height: 1;
+}
+
+.rankDeltaDown {
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 700;
+  color: #f87171;
+  line-height: 1;
+}
+
+.rankDeltaNeutral {
+  color: rgba(255,255,255,0.18);
+  display: flex;
+  align-items: center;
+}
+
+.healthBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 99px;
+  border: 1px solid;
+  background: transparent;
+}
+
+/* ── Episode drop-off chart ───────────────────────────────────────────────── */
+.episodeDropoff {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.episodeDropoffLabel {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(167,139,250,0.55);
+  margin: 0 0 5px;
+}
+
+.dropoffChart {
+  display: block;
+  overflow: visible;
+}
+
 /* ── Responsive — analytics ───────────────────────────────────────────────── */
 @media (max-width: 900px) {
+  .analyticsRow2 { grid-template-columns: 1fr; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
