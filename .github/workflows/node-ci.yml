@@ -1,6 +1,3 @@
-# Status badge (add to README.md):
-# ![Node.js CI](https://github.com/Priyash/Dhara/actions/workflows/node-ci.yml/badge.svg?branch=development)
-
 name: Node.js CI
 
 on:
@@ -16,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        # Backend engines field requires node >=20.0.0 — 18.x excluded
+        # Backend requires node >=20.0.0
         node-version: [20.x, 22.x]
 
     steps:
@@ -26,16 +23,27 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+          # Point cache at the sub-package lockfiles, not the thin root stub
           cache: "npm"
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
 
-      - name: Install all dependencies
+      - name: Install dependencies
         run: npm run install:all
 
-      - name: Lint
+      - name: Lint frontend
         run: npm run lint
 
       - name: Build frontend
         run: npm run build --prefix frontend
+        env:
+          # Vite gracefully skips env file loading when these are absent,
+          # but set VITE_API_URL so the build output is not empty for that var.
+          VITE_API_URL: ${{ secrets.VITE_API_URL || 'http://localhost:4000' }}
 
-      - name: Test
-        run: npm test
+      - name: Test backend
+        run: npm test --prefix backend
+
+      - name: Test frontend
+        run: npm test --prefix frontend
