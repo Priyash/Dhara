@@ -2390,3 +2390,334 @@
   .revKpiRow      { grid-template-columns: 1fr 1fr; }
   .revChartRow    { grid-template-columns: 1fr; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Monitor Dashboard
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+.monDashboard {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 32px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.monHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 4px;
+}
+
+.monTitle {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.monSub {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.monLastUpdated {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: rgba(255,255,255,0.28);
+}
+
+
+.monKpiCard {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: var(--radius-md);
+  padding: 16px 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: border-color 0.2s;
+}
+
+.monKpiCard:hover { border-color: rgba(255,255,255,0.13); }
+
+.monKpiAccent {
+  background: linear-gradient(135deg, rgba(34,211,238,0.1), rgba(6,182,212,0.04));
+  border-color: rgba(34,211,238,0.22) !important;
+}
+
+.monKpiDanger {
+  background: rgba(248,113,113,0.06);
+  border-color: rgba(248,113,113,0.2) !important;
+}
+
+.monKpiIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(34,211,238,0.12);
+  border: 1px solid rgba(34,211,238,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #22d3ee;
+  margin-bottom: 5px;
+  flex-shrink: 0;
+}
+
+.monKpiValue {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+
+.monKpiValueSub {
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.45);
+}
+
+.monKpiLabel {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.monKpiSub {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: rgba(255,255,255,0.22);
+  margin: 0;
+}
+
+/* ── Chart cards ── */
+.monChartRow {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 14px;
+}
+
+.monChartCard {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: var(--radius-md);
+  padding: 16px 18px 14px;
+}
+
+.monChartCardFull {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: var(--radius-md);
+  padding: 16px 18px 14px;
+}
+
+.monChartTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #22d3ee;
+  margin: 0 0 3px;
+}
+
+.monChartSub {
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  margin: 0 0 2px;
+}
+
+/* ── Jobs lists row ── */
+.monJobsRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.monJobRow {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.monJobRow:last-child { border-bottom: none; }
+
+.monJobTitle {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  margin: 0 0 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.monJobError {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: #f87171;
+  margin: 0 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.monJobAgo {
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: rgba(255,255,255,0.25);
+  margin: 0;
+}
+
+.monEmpty {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: rgba(255,255,255,0.25);
+  padding: 16px 0;
+  margin: 0;
+}
+
+/* ── Progress bar ── */
+.monProgressTrack {
+  height: 4px;
+  background: rgba(34,211,238,0.12);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.monProgressFill {
+  height: 100%;
+  background: #22d3ee;
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+
+/* ── Badges ── */
+.monBadge {
+  margin-left: 6px;
+  background: rgba(248,113,113,0.18);
+  color: #f87171;
+  border: 1px solid rgba(248,113,113,0.3);
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+}
+
+.monBadgeCyan {
+  margin-left: 6px;
+  background: rgba(34,211,238,0.14);
+  color: #22d3ee;
+  border: 1px solid rgba(34,211,238,0.25);
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+}
+
+/* Spinning refresh icon */
+.monSpinning {
+  animation: monSpin 0.8s linear infinite;
+}
+
+@keyframes monSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .monDashboard { padding: 16px 20px 48px; }
+  .monKpiRow    { grid-template-columns: 1fr 1fr; }
+  .monChartRow  { grid-template-columns: 1fr; }
+  .monJobsRow   { grid-template-columns: 1fr; }
+}
+
+/* ── Payment health strip ── */
+.monPayStrip {
+  display: flex;
+  align-items: center;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: var(--radius-md);
+  padding: 12px 20px;
+  gap: 0;
+  flex-wrap: wrap;
+}
+
+.monPayMetric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 120px;
+  padding: 4px 16px;
+}
+
+.monPayMetric:first-child { padding-left: 0; }
+.monPayMetric:last-child  { padding-right: 0; }
+
+.monPayLabel {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--color-text-muted);
+}
+
+.monPayValue {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.monPayDivider {
+  width: 1px;
+  height: 32px;
+  background: rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+
+/* ── Warning KPI card (creator actions) ── */
+.monKpiWarn {
+  background: rgba(251,191,36,0.06);
+  border-color: rgba(251,191,36,0.2) !important;
+}
+
+/* ── 5-col KPI row ── */
+.monKpiRow {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .monKpiRow    { grid-template-columns: 1fr 1fr; }
+  .monPayStrip  { flex-direction: column; align-items: flex-start; }
+  .monPayDivider { width: 100%; height: 1px; margin: 4px 0; }
+}

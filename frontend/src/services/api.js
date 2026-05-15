@@ -308,6 +308,10 @@ export async function getAdminRevenue() {
   return request('/api/admin/revenue')
 }
 
+export async function getAdminMonitor() {
+  return request('/api/admin/monitor')
+}
+
 export async function listAdminCreatorEarnings(params = {}) {
   const qs = new URLSearchParams(params).toString()
   return request(`/api/admin/creator-earnings${qs ? `?${qs}` : ''}`)

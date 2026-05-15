@@ -6,6 +6,7 @@ import {
   UserCheck, UserX, FileCheck, FileX, ListPlus, Trash2, Eye,
   GripVertical, Layers, Plus, UploadIcon, IndianRupee,
   Calculator, Wallet, Clock, ChevronDown, TrendingUp, Users, BarChart2,
+  Activity, Server, AlertCircle, Database,
 } from 'lucide-react'
 import { uploadToCloudinary } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
@@ -20,10 +21,230 @@ import {
   listAdminSubmissions, approveSubmission, rejectSubmission,
   listAdminShelves, createAdminShelf, updateAdminShelf, deleteAdminShelf, reorderAdminShelves,
   listAdminCreatorEarnings, calculateCreatorEarnings, processCreatorPayout, listAdminCreatorPayouts,
-  getAdminRevenue,
+  getAdminRevenue, getAdminMonitor,
 } from '../services/api'
 import styles from './Admin.module.css'
 import { isValidDuration } from '../utils/duration'
+
+// ── Monitor dashboard — SVG chart components ─────────────────────────────────
+
+const MON_CYAN = '#22d3ee'
+
+// 7-day DAU bar chart
+function MonDAUChart({ data }) {
+  if (!data?.length) return null
+  const W = 540, H = 100, PT = 20, PB = 18, PL = 6, PR = 6
+  const iW = W - PL - PR, iH = H - PT - PB
+  const maxV = Math.max(...data.map(d => d.users), 1)
+  const gap  = iW / 7, barW = gap * 0.58
+  const today = new Date().toISOString().slice(0, 10)
+  const DAY   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const hasAny = data.some(d => d.users > 0)
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', overflow: 'visible', marginTop: 8 }}>
+      {data.map((d, i) => {
+        const cx   = PL + gap * i + gap / 2
+        const barH = hasAny ? Math.max((d.users / maxV) * iH, d.users > 0 ? 3 : 1) : 5
+        const y    = PT + iH - barH
+        const isCur = d.date === today
+        const fill  = hasAny
+          ? (isCur ? MON_CYAN : 'rgba(34,211,238,0.35)')
+          : 'rgba(34,211,238,0.12)'
+        const lbl = DAY[new Date(d.date + 'T12:00:00Z').getDay()]
+        return (
+          <g key={d.date}>
+            <rect x={cx - barW / 2} y={y} width={barW} height={barH} rx="3" fill={fill}
+              style={isCur && hasAny ? { filter: 'drop-shadow(0 0 6px rgba(34,211,238,0.55))' } : undefined} />
+            {d.users > 0 && (
+              <text x={cx} y={y - 5} textAnchor="middle" fontSize="9" fontWeight="600"
+                fill={`rgba(34,211,238,0.85)`} fontFamily="system-ui,sans-serif">{d.users}</text>
+            )}
+            <text x={cx} y={H - 2} textAnchor="middle" fontSize="9"
+              fill={isCur ? `rgba(34,211,238,0.9)` : 'rgba(255,255,255,0.28)'}
+              fontWeight={isCur ? '700' : '400'} fontFamily="system-ui,sans-serif">{lbl}</text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+// Upload job status donut
+function MonJobDonut({ byStatus }) {
+  const STATUS_CFG = [
+    { key: 'ready',        label: 'Ready',        color: '#4ade80' },
+    { key: 'uploading',    label: 'Uploading',    color: MON_CYAN  },
+    { key: 'processing',   label: 'Processing',   color: '#a78bfa' },
+    { key: 'queued',       label: 'Queued',       color: '#fbbf24' },
+    { key: 'awaiting_file',label: 'Awaiting',     color: 'rgba(255,255,255,0.2)' },
+    { key: 'failed',       label: 'Failed',       color: '#f87171' },
+  ]
+  const segs = STATUS_CFG
+    .map(s => ({ ...s, count: byStatus?.[s.key] || 0 }))
+    .filter(s => s.count > 0)
+  const total = segs.reduce((s, x) => s + x.count, 0) || 1
+  const r = 36, cx = 48, cy = 48, C = 2 * Math.PI * r
+  let cum = 0
+  const drawn = segs.map(s => {
+    const len = (s.count / total) * C
+    const off = -(C * 0.25) - cum
+    cum += len
+    return { ...s, len, off }
+  })
+  if (!segs.length) return <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', margin: '12px 0 0' }}>No job data yet.</p>
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8 }}>
+      <svg viewBox="0 0 96 96" width="100" height="100" style={{ flexShrink: 0 }}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="13" />
+        {drawn.map(s => (
+          <circle key={s.key} cx={cx} cy={cy} r={r} fill="none"
+            stroke={s.color} strokeWidth="12"
+            strokeDasharray={`${s.len - 1.5} ${C - s.len + 1.5}`}
+            strokeDashoffset={s.off}
+            style={{ filter: `drop-shadow(0 0 3px ${s.color}55)` }} />
+        ))}
+        <text x={cx} y={cy - 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="white" fontFamily="system-ui,sans-serif">{total}</text>
+        <text x={cx} y={cy + 8} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.38)" fontFamily="system-ui,sans-serif">jobs</text>
+      </svg>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+        {drawn.map(s => (
+          <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+            <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, color: 'var(--color-text)', flex: 1 }}>{s.label}</span>
+            <strong style={{ fontFamily: 'var(--font-display)', fontSize: 13, color: s.color }}>{s.count}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// 6-month subscription trend — new vs churned side-by-side bars
+function MonSubTrendChart({ data }) {
+  if (!data?.length) return null
+  const W = 560, H = 110, PT = 22, PB = 18, PL = 6, PR = 6
+  const iW = W - PL - PR, iH = H - PT - PB
+  const maxV  = Math.max(...data.flatMap(d => [d.newSubs, d.churned]), 1)
+  const grpW  = (iW / data.length)
+  const barW  = grpW * 0.32
+  const gap   = grpW * 0.06
+  const ABBR  = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', overflow: 'visible', marginTop: 8 }}>
+      {data.map((d, i) => {
+        const cx   = PL + grpW * i + grpW / 2
+        const newH = Math.max((d.newSubs / maxV) * iH, d.newSubs > 0 ? 3 : 1)
+        const chrH = Math.max((d.churned / maxV) * iH, d.churned > 0 ? 3 : 1)
+        const month = parseInt(d.month.split('-')[1], 10)
+        return (
+          <g key={d.month}>
+            <rect x={cx - barW - gap / 2} y={PT + iH - newH} width={barW} height={newH} rx="3"
+              fill={MON_CYAN} style={{ filter: `drop-shadow(0 0 4px rgba(34,211,238,0.35))` }} />
+            <rect x={cx + gap / 2} y={PT + iH - chrH} width={barW} height={chrH} rx="3"
+              fill="#f87171" style={{ filter: `drop-shadow(0 0 3px rgba(248,113,113,0.3))` }} />
+            <text x={cx} y={H - 2} textAnchor="middle" fontSize="9"
+              fill="rgba(255,255,255,0.28)" fontFamily="system-ui,sans-serif">{ABBR[month]}</text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+// ── Top content list (last 24h) ───────────────────────────────────────────────
+function MonTopContentList({ items }) {
+  if (!items?.length) return (
+    <p style={{ fontFamily:'var(--font-body)', fontSize:12, color:'rgba(255,255,255,0.25)', padding:'12px 0', margin:0 }}>
+      No view events in the last 24h yet.
+    </p>
+  )
+  const maxV = Math.max(...items.map(i => i.views), 1)
+  const TYPE_COLOR = { Film:'#f59e0b', Series:'#a78bfa', Documentary:'#34d399' }
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:8 }}>
+      {items.map(item => {
+        const pct   = Math.max((item.views / maxV) * 100, 2)
+        const color = TYPE_COLOR[item.type] || MON_CYAN
+        return (
+          <div key={item.rank} style={{ display:'grid', gridTemplateColumns:'18px 1fr 40px', alignItems:'center', gap:10 }}>
+            <span style={{ fontFamily:'var(--font-body)', fontSize:11, color:'rgba(255,255,255,0.28)', textAlign:'right' }}>#{item.rank}</span>
+            <div>
+              <div style={{ height:20, background:'rgba(255,255,255,0.04)', borderRadius:3, overflow:'hidden', position:'relative' }}>
+                <div style={{ position:'absolute', top:0, left:0, height:'100%', width:`${pct}%`, background:`${color}55`, transition:'width 0.5s ease' }} />
+                <span style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', fontFamily:'var(--font-body)', fontSize:11, fontWeight:500, color:'var(--color-text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'calc(100% - 16px)' }}>
+                  {item.title}
+                </span>
+              </div>
+            </div>
+            <span style={{ fontFamily:'var(--font-display)', fontSize:12, fontWeight:700, color, textAlign:'right' }}>{item.views}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Device split mini donut ───────────────────────────────────────────────────
+function MonDeviceDonut({ devices }) {
+  const CFG = [
+    { key:'mobile',  label:'Mobile',  color:'#22d3ee' },
+    { key:'desktop', label:'Desktop', color:'#a78bfa' },
+    { key:'tv',      label:'TV',      color:'#f59e0b' },
+    { key:'unknown', label:'Other',   color:'rgba(255,255,255,0.2)' },
+  ]
+  const segs = CFG.map(c => ({ ...c, count: devices?.find(d => d.device === c.key)?.count || 0 })).filter(s => s.count > 0)
+  const total = segs.reduce((s, x) => s + x.count, 0) || 1
+  const r = 28, cx = 36, cy = 36, C = 2 * Math.PI * r
+  let cum = 0
+  const drawn = segs.map(s => {
+    const len = (s.count / total) * C
+    const off = -(C * 0.25) - cum; cum += len
+    return { ...s, len, off, pct: Math.round((s.count / total) * 100) }
+  })
+  if (!drawn.length) return <p style={{ fontFamily:'var(--font-body)', fontSize:12, color:'rgba(255,255,255,0.25)', margin:'8px 0 0' }}>No device data yet.</p>
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:14, marginTop:8 }}>
+      <svg viewBox="0 0 72 72" width="76" height="76" style={{ flexShrink:0 }}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="10" />
+        {drawn.map(s => (
+          <circle key={s.key} cx={cx} cy={cy} r={r} fill="none" stroke={s.color} strokeWidth="9"
+            strokeDasharray={`${s.len - 1} ${C - s.len + 1}`} strokeDashoffset={s.off}
+            style={{ filter:`drop-shadow(0 0 3px ${s.color}55)` }} />
+        ))}
+      </svg>
+      <div style={{ display:'flex', flexDirection:'column', gap:6, flex:1 }}>
+        {drawn.map(s => (
+          <div key={s.key} style={{ display:'flex', alignItems:'center', gap:7 }}>
+            <span style={{ width:7, height:7, borderRadius:'50%', background:s.color, flexShrink:0 }} />
+            <span style={{ fontFamily:'var(--font-body)', fontSize:11, color:'var(--color-text)', flex:1 }}>{s.label}</span>
+            <strong style={{ fontFamily:'var(--font-display)', fontSize:12, color:s.color }}>{s.pct}%</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Geography bars (top 5 states) ─────────────────────────────────────────────
+function MonGeoList({ states }) {
+  if (!states?.length) return <p style={{ fontFamily:'var(--font-body)', fontSize:12, color:'rgba(255,255,255,0.25)', margin:'8px 0 0' }}>No location data yet.</p>
+  const maxV = Math.max(...states.map(s => s.count), 1)
+  const fmtV = (v) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : String(v)
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:7, marginTop:8 }}>
+      {states.map((s, i) => (
+        <div key={s.state} style={{ display:'grid', gridTemplateColumns:'20px 1fr 60px 36px', alignItems:'center', gap:8 }}>
+          <span style={{ fontFamily:'var(--font-body)', fontSize:10, color:'rgba(255,255,255,0.22)', textAlign:'right' }}>#{i + 1}</span>
+          <span style={{ fontFamily:'var(--font-body)', fontSize:12, color:'var(--color-text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{s.state}</span>
+          <div style={{ height:4, background:'rgba(255,255,255,0.06)', borderRadius:2, overflow:'hidden' }}>
+            <div style={{ height:'100%', width:`${(s.count / maxV) * 100}%`, background: i === 0 ? MON_CYAN : 'rgba(34,211,238,0.45)', borderRadius:2, transition:'width 0.5s ease' }} />
+          </div>
+          <span style={{ fontFamily:'var(--font-body)', fontSize:11, color:MON_CYAN, textAlign:'right' }}>{fmtV(s.count)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 // ── Revenue dashboard — tier colours ─────────────────────────────────────────
 const TIER_COLORS = {
@@ -215,6 +436,7 @@ const TABS = [
   { id: 'payments', label: 'Payments',        icon: CreditCard   },
   { id: 'creators', label: 'Creator Hub',     icon: UserCheck    },
   { id: 'revenue',  label: 'Creator Revenue', icon: IndianRupee  },
+  { id: 'monitor',  label: 'Monitor',         icon: Activity     },
 ]
 
 const NEW_CONTENT_ID = '__new__'
@@ -324,6 +546,11 @@ export default function Admin() {
   const [revenueNotice,      setRevenueNotice]      = useState('')
   const [revenueError,       setRevenueError]       = useState('')
   const [platformRevenue,    setPlatformRevenue]    = useState(null)
+
+  // ── Monitor ───────────────────────────────────────────────────────────────
+  const [monitorData,        setMonitorData]        = useState(null)
+  const [monitorLoading,     setMonitorLoading]     = useState(false)
+  const [monitorLastFetched, setMonitorLastFetched] = useState(null)
 
   // ── Curated Shelves ───────────────────────────────────────────────────────
   const [shelves,          setShelves]          = useState([])
@@ -444,6 +671,9 @@ export default function Admin() {
     }
     if (activeTab === 'revenue' && adminAllowed) {
       void loadCreatorRevenue()
+    }
+    if (activeTab === 'monitor' && adminAllowed) {
+      void loadMonitor()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, adminAllowed])
@@ -692,6 +922,16 @@ export default function Admin() {
   }
 
   // ── Creator Hub loaders ───────────────────────────────────────────────────
+  const loadMonitor = async () => {
+    setMonitorLoading(true)
+    try {
+      const data = await getAdminMonitor()
+      setMonitorData(data)
+      setMonitorLastFetched(new Date())
+    } catch { /* non-critical */ }
+    finally { setMonitorLoading(false) }
+  }
+
   const loadCreatorApplications = async (status = appStatusFilter) => {
     try {
       const data = await listCreatorApplications({ status })
@@ -2667,7 +2907,7 @@ export default function Admin() {
             <div className={styles.revSectionHeader}>
               <div>
                 <h2 className={styles.revSectionTitle}><IndianRupee size={16} /> Dhara Platform Revenue</h2>
-                <p className={styles.revSectionSub}>Subscription income from end users · all figures from DB</p>
+                <p className={styles.revSectionSub}>Subscription income from end users</p>
               </div>
             </div>
 
@@ -2731,7 +2971,7 @@ export default function Admin() {
             <div className={styles.revSectionHeader}>
               <div>
                 <h2 className={styles.revSectionTitle}><Wallet size={16} /> Creator Payouts</h2>
-                <p className={styles.revSectionSub}>Revenue share distributed to content creators · stored in DB</p>
+                <p className={styles.revSectionSub}>Revenue share distributed to content creators</p>
               </div>
               <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
                 <button className={styles.refreshBtn} onClick={loadCreatorRevenue} disabled={revenueLoading}>
@@ -2779,7 +3019,7 @@ export default function Admin() {
                 {creatorEarnings.length > 0 && (
                   <div className={styles.revChartCard}>
                     <p className={styles.revChartTitle}><BarChart2 size={12} /> Top Creators by Earnings</p>
-                    <p className={styles.revChartSub}>Paid vs pending · tier colour-coded · data from CreatorEarning collection</p>
+                    <p className={styles.revChartSub}>Paid out vs pending · colour-coded by creator tier</p>
                     <CreatorEarningsBarsChart data={creatorEarnings} />
                   </div>
                 )}
@@ -2863,6 +3103,248 @@ export default function Admin() {
             )}
           </div>
         </section>
+        )
+      })()}
+
+      {/* ── MONITOR TAB ──────────────────────────────────────────────────── */}
+      {activeTab === 'monitor' && (() => {
+        const md  = monitorData
+        const uh  = md?.uploadHealth || {}
+        const dau = md?.dau          || {}
+        const sub = md?.subscriptions || {}
+        const ct  = md?.content       || {}
+        const usr = md?.users          || {}
+
+        const fmtN = (n) => {
+          if (!n) return '0'
+          if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+          if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`
+          return String(n)
+        }
+        const fmtAgo = (d) => {
+          if (!d) return '—'
+          const secs = Math.floor((Date.now() - new Date(d)) / 1000)
+          if (secs < 60)  return `${secs}s ago`
+          if (secs < 3600) return `${Math.floor(secs / 60)}m ago`
+          return `${Math.floor(secs / 3600)}h ago`
+        }
+
+        const failedCount   = uh.byStatus?.failed  || 0
+        const activeJobs    = uh.activeJobs         || 0
+        const paying        = sub.paying            || 0
+
+        return (
+        <div className={styles.monDashboard}>
+
+          {/* Header */}
+          <div className={styles.monHeader}>
+            <div>
+              <h2 className={styles.monTitle}><Activity size={16} /> Platform Monitor</h2>
+              <p className={styles.monSub}>Live platform health — refreshed on demand</p>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {monitorLastFetched && (
+                <span className={styles.monLastUpdated}>
+                  Updated {fmtAgo(monitorLastFetched)}
+                </span>
+              )}
+              <button className={styles.refreshBtn} onClick={loadMonitor} disabled={monitorLoading}>
+                <RefreshCw size={13} className={monitorLoading ? styles.monSpinning : undefined} />
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          {monitorLoading && !md ? (
+            <p className={styles.empty} style={{ padding: '48px 0' }}>Loading monitor data…</p>
+          ) : (
+            <>
+              {/* ── Payment health strip ── */}
+              {(() => {
+                const ph = md?.paymentHealth || {}
+                const successColor = ph.successRate == null ? 'rgba(255,255,255,0.28)'
+                  : ph.successRate >= 90 ? '#4ade80' : ph.successRate >= 70 ? '#fbbf24' : '#f87171'
+                return (
+                  <div className={styles.monPayStrip}>
+                    <div className={styles.monPayMetric}>
+                      <span className={styles.monPayLabel}>Revenue today</span>
+                      <strong className={styles.monPayValue} style={{ color: '#4ade80' }}>
+                        ₹{(ph.revenueToday || 0).toLocaleString('en-IN')}
+                      </strong>
+                    </div>
+                    <div className={styles.monPayDivider} />
+                    <div className={styles.monPayMetric}>
+                      <span className={styles.monPayLabel}>Payments today</span>
+                      <strong className={styles.monPayValue}>
+                        {ph.paidToday || 0} paid
+                        {ph.failedToday > 0 && <span style={{ color: '#f87171', marginLeft: 8 }}>· {ph.failedToday} failed</span>}
+                      </strong>
+                    </div>
+                    <div className={styles.monPayDivider} />
+                    <div className={styles.monPayMetric}>
+                      <span className={styles.monPayLabel}>Success rate today</span>
+                      <strong className={styles.monPayValue} style={{ color: successColor }}>
+                        {ph.successRate != null ? `${ph.successRate}%` : '—'}
+                      </strong>
+                    </div>
+                    <div className={styles.monPayDivider} />
+                    <div className={styles.monPayMetric}>
+                      <span className={styles.monPayLabel}>Last payment</span>
+                      <strong className={styles.monPayValue} style={{ fontSize: 12 }}>
+                        {ph.lastPaymentAt ? fmtAgo(ph.lastPaymentAt) : 'No payments yet'}
+                      </strong>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* ── 5 KPI cards ── */}
+              <div className={styles.monKpiRow}>
+                <div className={`${styles.monKpiCard} ${styles.monKpiAccent}`}>
+                  <div className={styles.monKpiIcon}><Users size={13} /></div>
+                  <p className={styles.monKpiValue}>{fmtN(dau.today)}</p>
+                  <p className={styles.monKpiLabel}>DAU Today</p>
+                  <p className={styles.monKpiSub}>7-day avg: {fmtN(dau.weeklyAvg)}</p>
+                </div>
+
+                <div className={styles.monKpiCard}>
+                  <div className={styles.monKpiIcon} style={{ background:'rgba(167,139,250,0.12)', borderColor:'rgba(167,139,250,0.2)', color:'#a78bfa' }}>
+                    <Database size={13} />
+                  </div>
+                  <p className={styles.monKpiValue}>{fmtN(usr.total)}</p>
+                  <p className={styles.monKpiLabel}>Total Users</p>
+                  <p className={styles.monKpiSub}>+{usr.newThisMonth || 0} this month</p>
+                </div>
+
+                <div className={`${styles.monKpiCard} ${failedCount > 0 ? styles.monKpiDanger : ''}`}>
+                  <div className={styles.monKpiIcon} style={{ background: failedCount > 0 ? 'rgba(248,113,113,0.12)' : 'rgba(34,211,238,0.1)', borderColor: failedCount > 0 ? 'rgba(248,113,113,0.25)' : 'rgba(34,211,238,0.2)', color: failedCount > 0 ? '#f87171' : MON_CYAN }}>
+                    <Server size={13} />
+                  </div>
+                  <p className={styles.monKpiValue} style={{ color: failedCount > 0 ? '#f87171' : undefined }}>
+                    {activeJobs} <span className={styles.monKpiValueSub}>active</span>
+                  </p>
+                  <p className={styles.monKpiLabel}>Upload Queue</p>
+                  <p className={styles.monKpiSub} style={{ color: failedCount > 0 ? '#f87171' : undefined }}>
+                    {failedCount > 0 ? `⚠ ${failedCount} failed` : 'All healthy'}
+                  </p>
+                </div>
+
+                <div className={styles.monKpiCard}>
+                  <div className={styles.monKpiIcon} style={{ background: 'rgba(74,222,128,0.1)', borderColor: 'rgba(74,222,128,0.2)', color: '#4ade80' }}><TrendingUp size={13} /></div>
+                  <p className={styles.monKpiValue}>{fmtN(ct.totalViews)}</p>
+                  <p className={styles.monKpiLabel}>Total Views</p>
+                  <p className={styles.monKpiSub}>{ct.total || 0} titles · {sub.churnRate}% churn</p>
+                </div>
+
+                {(() => {
+                  const ca = md?.creatorActions || {}
+                  const total = (ca.pendingApplications || 0) + (ca.pendingSubmissions || 0)
+                  const urgent = total > 0
+                  return (
+                    <div className={`${styles.monKpiCard} ${urgent ? styles.monKpiWarn : ''}`}>
+                      <div className={styles.monKpiIcon} style={{ background: urgent ? 'rgba(251,191,36,0.12)' : 'rgba(167,139,250,0.12)', borderColor: urgent ? 'rgba(251,191,36,0.25)' : 'rgba(167,139,250,0.2)', color: urgent ? '#fbbf24' : '#a78bfa' }}>
+                        <UserCheck size={13} />
+                      </div>
+                      <p className={styles.monKpiValue} style={{ color: urgent ? '#fbbf24' : undefined }}>{total}</p>
+                      <p className={styles.monKpiLabel}>Creator Actions</p>
+                      <p className={styles.monKpiSub}>
+                        {ca.pendingApplications || 0} apps · {ca.pendingSubmissions || 0} submissions
+                      </p>
+                    </div>
+                  )
+                })()}
+              </div>
+
+              {/* ── DAU chart + Upload donut ── */}
+              <div className={styles.monChartRow}>
+                <div className={styles.monChartCard}>
+                  <p className={styles.monChartTitle}><Users size={12} /> Daily Active Users</p>
+                  <p className={styles.monChartSub}>Unique logins per day · last 7 days · IST</p>
+                  <MonDAUChart data={dau.last7Days} />
+                </div>
+                <div className={styles.monChartCard}>
+                  <p className={styles.monChartTitle}><Server size={12} /> Upload Job Status</p>
+                  <p className={styles.monChartSub}>All jobs by current status</p>
+                  <MonJobDonut byStatus={uh.byStatus} />
+                </div>
+              </div>
+
+              {/* ── Subscription trend ── */}
+              <div className={styles.monChartCardFull}>
+                <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16 }}>
+                  <div>
+                    <p className={styles.monChartTitle}><TrendingUp size={12} /> Subscription Trend</p>
+                    <p className={styles.monChartSub}>New subscribers vs estimated churn · last 6 months</p>
+                  </div>
+                  <div style={{ display:'flex', gap:14, fontFamily:'var(--font-body)', fontSize:11, color:'rgba(255,255,255,0.38)' }}>
+                    <span><span style={{ display:'inline-block', width:10, height:8, borderRadius:2, background:MON_CYAN, marginRight:5, verticalAlign:'middle' }}/>New</span>
+                    <span><span style={{ display:'inline-block', width:10, height:8, borderRadius:2, background:'#f87171', marginRight:5, verticalAlign:'middle' }}/>Churned</span>
+                  </div>
+                </div>
+                <MonSubTrendChart data={sub.trend} />
+              </div>
+
+              {/* ── Top content + Device/Geo ── */}
+              <div className={styles.monChartRow}>
+                <div className={styles.monChartCard}>
+                  <p className={styles.monChartTitle}><Activity size={12} /> Top 5 Content Today</p>
+                  <p className={styles.monChartSub}>Most-watched titles in the last 24 hours</p>
+                  <MonTopContentList items={md?.topContent} />
+                </div>
+                <div className={styles.monChartCard}>
+                  <div style={{ marginBottom:12 }}>
+                    <p className={styles.monChartTitle} style={{ marginBottom:2 }}>Device Split</p>
+                    <p className={styles.monChartSub}>How your audience watches · last 7 days</p>
+                    <MonDeviceDonut devices={md?.audience?.devices} />
+                  </div>
+                  <div style={{ paddingTop:12, borderTop:'1px solid rgba(255,255,255,0.06)' }}>
+                    <p className={styles.monChartTitle} style={{ marginBottom:2 }}>Top States</p>
+                    <p className={styles.monChartSub}>Where your viewers are · last 7 days</p>
+                    <MonGeoList states={md?.audience?.states} />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Jobs lists ── */}
+              <div className={styles.monJobsRow}>
+                <div className={styles.monChartCard}>
+                  <p className={styles.monChartTitle} style={{ color:'#f87171' }}>
+                    <AlertCircle size={12} /> Recent Failures
+                    {failedCount > 0 && <span className={styles.monBadge}>{failedCount}</span>}
+                  </p>
+                  {!uh.recentFailed?.length ? (
+                    <p className={styles.monEmpty}><span style={{ color:'#4ade80' }}>✓</span> No failed jobs</p>
+                  ) : uh.recentFailed.map((j, i) => (
+                    <div key={i} className={styles.monJobRow}>
+                      <p className={styles.monJobTitle}>{j.title}</p>
+                      <p className={styles.monJobError}>{j.error}</p>
+                      <p className={styles.monJobAgo}>{fmtAgo(j.ago)}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className={styles.monChartCard}>
+                  <p className={styles.monChartTitle} style={{ color:MON_CYAN }}>
+                    <Activity size={12} /> In Progress
+                    {activeJobs > 0 && <span className={styles.monBadgeCyan}>{activeJobs}</span>}
+                  </p>
+                  {!uh.processing?.length ? (
+                    <p className={styles.monEmpty}>Queue is idle</p>
+                  ) : uh.processing.map((j, i) => (
+                    <div key={i} className={styles.monJobRow}>
+                      <div style={{ display:'flex', justifyContent:'space-between', gap:8 }}>
+                        <p className={styles.monJobTitle}>{j.title}</p>
+                        <span style={{ fontFamily:'var(--font-body)', fontSize:11, color:MON_CYAN, flexShrink:0 }}>{j.progress}%</span>
+                      </div>
+                      <div className={styles.monProgressTrack}>
+                        <div className={styles.monProgressFill} style={{ width:`${j.progress}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         )
       })()}
 
