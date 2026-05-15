@@ -1268,4 +1268,238 @@ router.get('/creator-payouts', requireAuth, requireAdmin, async (req, res, next)
   }
 })
 
+/**
+ * GET /api/admin/monitor
+ * Platform health dashboard — upload job health, DAU, subscription trend,
+ * content stats. All figures are aggregated live from MongoDB.
+ */
+router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const now            = new Date()
+    const todayStart     = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const sevenDaysAgo   = new Date(Date.now() - 7   * 86_400_000)
+    const thirtyDaysAgo  = new Date(Date.now() - 30  * 86_400_000)
+    const sixMonthsAgo   = new Date(Date.now() - 180 * 86_400_000)
+    const twentyFourHAgo = new Date(Date.now() - 86_400_000)
+    const monthStart     = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    const [
+      // ── existing ───────────────────────────────────────────────────────────
+      jobStatusAgg,
+      recentFailedJobs,
+      processingJobs,
+      dauAgg,
+      dauToday,
+      totalUsers,
+      newUsersThisMonth,
+      subStatusAgg,
+      newSubsAgg,
+      lapsedAgg,
+      contentAgg,
+      // ── new ───────────────────────────────────────────────────────────────
+      pendingApplications,
+      pendingSubmissions,
+      paymentTodayAgg,
+      lastSuccessfulPayment,
+      topContentAgg,
+      deviceAgg,
+      geoAgg,
+    ] = await Promise.all([
+
+      UploadJob.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+
+      UploadJob.find({ status: 'failed' })
+        .sort({ updatedAt: -1 }).limit(5)
+        .select('title episodeNumber error updatedAt').lean(),
+
+      UploadJob.find({ status: { $in: ['uploading', 'processing'] } })
+        .sort({ updatedAt: -1 }).limit(10)
+        .select('title episodeNumber status progress updatedAt').lean(),
+
+      User.aggregate([
+        { $match: { lastLoginAt: { $gte: sevenDaysAgo } } },
+        { $group: {
+          _id:   { $dateToString: { format: '%Y-%m-%d', date: '$lastLoginAt', timezone: 'Asia/Kolkata' } },
+          users: { $sum: 1 },
+        }},
+        { $sort: { _id: 1 } },
+      ]),
+
+      User.countDocuments({ lastLoginAt: { $gte: todayStart } }),
+      User.countDocuments(),
+      User.countDocuments({ createdAt: { $gte: monthStart } }),
+
+      User.aggregate([{ $group: { _id: '$subscriptionStatus', count: { $sum: 1 } } }]),
+
+      Transaction.aggregate([
+        { $match: { status: 'paid', createdAt: { $gte: sixMonthsAgo } } },
+        { $group: {
+          _id:   { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
+          count: { $sum: 1 },
+        }},
+        { $sort: { _id: 1 } },
+      ]),
+
+      User.aggregate([
+        { $match: { subscriptionStatus: 'lapsed', subscriptionExpiresAt: { $gte: sixMonthsAgo } } },
+        { $group: {
+          _id:   { $dateToString: { format: '%Y-%m', date: '$subscriptionExpiresAt' } },
+          count: { $sum: 1 },
+        }},
+        { $sort: { _id: 1 } },
+      ]),
+
+      Content.aggregate([
+        { $match: { isPublished: true } },
+        { $group: {
+          _id:            null,
+          total:          { $sum: 1 },
+          totalViews:     { $sum: '$viewCount' },
+          addedThisMonth: { $sum: { $cond: [{ $gte: ['$createdAt', monthStart] }, 1, 0] } },
+        }},
+      ]),
+
+      // ── NEW: Creator action queue — straight from User + Content models ────
+      User.countDocuments({ creatorStatus: 'applied' }),
+      Content.countDocuments({ submissionStatus: 'pending', isPublished: false }),
+
+      // ── NEW: Payment health today — from Transaction ───────────────────────
+      Transaction.aggregate([
+        { $match: { createdAt: { $gte: todayStart } } },
+        { $group: {
+          _id:        '$status',
+          count:      { $sum: 1 },
+          totalPaise: { $sum: '$amount' },
+        }},
+      ]),
+
+      // ── NEW: Last successful payment timestamp ────────────────────────────
+      Transaction.findOne({ status: 'paid' }).sort({ createdAt: -1 }).select('createdAt').lean(),
+
+      // ── NEW: Top 5 content by views in last 24h — from ViewEvent + Content ─
+      ViewEvent.aggregate([
+        { $match: { viewedAt: { $gte: twentyFourHAgo } } },
+        { $group: { _id: '$contentId', views: { $sum: 1 } } },
+        { $sort: { views: -1 } },
+        { $limit: 5 },
+        { $lookup: { from: 'contents', localField: '_id', foreignField: '_id', as: 'c' } },
+        { $unwind: { path: '$c', preserveNullAndEmpty: false } },
+        { $project: { title: '$c.title', type: '$c.type', views: 1 } },
+      ]),
+
+      // ── NEW: Device breakdown last 7 days — from ViewEvent ────────────────
+      ViewEvent.aggregate([
+        { $match: { viewedAt: { $gte: sevenDaysAgo } } },
+        { $group: { _id: '$device', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
+
+      // ── NEW: Top 5 states last 7 days — from ViewEvent ────────────────────
+      ViewEvent.aggregate([
+        { $match: { viewedAt: { $gte: sevenDaysAgo }, country: 'IN' } },
+        { $group: { _id: '$state', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 5 },
+      ]),
+    ])
+
+    // ── Derived values ────────────────────────────────────────────────────────
+
+    const dauByDay = Array.from({ length: 7 }, (_, i) => {
+      const d       = new Date(Date.now() - (6 - i) * 86_400_000)
+      const dateStr = new Date(d.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10)
+      return { date: dateStr, users: dauAgg.find(a => a._id === dateStr)?.users || 0 }
+    })
+
+    const subTrend = Array.from({ length: 6 }, (_, i) => {
+      const d   = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      return {
+        month:   key,
+        newSubs: newSubsAgg.find(a => a._id === key)?.count || 0,
+        churned: lapsedAgg.find(a  => a._id === key)?.count || 0,
+      }
+    })
+
+    const jobHealth  = Object.fromEntries(jobStatusAgg.map(j => [j._id, j.count]))
+    const activeJobs = (jobHealth.uploading || 0) + (jobHealth.processing || 0)
+
+    const subCounts = Object.fromEntries(subStatusAgg.map(s => [s._id, s.count]))
+    const paying    = (subCounts.active || 0) + (subCounts.trial || 0) + (subCounts.grace || 0)
+    const lapsed30  = await User.countDocuments({ subscriptionStatus: 'lapsed', subscriptionExpiresAt: { $gte: thirtyDaysAgo } })
+    const churnRate = paying + lapsed30 > 0 ? Number(((lapsed30 / (paying + lapsed30)) * 100).toFixed(1)) : 0
+
+    const payToday   = Object.fromEntries(paymentTodayAgg.map(p => [p._id, { count: p.count, paise: p.totalPaise }]))
+    const paidToday  = payToday.paid  || { count: 0, paise: 0 }
+    const failedToday = payToday.failed?.count || 0
+    const totalAttempts = Object.values(payToday).reduce((s, v) => s + v.count, 0)
+    const paySuccessRate = totalAttempts > 0 ? Math.round((paidToday.count / totalAttempts) * 100) : null
+
+    const content = contentAgg[0] ?? { total: 0, totalViews: 0, addedThisMonth: 0 }
+
+    res.json({
+      uploadHealth: {
+        byStatus: jobHealth,
+        activeJobs,
+        recentFailed: recentFailedJobs.map(j => ({
+          title: j.episodeNumber ? `Ep ${j.episodeNumber} — ${j.title}` : j.title,
+          error: j.error || 'Unknown error',
+          ago:   j.updatedAt,
+        })),
+        processing: processingJobs.map(j => ({
+          title:    j.episodeNumber ? `Ep ${j.episodeNumber} — ${j.title}` : j.title,
+          status:   j.status,
+          progress: j.progress,
+        })),
+      },
+      dau: {
+        today:     dauToday,
+        last7Days: dauByDay,
+        weeklyAvg: dauByDay.length
+          ? Math.round(dauByDay.reduce((s, d) => s + d.users, 0) / dauByDay.length)
+          : 0,
+      },
+      users: {
+        total:        totalUsers,
+        newThisMonth: newUsersThisMonth,
+      },
+      subscriptions: {
+        byStatus: subCounts,
+        paying,
+        churnRate,
+        trend:    subTrend,
+      },
+      content: {
+        total:          content.total,
+        totalViews:     content.totalViews,
+        addedThisMonth: content.addedThisMonth,
+      },
+      // ── NEW ────────────────────────────────────────────────────────────────
+      creatorActions: {
+        pendingApplications,
+        pendingSubmissions,
+      },
+      paymentHealth: {
+        revenueToday:   Math.round(paidToday.paise / 100),
+        paidToday:      paidToday.count,
+        failedToday,
+        successRate:    paySuccessRate,
+        lastPaymentAt:  lastSuccessfulPayment?.createdAt || null,
+      },
+      topContent: topContentAgg.map((c, i) => ({
+        rank:  i + 1,
+        title: c.title,
+        type:  c.type,
+        views: c.views,
+      })),
+      audience: {
+        devices: deviceAgg.map(d => ({ device: d._id || 'unknown', count: d.count })),
+        states:  geoAgg.map(g => ({ state: g._id || 'Unknown', count: g.count })),
+      },
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
 export default router
