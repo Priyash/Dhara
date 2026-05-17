@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Clapperboard, Users, Globe, Play, SkipForward, VideoOff, RotateCcw } from 'lucide-react'
+import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Clapperboard, Users, Globe, Play, SkipForward, VideoOff, RotateCcw, Eye, ThumbsUp, MessageSquare } from 'lucide-react'
 import VideoPlayer from '../components/VideoPlayer'
 import PosterCard from '../components/PosterCard'
 import { fetchContentById, fetchStreamUrl, saveWatchProgress, recordView, fetchContent, rateContent, recordInteractionEvent } from '../services/api'
@@ -272,7 +272,7 @@ export default function Watch() {
   const hasCast     = content.cast?.length > 0
   const hasDirector = Boolean(content.director)
   const hasRating   = content.rating > 0
-  const hasMeta     = hasGenre || hasCast || hasDirector || hasRating || content.releaseYear || content.desc
+  const hasMeta     = true  // always show the meta panel when content is loaded
 
   // Build backdrop URL for cinematic gate
   const backdropRaw = content.backdropUrl || content.posterUrl || null
@@ -468,6 +468,37 @@ export default function Watch() {
                     {content.rating.toFixed(1)}
                   </span>
                 )}
+              </div>
+
+              {/* Engagement strip — always visible, shows zeros until activity accumulates */}
+              <div className={styles.engagementRow}>
+                <span className={styles.engagementStat}>
+                  <Eye size={13} />
+                  {(() => {
+                    const v = content.viewCount ?? 0
+                    return v >= 1_000_000 ? `${(v/1_000_000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : v
+                  })()}
+                  <em>views</em>
+                </span>
+                <span className={styles.engagementStat}>
+                  <ThumbsUp size={13} />
+                  {(() => {
+                    const l = content.likeCount ?? 0
+                    return l >= 1000 ? `${(l/1000).toFixed(1)}k` : l
+                  })()}
+                  <em>likes</em>
+                </span>
+                <span className={styles.engagementStat} style={{ color: '#f59e0b' }}>
+                  <MessageSquare size={13} />
+                  {content.communityRatingCount > 0
+                    ? `${content.communityRating?.toFixed(1) ?? '0.0'}`
+                    : '—'}
+                  <em>
+                    {content.communityRatingCount > 0
+                      ? `from ${content.communityRatingCount >= 1000 ? `${(content.communityRatingCount/1000).toFixed(1)}k` : content.communityRatingCount} ${content.communityRatingCount === 1 ? 'rating' : 'ratings'}`
+                      : 'no ratings yet'}
+                  </em>
+                </span>
               </div>
 
               {hasGenre && (

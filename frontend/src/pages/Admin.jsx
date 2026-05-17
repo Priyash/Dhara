@@ -38,30 +38,35 @@ function MonDAUChart({ data }) {
   const iW = W - PL - PR, iH = H - PT - PB
   const maxV = Math.max(...data.map(d => d.users), 1)
   const gap  = iW / 7, barW = gap * 0.58
-  const today = new Date().toISOString().slice(0, 10)
+  // Compute today in IST so the highlight matches the user's local date
+  const istOffset = 5.5 * 60 * 60 * 1000
+  const today = new Date(Date.now() + istOffset).toISOString().slice(0, 10)
   const DAY   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const hasAny = data.some(d => d.users > 0)
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', overflow: 'visible', marginTop: 8 }}>
       {data.map((d, i) => {
-        const cx   = PL + gap * i + gap / 2
-        const barH = hasAny ? Math.max((d.users / maxV) * iH, d.users > 0 ? 3 : 1) : 5
-        const y    = PT + iH - barH
+        const cx    = PL + gap * i + gap / 2
+        const hasBar = d.users > 0
+        const barH  = hasAny ? Math.max((d.users / maxV) * iH, hasBar ? 3 : 1) : 5
+        const y     = PT + iH - barH
         const isCur = d.date === today
-        const fill  = hasAny
-          ? (isCur ? MON_CYAN : 'rgba(34,211,238,0.35)')
-          : 'rgba(34,211,238,0.12)'
+        // All active bars use the same cyan — only brightness differs for today
+        const fill  = !hasAny ? 'rgba(34,211,238,0.12)'
+          : isCur && hasBar  ? MON_CYAN
+          : hasBar            ? 'rgba(34,211,238,0.45)'
+          : 'rgba(34,211,238,0.1)'
         const lbl = DAY[new Date(d.date + 'T12:00:00Z').getDay()]
         return (
           <g key={d.date}>
             <rect x={cx - barW / 2} y={y} width={barW} height={barH} rx="3" fill={fill}
-              style={isCur && hasAny ? { filter: 'drop-shadow(0 0 6px rgba(34,211,238,0.55))' } : undefined} />
-            {d.users > 0 && (
+              style={isCur && hasBar ? { filter: 'drop-shadow(0 0 6px rgba(34,211,238,0.55))' } : undefined} />
+            {hasBar && (
               <text x={cx} y={y - 5} textAnchor="middle" fontSize="9" fontWeight="600"
-                fill={`rgba(34,211,238,0.85)`} fontFamily="system-ui,sans-serif">{d.users}</text>
+                fill="rgba(34,211,238,0.85)" fontFamily="system-ui,sans-serif">{d.users}</text>
             )}
             <text x={cx} y={H - 2} textAnchor="middle" fontSize="9"
-              fill={isCur ? `rgba(34,211,238,0.9)` : 'rgba(255,255,255,0.28)'}
+              fill={isCur ? 'rgba(34,211,238,0.9)' : 'rgba(255,255,255,0.28)'}
               fontWeight={isCur ? '700' : '400'} fontFamily="system-ui,sans-serif">{lbl}</text>
           </g>
         )
@@ -173,7 +178,7 @@ function MonTopContentList({ items }) {
               <div style={{ height:20, background:'rgba(255,255,255,0.04)', borderRadius:3, overflow:'hidden', position:'relative' }}>
                 <div style={{ position:'absolute', top:0, left:0, height:'100%', width:`${pct}%`, background:`${color}55`, transition:'width 0.5s ease' }} />
                 <span style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', fontFamily:'var(--font-body)', fontSize:11, fontWeight:500, color:'var(--color-text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'calc(100% - 16px)' }}>
-                  {item.title}
+                  {item.title.replace(/\.(mp4|mkv|mov|avi|webm|m4v|flv|wmv|ts|mts|3gp)$/i, '').trim()}
                 </span>
               </div>
             </div>
@@ -228,12 +233,26 @@ function MonDeviceDonut({ devices }) {
 
 // ── Geography bars (top 5 states) ─────────────────────────────────────────────
 function MonGeoList({ states }) {
-  if (!states?.length) return <p style={{ fontFamily:'var(--font-body)', fontSize:12, color:'rgba(255,255,255,0.25)', margin:'8px 0 0' }}>No location data yet.</p>
-  const maxV = Math.max(...states.map(s => s.count), 1)
+  // Filter out "Unknown" entries — these come from localhost or unresolvable IPs
+  const known = (states || []).filter(s => s.state && s.state !== 'Unknown')
+  const allUnknown = (states || []).length > 0 && known.length === 0
+
+  if (!states?.length) return (
+    <p style={{ fontFamily:'var(--font-body)', fontSize:12, color:'rgba(255,255,255,0.25)', margin:'8px 0 0' }}>
+      No location data yet.
+    </p>
+  )
+  if (allUnknown) return (
+    <p style={{ fontFamily:'var(--font-body)', fontSize:12, color:'rgba(255,255,255,0.25)', margin:'8px 0 0' }}>
+      Location unavailable — views from local / unresolvable IPs.
+    </p>
+  )
+
+  const maxV = Math.max(...known.map(s => s.count), 1)
   const fmtV = (v) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : String(v)
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:7, marginTop:8 }}>
-      {states.map((s, i) => (
+      {known.map((s, i) => (
         <div key={s.state} style={{ display:'grid', gridTemplateColumns:'20px 1fr 60px 36px', alignItems:'center', gap:8 }}>
           <span style={{ fontFamily:'var(--font-body)', fontSize:10, color:'rgba(255,255,255,0.22)', textAlign:'right' }}>#{i + 1}</span>
           <span style={{ fontFamily:'var(--font-body)', fontSize:12, color:'var(--color-text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{s.state}</span>
@@ -675,7 +694,7 @@ export default function Admin() {
     if (activeTab === 'creators' && adminAllowed) {
       void loadCreatorApplications()
       void loadSubmissions()
-      void loadAdminReels(reelsFilter)
+      void loadAdminReels()
     }
     if (activeTab === 'shelves' && adminAllowed) {
       void loadShelves()
@@ -939,14 +958,19 @@ export default function Admin() {
       const data = await getAdminMonitor()
       setMonitorData(data)
       setMonitorLastFetched(new Date())
-    } catch { /* non-critical */ }
+    } catch (err) {
+      console.error('[monitor] fetch failed:', err?.message || err)
+      showToast({ type: 'error', message: `Monitor error: ${err?.message || 'Could not load data'}` })
+    }
     finally { setMonitorLoading(false) }
   }
 
-  const loadAdminReels = async (status = reelsFilter) => {
+  const loadAdminReels = async () => {
+    // Always fetch all reels — filter client-side so chip counts stay accurate
+    // regardless of which tab is active.
     setReelsLoading(true)
     try {
-      const data = await listAdminReels({ status, limit: 50 })
+      const data = await listAdminReels({ status: 'all', limit: 100 })
       setAdminReels(data.items || [])
     } catch { setAdminReels([]) }
     finally { setReelsLoading(false) }
@@ -1493,6 +1517,28 @@ export default function Admin() {
                     {item.genre?.length ? ` · ${item.genre.join(', ')}` : ''}
                     {processingContentIds.has(item._id) ? ' · Transcoding…' : !item.bunnyVideoId ? ' · No video' : ''}
                   </p>
+                  {/* Engagement stats — only shown for published content with activity */}
+                  {item.isPublished && (item.viewCount > 0 || item.likeCount > 0 || item.communityRatingCount > 0) && (
+                    <div className={styles.contentEngRow}>
+                      {item.viewCount > 0 && (
+                        <span className={styles.contentEngStat}>
+                          <Eye size={10} />
+                          {item.viewCount >= 1000 ? `${(item.viewCount/1000).toFixed(1)}k` : item.viewCount} views
+                        </span>
+                      )}
+                      {item.likeCount > 0 && (
+                        <span className={styles.contentEngStat}>
+                          <TrendingUp size={10} />
+                          {item.likeCount} likes
+                        </span>
+                      )}
+                      {item.communityRatingCount > 0 && (
+                        <span className={styles.contentEngStat} style={{ color: '#fbbf24' }}>
+                          ★ {item.communityRating?.toFixed(1)} <span style={{ opacity: 0.6 }}>({item.communityRatingCount})</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className={styles.libraryActions}>
                   {(() => {
@@ -2311,24 +2357,20 @@ export default function Admin() {
           )}
 
           {/* Sub-tab switcher */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+          <div className={styles.hubTabBar}>
             {[
-              ['applications', 'Applications',  null],
-              ['submissions',  'Content',       null],
-              ['reels',        'Reels',          adminReels.filter(r => r.submissionStatus === 'pending').length || null],
-            ].map(([id, label, badge]) => (
+              { id: 'applications', label: 'New Creators',      icon: <UserCheck size={13} />, badge: creatorApplications.filter(a => a.creatorStatus === 'applied').length || null },
+              { id: 'submissions',  label: 'Content Review',    icon: <FileCheck size={13} />, badge: submissions.filter(s => s.submissionStatus === 'pending').length || null },
+              { id: 'reels',        label: 'Reels Review',      icon: <Zap size={13} />,       badge: adminReels.filter(r => r.submissionStatus === 'pending').length || null },
+            ].map(({ id, label, icon, badge }) => (
               <button
                 key={id}
-                className={creatorHubTab === id ? styles.primaryBtn : styles.secondaryBtn}
-                style={{ padding: '8px 18px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                className={`${styles.hubTab} ${creatorHubTab === id ? styles.hubTabActive : ''}`}
                 onClick={() => setCreatorHubTab(id)}
               >
+                {icon}
                 {label}
-                {badge ? (
-                  <span style={{ background: 'rgba(251,191,36,0.25)', color: '#fbbf24', borderRadius: 99, padding: '0 6px', fontSize: 10, fontWeight: 700 }}>
-                    {badge}
-                  </span>
-                ) : null}
+                {badge ? <span className={styles.hubTabBadge}>{badge}</span> : null}
               </button>
             ))}
           </div>
@@ -2452,56 +2494,344 @@ export default function Admin() {
             </section>
           )}
 
-          {/* ── Submissions sub-tab ── */}
+          {/* ── Content Review sub-tab ── */}
           {creatorHubTab === 'submissions' && (
             <section className={styles.jobsCard}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <h2 className={styles.cardTitle}><FileCheck size={16} /> Content Submissions</h2>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {['pending', 'approved', 'rejected', 'all'].map((s) => (
-                    <button
-                      key={s}
-                      className={subStatusFilter === s ? styles.primaryBtn : styles.secondaryBtn}
-                      style={{ padding: '4px 12px', fontSize: 12, textTransform: 'capitalize' }}
-                      onClick={() => { setSubStatusFilter(s); void loadSubmissions(s) }}
-                    >
-                      {s}
-                    </button>
-                  ))}
+
+              {/* Header */}
+              <div className={styles.reelReviewHeader}>
+                <div>
+                  <h2 className={styles.cardTitle}><FileCheck size={16} /> Content Review</h2>
+                  <p className={styles.cardSubtitle}>
+                    {submissions.filter(s => s.submissionStatus === 'pending').length} pending ·{' '}
+                    {submissions.filter(s => s.submissionStatus === 'approved').length} live ·{' '}
+                    {submissions.filter(s => s.submissionStatus === 'rejected').length} rejected
+                  </p>
                 </div>
+                <button className={styles.ghostBtn} onClick={() => void loadSubmissions(subStatusFilter)}>
+                  <RefreshCw size={13} /> Refresh
+                </button>
               </div>
 
-              {submissions.length === 0 && <p className={styles.empty}>No submissions found.</p>}
+              {/* Status filter chips */}
+              <div className={styles.reelFilterRow}>
+                {[
+                  { key: 'pending',  label: 'In Review', cls: styles.reelChipPending  },
+                  { key: 'approved', label: 'Approved',  cls: styles.reelChipApproved },
+                  { key: 'rejected', label: 'Rejected',  cls: styles.reelChipRejected },
+                  { key: 'all',      label: 'All',        cls: ''                      },
+                ].map(({ key, label, cls }) => {
+                  const count = submissions.filter(s => key === 'all' || s.submissionStatus === key).length
+                  return (
+                    <button key={key}
+                      className={`${styles.reelFilterChip} ${cls} ${subStatusFilter === key ? styles.reelFilterChipActive : ''}`}
+                      onClick={() => { setSubStatusFilter(key); void loadSubmissions(key) }}
+                    >
+                      {label}
+                      <span className={styles.reelFilterCount}>{count}</span>
+                    </button>
+                  )
+                })}
+              </div>
 
-              {submissions.map((sub) => (
-                <div key={sub._id} className={styles.libraryRow}>
-                  <div className={styles.libraryLeft}>
-                    <p className={styles.libraryTitle}>{sub.title} <span style={{ fontSize: 11, color: 'var(--color-text-dim)', fontWeight: 400 }}>({sub.type})</span></p>
-                    <p className={styles.libraryMeta}>
-                      by {sub.creatorId?.creatorProfile?.studioName || sub.creatorId?.email || 'Unknown Creator'}
-                      {sub.revisionCount > 0 ? ` · Revision #${sub.revisionCount}` : ''}
-                      {sub.rejectionReason ? ` · Prev reason: ${sub.rejectionReason.slice(0, 60)}` : ''}
-                    </p>
-                  </div>
-                  <div className={styles.libraryActions}>
-                    <span className={`${styles.statusBadge} ${sub.submissionStatus === 'approved' ? styles.statusReady : sub.submissionStatus === 'rejected' ? styles.statusFailed : styles.statusProcessing}`}>
-                      {sub.submissionStatus}
-                    </span>
-                    {sub.submissionStatus !== 'approved' && (
-                      <button className={styles.editBtn} style={{ background: 'rgba(74,222,128,0.15)', color: '#4ade80', borderColor: 'rgba(74,222,128,0.3)' }} disabled={creatorBusy} onClick={() => handleApproveSubmission(sub._id)}>
-                        <FileCheck size={12} /> Approve
-                      </button>
-                    )}
-                    {sub.submissionStatus !== 'rejected' && (
-                      <button className={styles.editBtn} style={{ background: 'rgba(248,113,113,0.12)', color: '#f87171', borderColor: 'rgba(248,113,113,0.3)' }} disabled={creatorBusy} onClick={() => { setRejectModal({ type: 'sub', id: sub._id, name: sub.title }); setRejectReason('') }}>
-                        <FileX size={12} /> Reject
-                      </button>
-                    )}
-                  </div>
+              {/* Empty state */}
+              {submissions.length === 0 && (
+                <div className={styles.reelEmptyState}>
+                  <FileCheck size={28} className={styles.reelEmptyIcon} />
+                  <p className={styles.reelEmptyTitle}>No {subStatusFilter !== 'all' ? subStatusFilter : ''} submissions</p>
+                  <p className={styles.reelEmptySub}>
+                    {subStatusFilter === 'pending' ? 'All caught up — no content waiting for review.' : `No ${subStatusFilter} submissions to show.`}
+                  </p>
                 </div>
-              ))}
+              )}
+
+              {/* Submission rows */}
+              <div className={styles.reelList}>
+                {submissions.map((sub) => {
+                  const isPending  = sub.submissionStatus === 'pending'
+                  const isApproved = sub.submissionStatus === 'approved'
+                  const statusColor = isPending ? '#fbbf24' : isApproved ? '#4ade80' : '#f87171'
+                  const statusLabel = isPending ? 'In Review' : isApproved ? 'Live' : 'Rejected'
+
+                  return (
+                    <div key={sub._id} className={`${styles.reelRow} ${isPending ? styles.reelRowPending : ''}`}>
+
+                      {/* Poster thumbnail */}
+                      <div
+                        className={styles.reelThumb}
+                        style={sub.posterUrl ? { backgroundImage: `url(${sub.posterUrl})` } : { background: 'linear-gradient(160deg,#0d1f3c,#1a4a8a)' }}
+                      >
+                        {!sub.posterUrl && <Film size={14} className={styles.reelThumbIcon} />}
+                      </div>
+
+                      {/* Info */}
+                      <div className={styles.reelInfo}>
+                        <div className={styles.reelInfoTop}>
+                          <span className={styles.reelTitle}>
+                            {sub.title}
+                            <span style={{ fontWeight: 400, fontSize: 12, color: 'rgba(255,255,255,0.35)', marginLeft: 6 }}>({sub.type})</span>
+                          </span>
+                          <span
+                            className={styles.reelStatusBadge}
+                            style={{ color: statusColor, background: `${statusColor}18`, borderColor: `${statusColor}30` }}
+                          >
+                            {statusLabel}
+                          </span>
+                        </div>
+
+                        <p className={styles.reelMeta}>
+                          by <strong>{sub.creatorId?.creatorProfile?.studioName || sub.creatorId?.email || 'Unknown Creator'}</strong>
+                          {sub.revisionCount > 0 && <span className={styles.reelMetaChip}>Rev #{sub.revisionCount}</span>}
+                          {sub.genre?.length > 0 && <span className={styles.reelMetaChip}>{sub.genre.slice(0, 2).join(', ')}</span>}
+                        </p>
+
+                        {sub.submissionStatus === 'rejected' && sub.rejectionReason && (
+                          <p className={styles.reelRejectReason}>
+                            <XCircle size={11} /> {sub.rejectionReason.slice(0, 80)}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className={styles.reelActions}>
+                        {sub.submissionStatus !== 'approved' && (
+                          <button className={styles.approveBtn} disabled={creatorBusy}
+                            onClick={() => handleApproveSubmission(sub._id)}>
+                            <FileCheck size={13} /> Approve
+                          </button>
+                        )}
+                        {sub.submissionStatus !== 'rejected' && (
+                          <button className={styles.dangerBtn} disabled={creatorBusy}
+                            onClick={() => { setRejectModal({ type: 'sub', id: sub._id, name: sub.title }); setRejectReason('') }}>
+                            <FileX size={13} /> Reject
+                          </button>
+                        )}
+                      </div>
+
+                    </div>
+                  )
+                })}
+              </div>
+
             </section>
           )}
+
+          {/* ── Reels Review sub-tab ── */}
+          {creatorHubTab === 'reels' && (
+            <section className={styles.jobsCard}>
+
+              {/* Header row */}
+              <div className={styles.reelReviewHeader}>
+                <div>
+                  <h2 className={styles.cardTitle}><Zap size={16} /> Reels Review</h2>
+                  <p className={styles.cardSubtitle}>
+                    {adminReels.filter(r => r.submissionStatus === 'pending').length} pending ·{' '}
+                    {adminReels.filter(r => r.submissionStatus === 'approved').length} live ·{' '}
+                    {adminReels.filter(r => r.submissionStatus === 'rejected').length} rejected
+                  </p>
+                </div>
+                <button className={styles.ghostBtn} onClick={() => loadAdminReels()}>
+                  <RefreshCw size={13} /> Refresh
+                </button>
+              </div>
+
+              {/* Status filter chips */}
+              <div className={styles.reelFilterRow}>
+                {[
+                  { key: 'pending',  label: 'In Review', cls: styles.reelChipPending  },
+                  { key: 'approved', label: 'Approved',  cls: styles.reelChipApproved },
+                  { key: 'rejected', label: 'Rejected',  cls: styles.reelChipRejected },
+                  { key: 'all',      label: 'All',        cls: ''                      },
+                ].map(({ key, label, cls }) => {
+                  const count = adminReels.filter(r => key === 'all' || r.submissionStatus === key).length
+                  return (
+                    <button key={key}
+                      className={`${styles.reelFilterChip} ${cls} ${reelsFilter === key ? styles.reelFilterChipActive : ''}`}
+                      onClick={() => setReelsFilter(key)}
+                    >
+                      {label}
+                      <span className={styles.reelFilterCount}>{count}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {(() => {
+                const visibleReels = reelsFilter === 'all'
+                  ? adminReels
+                  : adminReels.filter(r => r.submissionStatus === reelsFilter)
+                return reelsLoading ? (
+                  <div className={styles.empty} style={{ padding: '48px 0', textAlign: 'center' }}>
+                    Loading reels…
+                  </div>
+                ) : visibleReels.length === 0 ? (
+                  <div className={styles.reelEmptyState}>
+                    <Zap size={28} className={styles.reelEmptyIcon} />
+                    <p className={styles.reelEmptyTitle}>No {reelsFilter !== 'all' ? reelsFilter : ''} reels</p>
+                    <p className={styles.reelEmptySub}>
+                      {reelsFilter === 'pending' ? 'All caught up — no reels waiting for review.' : `No ${reelsFilter} reels to show.`}
+                    </p>
+                  </div>
+                ) : (
+                  <div className={styles.reelList}>
+                    {visibleReels.map((reel) => {
+                    const creator   = reel.creatorId
+                    const name      = creator?.creatorProfile?.studioName || creator?.displayName || '—'
+                    const isPending = reel.submissionStatus === 'pending'
+                    const isApproved= reel.submissionStatus === 'approved'
+                    const bunnyLib  = import.meta.env.VITE_BUNNY_STREAM_LIBRARY_ID
+                    const embedUrl  = reel.bunnyVideoId && bunnyLib
+                      ? `https://iframe.mediadelivery.net/embed/${bunnyLib}/${reel.bunnyVideoId}?autoplay=false&muted=true`
+                      : null
+
+                    const statusColor = isPending ? '#fbbf24' : isApproved ? '#4ade80' : '#f87171'
+                    const statusLabel = isPending ? 'In Review' : isApproved ? 'Live' : 'Rejected'
+
+                    return (
+                      <div key={reel._id} className={`${styles.reelRow} ${isPending ? styles.reelRowPending : ''}`}>
+
+                        {/* 9:16 thumbnail */}
+                        <div
+                          className={styles.reelThumb}
+                          style={reel.thumbnailUrl ? { backgroundImage: `url(${reel.thumbnailUrl})` } : {}}
+                        >
+                          {!reel.thumbnailUrl && <Zap size={14} className={styles.reelThumbIcon} />}
+                          {reel.durationSecs > 0 && (
+                            <span className={styles.reelThumbDur}>{reel.durationSecs}s</span>
+                          )}
+                        </div>
+
+                        {/* Info */}
+                        <div className={styles.reelInfo}>
+                          <div className={styles.reelInfoTop}>
+                            <span className={styles.reelTitle}>
+                              {reel.title || <em className={styles.reelTitleEmpty}>No caption</em>}
+                            </span>
+                            <span
+                              className={styles.reelStatusBadge}
+                              style={{ color: statusColor, background: `${statusColor}18`, borderColor: `${statusColor}30` }}
+                            >
+                              {statusLabel}
+                            </span>
+                          </div>
+
+                          <p className={styles.reelMeta}>
+                            by <strong>{name}</strong>
+                            {reel.aspectRatio && <span className={styles.reelMetaChip}>{reel.aspectRatio}</span>}
+                            {reel.createdAt && (
+                              <span className={styles.reelMetaChip}>
+                                {new Date(reel.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                              </span>
+                            )}
+                          </p>
+
+                          {reel.hashtags?.length > 0 && (
+                            <p className={styles.reelHashtags}>#{reel.hashtags.slice(0, 4).join(' #')}</p>
+                          )}
+
+                          {reel.submissionStatus === 'rejected' && reel.rejectionReason && (
+                            <p className={styles.reelRejectReason}>
+                              <XCircle size={11} /> {reel.rejectionReason}
+                            </p>
+                          )}
+
+                          <div className={styles.reelStats}>
+                            <span><Eye size={11} /> {reel.viewCount || 0}</span>
+                            <span><Heart size={11} /> {reel.likeCount || 0}</span>
+                            <span><MessageCircle size={11} /> {reel.commentCount || 0}</span>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className={styles.reelActions}>
+                          {embedUrl && (
+                            <button className={styles.ghostBtn} onClick={() => setReelPreview(reel)}>
+                              <Play size={13} /> Preview
+                            </button>
+                          )}
+                          {isPending && (
+                            <>
+                              <button
+                                className={styles.approveBtn}
+                                disabled={reelBusy}
+                                onClick={async () => { setReelBusy(true); try { await approveAdminReel(reel._id); loadAdminReels() } catch(e) { showToast({ type:'error', message: e?.message || 'Failed' }) } setReelBusy(false) }}
+                              >
+                                <CheckCircle2 size={13} /> Approve
+                              </button>
+                              <button
+                                className={styles.dangerBtn}
+                                disabled={reelBusy}
+                                onClick={() => { setReelRejectModal(reel); setReelRejectReason('') }}
+                              >
+                                <XCircle size={13} /> Reject
+                              </button>
+                            </>
+                          )}
+                          {!isPending && (
+                            <button
+                              className={styles.dangerBtn}
+                              disabled={reelBusy}
+                              onClick={async () => { if (!window.confirm('Delete this reel?')) return; setReelBusy(true); try { await deleteAdminReel(reel._id); loadAdminReels() } catch(e) { showToast({ type:'error', message: e?.message || 'Failed' }) } setReelBusy(false) }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  </div>
+                )
+              })()}
+            </section>
+          )}
+
+          {/* Reel video preview */}
+          {reelPreview && (() => {
+            const bunnyLib = import.meta.env.VITE_BUNNY_STREAM_LIBRARY_ID
+            const embedUrl = `https://iframe.mediadelivery.net/embed/${bunnyLib}/${reelPreview.bunnyVideoId}?autoplay=true&muted=false`
+            return (
+              <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+                onClick={() => setReelPreview(null)}>
+                <div style={{ position: 'relative', width: '100%', maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+                  <button onClick={() => setReelPreview(null)}
+                    style={{ position: 'absolute', top: -40, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <X size={16} /> Close preview
+                  </button>
+                  <div style={{ background: '#000', borderRadius: 12, overflow: 'hidden', aspectRatio: reelPreview.aspectRatio === '16:9' ? '16/9' : reelPreview.aspectRatio === '1:1' ? '1/1' : '9/16' }}>
+                    <iframe src={embedUrl} style={{ width: '100%', height: '100%', border: 'none' }} allow="autoplay; fullscreen" allowFullScreen title={reelPreview.title || 'Reel preview'} />
+                  </div>
+                  <p style={{ color: '#fff', fontWeight: 600, marginTop: 12 }}>{reelPreview.title || 'No caption'}</p>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Reel reject modal */}
+          {reelRejectModal && (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+              onClick={() => setReelRejectModal(null)}>
+              <div style={{ background: '#111118', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+                <h3 style={{ color: '#fff', margin: '0 0 8px', fontSize: 15 }}>Reject reel</h3>
+                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, margin: '0 0 16px' }}>
+                  "{reelRejectModal.title || 'No caption'}" — this reason will be shown to the creator.
+                </p>
+                <textarea style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '10px 12px', color: '#fff', fontSize: 13, resize: 'vertical', minHeight: 80, fontFamily: 'inherit', outline: 'none' }}
+                  placeholder="Reason for rejection…"
+                  value={reelRejectReason}
+                  onChange={e => setReelRejectReason(e.target.value)}
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                  <button className={styles.ghostBtn} onClick={() => setReelRejectModal(null)}>Cancel</button>
+                  <button className={styles.dangerBtn} disabled={!reelRejectReason.trim() || reelBusy}
+                    onClick={async () => { setReelBusy(true); try { await rejectAdminReel(reelRejectModal._id, reelRejectReason.trim()); setReelRejectModal(null); loadAdminReels() } catch(e) { alert(e?.message) } setReelBusy(false) }}>
+                    <XCircle size={13} /> Confirm Reject
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       )}
 
@@ -2824,173 +3154,6 @@ export default function Admin() {
         )
       })()}
 
-      {/* ── REELS REVIEW TAB ────────────────────────────────────────────── */}
-      {activeTab === 'reels' && (
-        <section className={styles.jobsCard}>
-
-          {/* Status filter */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {[
-                { key: 'pending',  label: 'In Review' },
-                { key: 'approved', label: 'Approved' },
-                { key: 'rejected', label: 'Rejected' },
-                { key: 'all',      label: 'All' },
-              ].map(({ key, label }) => (
-                <button
-                  key={key}
-                  className={`${styles.filterChip} ${reelsFilter === key ? styles.filterChipActive : ''}`}
-                  onClick={() => { setReelsFilter(key); loadAdminReels(key) }}
-                >
-                  {label}
-                  {key === 'pending' && adminReels.filter(r => r.submissionStatus === 'pending').length > 0 && (
-                    <span className={styles.filterChipBadge}>
-                      {reelsFilter === 'pending' ? adminReels.length : adminReels.filter(r => r.submissionStatus === 'pending').length}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-            <button className={styles.ghostBtn} onClick={() => loadAdminReels(reelsFilter)}>
-              <RefreshCw size={13} /> Refresh
-            </button>
-          </div>
-
-          {reelsLoading ? (
-            <div className={styles.emptyState} style={{ padding: '48px 0' }}>
-              <Zap size={22} style={{ opacity: 0.4 }} /><p>Loading reels…</p>
-            </div>
-          ) : adminReels.length === 0 ? (
-            <div className={styles.emptyState} style={{ padding: '48px 0' }}>
-              <Zap size={28} style={{ opacity: 0.3 }} />
-              <p style={{ marginTop: 12, color: 'rgba(255,255,255,0.4)' }}>
-                No {reelsFilter !== 'all' ? reelsFilter : ''} reels
-              </p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {adminReels.map((reel) => {
-                const creator   = reel.creatorId
-                const name      = creator?.creatorProfile?.studioName || creator?.displayName || '—'
-                const isPending = reel.submissionStatus === 'pending'
-                const bunnyLib  = import.meta.env.VITE_BUNNY_STREAM_LIBRARY_ID
-                const embedUrl  = reel.bunnyVideoId && bunnyLib
-                  ? `https://iframe.mediadelivery.net/embed/${bunnyLib}/${reel.bunnyVideoId}?autoplay=false&loop=false&muted=true`
-                  : null
-
-                return (
-                  <div key={reel._id} className={styles.submissionCard}>
-                    {/* Thumbnail */}
-                    <div
-                      style={{
-                        width: 52, height: 72, borderRadius: 6, flexShrink: 0,
-                        background: reel.thumbnailUrl
-                          ? `url(${reel.thumbnailUrl}) center/cover`
-                          : 'linear-gradient(160deg,#1e1b4b,#7c3aed)',
-                        border: '1px solid rgba(255,255,255,0.07)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      {!reel.thumbnailUrl && <Zap size={14} style={{ color: 'rgba(255,255,255,0.4)' }} />}
-                    </div>
-
-                    {/* Info */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontWeight: 600, color: '#fff', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {reel.title || <em style={{ color: 'rgba(255,255,255,0.3)' }}>No caption</em>}
-                        </span>
-                        <span style={{
-                          fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99,
-                          color: isPending ? '#fbbf24' : reel.submissionStatus === 'approved' ? '#4ade80' : '#f87171',
-                          background: isPending ? 'rgba(251,191,36,0.1)' : reel.submissionStatus === 'approved' ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)',
-                        }}>
-                          {isPending ? 'In Review' : reel.submissionStatus === 'approved' ? 'Live' : 'Rejected'}
-                        </span>
-                      </div>
-                      <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', margin: '0 0 4px' }}>
-                        by <strong style={{ color: 'rgba(255,255,255,0.7)' }}>{name}</strong>
-                        {reel.durationSecs > 0 && ` · ${reel.durationSecs}s`}
-                        {reel.aspectRatio && ` · ${reel.aspectRatio}`}
-                      </p>
-                      {reel.hashtags?.length > 0 && (
-                        <p style={{ fontSize: 11, color: 'rgba(167,139,250,0.7)', margin: 0 }}>
-                          #{reel.hashtags.slice(0, 3).join(' #')}
-                        </p>
-                      )}
-                      {reel.submissionStatus === 'rejected' && reel.rejectionReason && (
-                        <p style={{ fontSize: 11, color: '#f87171', margin: '4px 0 0', fontStyle: 'italic' }}>
-                          Reason: {reel.rejectionReason}
-                        </p>
-                      )}
-                      <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
-                        <span><Eye size={11} /> {reel.viewCount || 0}</span>
-                        <span><Heart size={11} /> {reel.likeCount || 0}</span>
-                        <span><MessageCircle size={11} /> {reel.commentCount || 0}</span>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
-                      {/* Preview — only if video is ready */}
-                      {embedUrl && (
-                        <button
-                          className={styles.ghostBtn}
-                          onClick={() => setReelPreview(reel)}
-                          title="Preview video"
-                        >
-                          <Play size={13} /> Preview
-                        </button>
-                      )}
-                      {isPending && (
-                        <>
-                          <button
-                            className={styles.primaryBtn}
-                            disabled={reelBusy}
-                            onClick={async () => {
-                              setReelBusy(true)
-                              try {
-                                await approveAdminReel(reel._id)
-                                loadAdminReels(reelsFilter)
-                              } catch (e) { alert(e?.message || 'Failed') }
-                              setReelBusy(false)
-                            }}
-                          >
-                            <CheckCircle2 size={13} /> Approve
-                          </button>
-                          <button
-                            className={styles.dangerBtn}
-                            disabled={reelBusy}
-                            onClick={() => { setReelRejectModal(reel); setReelRejectReason('') }}
-                          >
-                            <XCircle size={13} /> Reject
-                          </button>
-                        </>
-                      )}
-                      {!isPending && (
-                        <button
-                          className={styles.dangerBtn}
-                          disabled={reelBusy}
-                          onClick={async () => {
-                            if (!window.confirm('Delete this reel?')) return
-                            setReelBusy(true)
-                            try { await deleteAdminReel(reel._id); loadAdminReels(reelsFilter) }
-                            catch (e) { alert(e?.message || 'Failed') }
-                            setReelBusy(false)
-                          }}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </section>
-      )}
-
       {/* ── Reel video preview modal ── */}
       {reelPreview && (() => {
         const bunnyLib = import.meta.env.VITE_BUNNY_STREAM_LIBRARY_ID
@@ -3054,7 +3217,7 @@ export default function Admin() {
                   try {
                     await rejectAdminReel(reelRejectModal._id, reelRejectReason.trim())
                     setReelRejectModal(null)
-                    loadAdminReels(reelsFilter)
+                    loadAdminReels()
                   } catch (e) { alert(e?.message || 'Failed') }
                   setReelBusy(false)
                 }}
@@ -3509,7 +3672,7 @@ export default function Admin() {
 
                 {(() => {
                   const ca = md?.creatorActions || {}
-                  const total = (ca.pendingApplications || 0) + (ca.pendingSubmissions || 0)
+                  const total = (ca.pendingApplications || 0) + (ca.pendingSubmissions || 0) + (ca.pendingReels || 0)
                   const urgent = total > 0
                   return (
                     <div className={`${styles.monKpiCard} ${urgent ? styles.monKpiWarn : ''}`}>
@@ -3519,7 +3682,7 @@ export default function Admin() {
                       <p className={styles.monKpiValue} style={{ color: urgent ? '#fbbf24' : undefined }}>{total}</p>
                       <p className={styles.monKpiLabel}>Creator Actions</p>
                       <p className={styles.monKpiSub}>
-                        {ca.pendingApplications || 0} apps · {ca.pendingSubmissions || 0} submissions
+                        {ca.pendingApplications || 0} apps · {ca.pendingSubmissions || 0} content · {ca.pendingReels || 0} reels
                       </p>
                     </div>
                   )

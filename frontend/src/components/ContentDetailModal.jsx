@@ -30,8 +30,11 @@ export default function ContentDetailModal() {
     refreshProfile,
   } = useStore()
 
-  const [liked,        setLiked]        = useState(() => Boolean(user?.likedContent?.includes(item?.id)))
-  const [disliked,     setDisliked]     = useState(() => Boolean(user?.dislikedContent?.includes(item?.id)))
+  // Prefer checking against both the _id and id forms since normalizeItem
+  // maps _id → id, but likedContent stores the string of the original _id.
+  const itemId = item?.id || item?._id
+  const [liked,        setLiked]        = useState(() => Boolean(user?.likedContent?.includes(String(itemId))))
+  const [disliked,     setDisliked]     = useState(() => Boolean(user?.dislikedContent?.includes(String(itemId))))
   const [likeCount,    setLikeCount]    = useState(item?.likeCount    ?? 0)
   const [dislikeCount, setDislikeCount] = useState(item?.dislikeCount ?? 0)
   const [trailerEmbed, setTrailerEmbed] = useState(null)
@@ -91,9 +94,11 @@ export default function ContentDetailModal() {
     setLikeCount((c) => prevLiked ? c - 1 : c + 1)
     if (prevDisliked) setDislikeCount((c) => c - 1)
     try {
-      const r = await likeContent(item.id)
+      const r = await likeContent(itemId)
       setLiked(r.liked); setDisliked(r.disliked)
       setLikeCount(r.likeCount); setDislikeCount(r.dislikeCount)
+      // Refresh store so re-opening the modal sees the correct liked state
+      refreshProfile().catch(() => {})
     } catch {
       setLiked(prevLiked); setDisliked(prevDisliked)
       setLikeCount((c) => prevLiked ? c + 1 : c - 1)

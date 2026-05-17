@@ -399,7 +399,7 @@ router.get('/content', async (req, res, next) => {
     const items = await Content.find()
       .sort({ updatedAt: -1 })
       .limit(100)
-      .select('title type bunnyVideoId isPremium isFeatured isPublished releaseYear rating genre badge')
+      .select('title type bunnyVideoId isPremium isFeatured isPublished releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount')
       .lean()
     res.json(items)
   } catch (err) {
@@ -1267,15 +1267,18 @@ router.get('/creator-payouts', requireAuth, requireAdmin, async (req, res, next)
 router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const now            = new Date()
-    const todayStart     = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const sevenDaysAgo   = new Date(Date.now() - 7   * 86_400_000)
+    // Use IST (UTC+5:30) for all "today" / "this month" boundaries so the dashboard
+    // matches what Indian admins expect regardless of server timezone.
+    const IST_OFFSET_MS  = 5.5 * 60 * 60 * 1000
+    const nowIST         = new Date(now.getTime() + IST_OFFSET_MS)
+    const todayStart     = new Date(Date.UTC(nowIST.getUTCFullYear(), nowIST.getUTCMonth(), nowIST.getUTCDate()) - IST_OFFSET_MS)
+    const monthStart     = new Date(Date.UTC(nowIST.getUTCFullYear(), nowIST.getUTCMonth(), 1) - IST_OFFSET_MS)
+    const sevenDaysAgo   = new Date(Date.now() - 8   * 86_400_000)  // 8 days window ensures IST day boundaries never cut off the oldest bar
     const thirtyDaysAgo  = new Date(Date.now() - 30  * 86_400_000)
     const sixMonthsAgo   = new Date(Date.now() - 180 * 86_400_000)
     const twentyFourHAgo = new Date(Date.now() - 86_400_000)
-    const monthStart     = new Date(now.getFullYear(), now.getMonth(), 1)
 
     const [
-      // ── existing ───────────────────────────────────────────────────────────
       jobStatusAgg,
       recentFailedJobs,
       processingJobs,
@@ -1287,9 +1290,9 @@ router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
       newSubsAgg,
       lapsedAgg,
       contentAgg,
-      // ── new ───────────────────────────────────────────────────────────────
       pendingApplications,
       pendingSubmissions,
+      pendingReels,
       paymentTodayAgg,
       lastSuccessfulPayment,
       topContentAgg,
@@ -1341,7 +1344,7 @@ router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
       ]),
 
       Content.aggregate([
-        { $match: { isPublished: true } },
+        { $match: { isPublished: true, isDeleted: { $ne: true } } },
         { $group: {
           _id:            null,
           total:          { $sum: 1 },
@@ -1350,11 +1353,12 @@ router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
         }},
       ]),
 
-      // ── NEW: Creator action queue — straight from User + Content models ────
+      // ── Creator action queue ─────────────────────────────────────────────────
       User.countDocuments({ creatorStatus: 'applied' }),
       Content.countDocuments({ submissionStatus: 'pending', isPublished: false }),
+      Reel.countDocuments({ submissionStatus: 'pending', isDeleted: { $ne: true } }),
 
-      // ── NEW: Payment health today — from Transaction ───────────────────────
+      // ── Payment health today — from Transaction ───────────────────────────
       Transaction.aggregate([
         { $match: { createdAt: { $gte: todayStart } } },
         { $group: {
@@ -1374,7 +1378,7 @@ router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
         { $sort: { views: -1 } },
         { $limit: 5 },
         { $lookup: { from: 'contents', localField: '_id', foreignField: '_id', as: 'c' } },
-        { $unwind: { path: '$c', preserveNullAndEmpty: false } },
+        { $unwind: { path: '$c', preserveNullAndEmptyArrays: false } },
         { $project: { title: '$c.title', type: '$c.type', views: 1 } },
       ]),
 
@@ -1385,9 +1389,11 @@ router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
         { $sort: { count: -1 } },
       ]),
 
-      // ── NEW: Top 5 states last 7 days — from ViewEvent ────────────────────
+      // ── Top 5 states/countries last 7 days — from ViewEvent ─────────────────
+      // No country filter: loopback IPs (localhost) resolve to 'Unknown' not 'IN',
+      // and pre-launch traffic may come from any IP. Show all locations.
       ViewEvent.aggregate([
-        { $match: { viewedAt: { $gte: sevenDaysAgo }, country: 'IN' } },
+        { $match: { viewedAt: { $gte: sevenDaysAgo } } },
         { $group: { _id: '$state', count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 5 },
@@ -1469,6 +1475,7 @@ router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
       creatorActions: {
         pendingApplications,
         pendingSubmissions,
+        pendingReels,
       },
       paymentHealth: {
         revenueToday:   Math.round(paidToday.paise / 100),
@@ -1660,6 +1667,9 @@ router.patch('/reels/:id/approve', async (req, res, next) => {
 
 /**
  * PATCH /api/admin/reels/:id/reject
+ * Rejects the reel and deletes the uploaded video from Bunny Stream.
+ * Clearing bunnyVideoId forces the creator to upload a new video on resubmission —
+ * otherwise they could resubmit the exact same rejected content indefinitely.
  */
 router.patch('/reels/:id/reject', async (req, res, next) => {
   try {
@@ -1667,13 +1677,24 @@ router.patch('/reels/:id/reject', async (req, res, next) => {
     if (!reason.trim()) return res.status(400).json({ error: 'Rejection reason is required' })
 
     const safeReason = escapeHtml(reason.trim())
+
+    // Fetch first so we have bunnyVideoId before clearing it
+    const existing = await Reel.findById(req.params.id).select('bunnyVideoId title').lean()
+    if (!existing) return res.status(404).json({ error: 'Reel not found' })
+
+    // Delete the video from Bunny to reclaim storage immediately
+    if (existing.bunnyVideoId) {
+      bunnyRequest(`/library/${libraryId}/videos/${existing.bunnyVideoId}`, { method: 'DELETE' })
+        .catch((err) => console.warn('[reel-reject] Bunny delete failed (non-fatal):', err.message))
+    }
+
+    // Clear bunnyVideoId so creator must upload a new video to resubmit
     const reel = await Reel.findByIdAndUpdate(
       req.params.id,
-      { $set: { submissionStatus: 'rejected', isPublished: false, rejectionReason: safeReason } },
+      { $set: { submissionStatus: 'rejected', isPublished: false, rejectionReason: safeReason, bunnyVideoId: '' } },
       { new: true }
     ).lean()
 
-    if (!reel) return res.status(404).json({ error: 'Reel not found' })
     logAdminAction(req, 'reject_reel', 'reel', reel._id, reel.title || reel._id.toString(), { reason: safeReason })
     res.json({ success: true, reel })
   } catch (err) {

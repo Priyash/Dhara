@@ -8,9 +8,9 @@ import {
 import Hls from 'hls.js'
 import { useStore } from '../store/useStore'
 import {
-  fetchReels, fetchReelStreamUrl, recordReelView, likeReel,
+  fetchReels, fetchReelById, fetchReelStreamUrl, recordReelView, likeReel,
   fetchReelComments, postReelComment, deleteReelComment,
-  recordInteractionEvent,
+  recordInteractionEvent, getMe,
 } from '../services/api'
 import styles from './Reels.module.css'
 
@@ -43,7 +43,7 @@ export default function Reels() {
 
 function ReelGrid() {
   const navigate = useNavigate()
-  const { isLoggedIn, openAuth } = useStore()
+  const { isLoggedIn, authLoading, openAuth } = useStore()
 
   const [tab,         setTab]         = useState('newest')
   const [hashtag,     setHashtag]     = useState('')
@@ -54,8 +54,17 @@ function ReelGrid() {
   const [loading,     setLoading]     = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
 
-  // Derive available hashtags from the loaded set
-  const allHashtags = [...new Set(reels.flatMap((r) => r.hashtags || []))].slice(0, 8)
+  const [showTopics,   setShowTopics]   = useState(false)
+  const [topicSearch,  setTopicSearch]  = useState('')
+
+  // Derive hashtags with counts, sorted by frequency
+  const hashtagCounts = reels.reduce((acc, r) => {
+    ;(r.hashtags || []).forEach(t => { acc[t] = (acc[t] || 0) + 1 })
+    return acc
+  }, {})
+  const allHashtags = Object.entries(hashtagCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([tag]) => tag)
 
   const load = useCallback(async (sort, tag, pg) => {
     try {
@@ -76,10 +85,12 @@ function ReelGrid() {
   }, [])
 
   useEffect(() => {
+    // Wait for Firebase auth to initialise — same reason as ReelPlayer
+    if (authLoading || !isLoggedIn) return
     setLoading(true)
     setPage(1)
     load(tab, hashtag, 1)
-  }, [tab, hashtag, load])
+  }, [tab, hashtag, load, authLoading, isLoggedIn])
 
   const loadMore = () => {
     if (loadingMore || !hasMore) return
@@ -128,24 +139,62 @@ function ReelGrid() {
         </button>
       </div>
 
-      {/* ── Hashtag chips ── */}
+      {/* ── Topic filter bar ── */}
       {allHashtags.length > 0 && (
-        <div className={styles.chips}>
-          <button
-            className={`${styles.chip} ${!hashtag ? styles.chipActive : ''}`}
-            onClick={() => setHashtag('')}
-          >
-            All
-          </button>
-          {allHashtags.map((t) => (
-            <button
-              key={t}
-              className={`${styles.chip} ${hashtag === t ? styles.chipActive : ''}`}
-              onClick={() => setHashtag(hashtag === t ? '' : t)}
-            >
+        <div className={styles.topicBar}>
+          {/* Active filter chip — shown when a hashtag is selected */}
+          {hashtag && (
+            <button className={`${styles.chip} ${styles.chipActive}`} onClick={() => setHashtag('')}>
+              <Hash size={10} />{hashtag} <X size={10} />
+            </button>
+          )}
+
+          {/* Show top 5 most-used hashtags inline for quick access */}
+          {!hashtag && allHashtags.slice(0, 5).map((t) => (
+            <button key={t} className={styles.chip} onClick={() => setHashtag(t)}>
               <Hash size={10} />{t}
+              <span className={styles.chipCount}>{hashtagCounts[t]}</span>
             </button>
           ))}
+
+          {/* "Browse topics" popover for all hashtags */}
+          {allHashtags.length > 5 && !hashtag && (
+            <div className={styles.topicsMenu}>
+              <button
+                className={`${styles.chip} ${showTopics ? styles.chipActive : ''}`}
+                onClick={() => { setShowTopics(v => !v); setTopicSearch('') }}
+              >
+                <Hash size={10} /> Browse topics
+                {showTopics ? <X size={10} /> : <span className={styles.chipCount}>+{allHashtags.length - 5}</span>}
+              </button>
+              {showTopics && (
+                <div className={styles.topicsDropdown}>
+                  <div className={styles.topicsSearch}>
+                    <input
+                      className={styles.topicsInput}
+                      value={topicSearch}
+                      onChange={e => setTopicSearch(e.target.value.toLowerCase())}
+                      placeholder="Search topics…"
+                      autoFocus
+                    />
+                  </div>
+                  <div className={styles.topicsList}>
+                    {allHashtags
+                      .filter(t => !topicSearch || t.includes(topicSearch))
+                      .slice(0, 50)
+                      .map(t => (
+                        <button key={t} className={styles.topicsItem}
+                          onClick={() => { setHashtag(t); setShowTopics(false) }}>
+                          <Hash size={11} />
+                          <span>{t}</span>
+                          <span className={styles.topicsCount}>{hashtagCounts[t]}</span>
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -206,13 +255,21 @@ function ReelCard({ reel, onClick }) {
         }
       >
         <div className={styles.cardScrim} />
-        <div className={styles.cardPlay}><Play size={20} fill="#fff" /></div>
 
-        {/* Stats overlay — bottom */}
+        {/* Play button — appears on hover only */}
+        <div className={styles.cardPlay}><Play size={18} fill="#fff" /></div>
+
+        {/* Engagement stats — always visible */}
         <div className={styles.cardStats}>
-          <span><Eye size={11} />{fmt(reel.viewCount || 0)}</span>
-          <span><Heart size={11} />{fmt(reel.likeCount || 0)}</span>
+          <span><Eye size={10} />{fmt(reel.viewCount || 0)}</span>
+          <span><Heart size={10} />{fmt(reel.likeCount || 0)}</span>
+          <span><MessageCircle size={10} />{fmt(reel.commentCount || 0)}</span>
         </div>
+
+        {/* Duration badge — top right */}
+        {reel.durationSecs > 0 && (
+          <span className={styles.cardDur}>{reel.durationSecs}s</span>
+        )}
       </div>
 
       <div className={styles.cardMeta}>
@@ -238,7 +295,7 @@ function ReelCard({ reel, onClick }) {
 
 function ReelPlayer({ startId }) {
   const navigate = useNavigate()
-  const { isLoggedIn, user, openAuth } = useStore()
+  const { isLoggedIn, authLoading, user, openAuth } = useStore()
 
   const [reels,       setReels]       = useState([])
   const [activeIndex, setActiveIndex] = useState(0)
@@ -260,26 +317,53 @@ function ReelPlayer({ startId }) {
   const milestoneRef    = useRef(new Set())
   const commentInputRef = useRef(null)
 
-  // Load feed, then jump to the deep-linked reel
   useEffect(() => {
-    if (!isLoggedIn) return
+    if (authLoading || !isLoggedIn) return
     setLoading(true)
-    fetchReels({ limit: 40 })
-      .then(({ items = [] }) => {
-        setReels(items)
-        const s = {}
-        const liked = new Set()
-        items.forEach((r) => {
-          s[r._id] = { viewCount: r.viewCount || 0, likeCount: r.likeCount || 0, commentCount: r.commentCount || 0 }
-          if ((user?.likedContent || []).includes(r._id)) liked.add(r._id)
-        })
-        setStats(s)
-        setLikedIds(liked)
-        const idx = items.findIndex((r) => r._id === startId)
-        if (idx >= 0) setActiveIndex(idx)
+
+    const run = async () => {
+      // Fetch reels and current user in parallel — both need a valid token,
+      // which is guaranteed because authLoading=false means Firebase is ready.
+      const [feedData, freshUser] = await Promise.all([
+        fetchReels({ limit: 40 }),
+        getMe(),   // no catch — let it throw so we don't silently seed empty likedIds
+      ])
+
+      let items = feedData?.items || []
+
+      // Deep-link: if the specific reel isn't in the first page, fetch it and prepend
+      if (startId && !items.find(r => r._id === startId)) {
+        try {
+          const single = await fetchReelById(startId)
+          // fetchReelById returns a normalizeItem-ed object (has id, not _id)
+          if (single) {
+            const normalised = { ...single, _id: String(single._id || single.id) }
+            items = [normalised, ...items]
+          }
+        } catch { /* reel private/deleted — show feed from start */ }
+      }
+
+      // Seed stats and liked state from fresh DB data
+      const s = {}
+      const likedContent = freshUser?.likedContent || []
+      const liked = new Set()
+      items.forEach((r) => {
+        const id = String(r._id || r.id)
+        s[id] = { viewCount: r.viewCount || 0, likeCount: r.likeCount || 0, commentCount: r.commentCount || 0 }
+        if (likedContent.some(lc => String(lc) === id)) liked.add(id)
       })
+
+      setReels(items)
+      setStats(s)
+      setLikedIds(liked)
+      const idx = items.findIndex(r => String(r._id || r.id) === startId)
+      if (idx >= 0) setActiveIndex(idx)
+    }
+
+    run()
+      .catch((err) => console.error('[reels load]', err?.message))
       .finally(() => setLoading(false))
-  }, [isLoggedIn])
+  }, [authLoading, isLoggedIn])
 
   useEffect(() => {
     if (!reels.length) return
@@ -314,15 +398,37 @@ function ReelPlayer({ startId }) {
 
   const handleLike = async (reelId) => {
     if (!isLoggedIn) { openAuth('signin'); return }
-    const was = likedIds.has(reelId)
-    setLikedIds((p) => { const n = new Set(p); was ? n.delete(reelId) : n.add(reelId); return n })
-    setStats((p) => ({ ...p, [reelId]: { ...(p[reelId] || {}), likeCount: (p[reelId]?.likeCount || 0) + (was ? -1 : 1) } }))
+    const id = String(reelId)
+    const was = likedIds.has(id)
+
+    // Optimistic
+    setLikedIds((p) => { const n = new Set(p); was ? n.delete(id) : n.add(id); return n })
+    setStats((p) => ({
+      ...p,
+      [id]: { ...(p[id] || {}), likeCount: Math.max(0, (p[id]?.likeCount || 0) + (was ? -1 : 1)) },
+    }))
+
     try {
-      const res = await likeReel(reelId)
-      setStats((p) => ({ ...p, [reelId]: { ...(p[reelId] || {}), likeCount: res.likeCount } }))
-      if (!res.liked) setLikedIds((p) => { const n = new Set(p); n.delete(reelId); return n })
-    } catch {
-      setLikedIds((p) => { const n = new Set(p); was ? n.add(reelId) : n.delete(reelId); return n })
+      const res = await likeReel(id)
+      if (!res) return   // empty response — keep optimistic, will reconcile on next mount
+
+      const serverLiked = Boolean(res.liked)
+      const serverCount = typeof res.likeCount === 'number' ? res.likeCount : null
+
+      // Always reconcile from server — this is the source of truth
+      setLikedIds((p) => { const n = new Set(p); serverLiked ? n.add(id) : n.delete(id); return n })
+      if (serverCount !== null) {
+        setStats((p) => ({ ...p, [id]: { ...(p[id] || {}), likeCount: serverCount } }))
+        setReels((prev) => prev.map(r => String(r._id || r.id) === id ? { ...r, likeCount: serverCount } : r))
+      }
+    } catch (err) {
+      console.error('[like] network error:', err?.message)
+      // Revert only on genuine network/auth failure
+      setLikedIds((p) => { const n = new Set(p); was ? n.add(id) : n.delete(id); return n })
+      setStats((p) => ({
+        ...p,
+        [id]: { ...(p[id] || {}), likeCount: Math.max(0, (p[id]?.likeCount || 0) + (was ? 1 : -1)) },
+      }))
     }
   }
 
@@ -399,15 +505,15 @@ function ReelPlayer({ startId }) {
             key={reel._id}
             reel={reel}
             isActive={i === activeIndex}
-            hlsUrl={streamUrls[reel._id] || null}
+            hlsUrl={streamUrls[String(reel._id)] || null}
             muted={muted}
-            liked={likedIds.has(reel._id)}
-            reelStats={stats[reel._id] || {}}
-            onLike={() => handleLike(reel._id)}
-            onComment={() => openComments(reel._id)}
+            liked={likedIds.has(String(reel._id))}
+            reelStats={stats[String(reel._id)] || {}}
+            onLike={() => handleLike(String(reel._id))}
+            onComment={() => openComments(String(reel._id))}
             viewRecordedRef={viewRecordedRef}
             milestoneRef={milestoneRef}
-            onViewCounted={(s) => setStats((p) => ({ ...p, [reel._id]: { ...(p[reel._id] || {}), ...s } }))}
+            onViewCounted={(s) => setStats((p) => ({ ...p, [String(reel._id)]: { ...(p[String(reel._id)] || {}), ...s } }))}
           />
         ))}
 
@@ -488,7 +594,8 @@ function ReelSlide({ reel, isActive, hlsUrl, muted, liked, reelStats, onLike, on
   const pollRef    = useRef(null)
   const lastPosRef = useRef(0)
   const lastDurRef = useRef(0)
-  const [progress, setProgress] = useState(0)
+  const [progress,  setProgress]  = useState(0)
+  const [heartPop,  setHeartPop]  = useState(false)   // one-shot animation trigger
 
   useEffect(() => {
     const v = videoRef.current; if (!v || !hlsUrl) return
@@ -565,41 +672,62 @@ function ReelSlide({ reel, isActive, hlsUrl, muted, liked, reelStats, onLike, on
   return (
     <div className={`${styles.slide} ${isActive ? styles.on : ''}`}>
       <video ref={videoRef} className={styles.vid} muted={muted} playsInline loop preload="metadata" poster={reel.thumbnailUrl || undefined} />
+
+      {/* Bottom gradient — heavier at base for text legibility */}
       <div className={styles.scrim} />
+
+      {/* Thin progress bar at the very bottom */}
       <div className={styles.bar}><div className={styles.fill} style={{ width: `${progress * 100}%` }} /></div>
 
+      {/* ── Right sidebar actions (Instagram style: icon above, count below) ── */}
+      <div className={styles.actions}>
+        <button
+          className={`${styles.igAction} ${liked ? styles.igActionLiked : ''}`}
+          onClick={() => {
+            // Fire pop only when going liked→true (not when unliking)
+            if (!liked) { setHeartPop(true); setTimeout(() => setHeartPop(false), 400) }
+            onLike()
+          }}
+          aria-label={liked ? 'Unlike' : 'Like'}
+        >
+          <Heart
+            size={28}
+            fill={liked ? 'currentColor' : 'none'}
+            strokeWidth={liked ? 0 : 1.6}
+            className={heartPop ? styles.igHeartPop : ''}
+          />
+        </button>
+
+        <button className={styles.igAction} onClick={onComment} aria-label="Comments">
+          <MessageCircle size={27} strokeWidth={1.6} />
+          <span>{fmt(cc)}</span>
+        </button>
+
+        <div className={styles.igActionStat}>
+          <Eye size={24} strokeWidth={1.6} />
+          <span>{fmt(vc)}</span>
+        </div>
+      </div>
+
+      {/* ── Bottom-left: creator + caption + hashtags ── */}
       <div className={styles.meta}>
         <div className={styles.creatorRow}>
-          {creator?.photoURL
-            ? <img src={creator.photoURL} alt={studioName} className={styles.avatar} />
-            : <div className={styles.avatarFb}>{studioName[0]?.toUpperCase()}</div>
-          }
+          <div className={styles.avatarRing}>
+            {creator?.photoURL
+              ? <img src={creator.photoURL} alt={studioName} className={styles.avatar} />
+              : <div className={styles.avatarFb}>{studioName[0]?.toUpperCase()}</div>
+            }
+          </div>
           <span className={styles.creatorName}>{studioName}</span>
         </div>
         {reel.title && <p className={styles.caption}>{reel.title}</p>}
-        {reel.description && reel.description !== reel.title && <p className={styles.desc}>{reel.description}</p>}
         {reel.hashtags?.length > 0 && (
           <div className={styles.tags}>
-            {reel.hashtags.slice(0, 5).map((t) => <span key={t} className={styles.tag}><Hash size={9} />{t}</span>)}
+            {reel.hashtags.slice(0, 4).map((t) => (
+              <span key={t} className={styles.tag}><Hash size={10} />{t}</span>
+            ))}
           </div>
         )}
-      </div>
-
-      <div className={styles.actions}>
-        <button className={`${styles.act} ${liked ? styles.actLiked : ''}`} onClick={onLike} aria-label="Like">
-          <Heart size={26} fill={liked ? 'currentColor' : 'none'} strokeWidth={liked ? 0 : 2} />
-          <span>{fmt(lc)}</span>
-        </button>
-        <button className={styles.act} onClick={onComment} aria-label="Comment">
-          <MessageCircle size={26} strokeWidth={2} />
-          <span>{fmt(cc)}</span>
-        </button>
-        <div className={styles.actStat}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-          </svg>
-          <span>{fmt(vc)}</span>
-        </div>
       </div>
     </div>
   )

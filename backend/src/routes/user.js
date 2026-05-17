@@ -27,8 +27,12 @@ router.get('/me', async (req, res, next) => {
     if (tokenEmailVerified !== null && req.user.emailVerified !== tokenEmailVerified) {
       updates.emailVerified = tokenEmailVerified
     }
-    if (tokenAuthTime && (!req.user.lastLoginAt || tokenAuthTime > req.user.lastLoginAt)) {
-      updates.lastLoginAt = tokenAuthTime
+    // Update lastLoginAt to now, but at most once per hour to avoid a DB write on every page load.
+    // This ensures DAU counts any user who was active today, not just those who signed in today.
+    const ONE_HOUR_MS = 60 * 60 * 1000
+    const lastSeen = req.user.lastLoginAt ? new Date(req.user.lastLoginAt).getTime() : 0
+    if (Date.now() - lastSeen > ONE_HOUR_MS) {
+      updates.lastLoginAt = new Date()
     }
 
     // Always load the full document for /me — it includes watchlist, likedContent,

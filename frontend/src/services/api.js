@@ -432,6 +432,11 @@ export async function recordView(id, episodeNumber = null, positionSecs = 30) {
 
 // ── Reels ─────────────────────────────────────────────────────────────────────
 
+export async function searchReels(q) {
+  const data = await request(`/api/reels/search?q=${encodeURIComponent(q)}`)
+  return Array.isArray(data) ? data : []
+}
+
 export async function fetchReels(params = {}) {
   const qs = new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
