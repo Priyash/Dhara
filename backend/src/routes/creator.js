@@ -683,8 +683,25 @@ router.get('/reels', requireAuth, async (req, res, next) => {
  * Approved creators only — upload access requires a creator account.
  * Regular users can watch/like/comment but cannot upload reels.
  */
+const DAILY_REEL_LIMIT = 5   // max reels a creator can submit per calendar day (IST)
+
 router.post('/reels', requireAuth, requireCreator, async (req, res, next) => {
   try {
+    // Daily upload limit — count reels created today (IST midnight → now)
+    const nowIST       = new Date(Date.now() + 5.5 * 3_600_000)
+    const todayIST     = new Date(nowIST.toISOString().slice(0, 10) + 'T00:00:00+05:30')
+    const todayCount   = await Reel.countDocuments({
+      creatorId:  req.user._id,
+      createdAt:  { $gte: todayIST },
+      isDeleted:  { $ne: true },
+    })
+    if (todayCount >= DAILY_REEL_LIMIT) {
+      return res.status(429).json({
+        error: `Daily upload limit reached. You can submit up to ${DAILY_REEL_LIMIT} reels per day.`,
+        code:  'DAILY_REEL_LIMIT_REACHED',
+        limit: DAILY_REEL_LIMIT,
+      })
+    }
 
     const {
       title = '', description = '', hashtags = [],
@@ -900,6 +917,13 @@ router.post('/reels/:id/resubmit', requireAuth, async (req, res, next) => {
     if ((reel.revisionCount || 0) >= MAX_REVISIONS) {
       return res.status(429).json({
         error: `This reel has reached the maximum of ${MAX_REVISIONS} revisions.`,
+      })
+    }
+    // Rejection clears bunnyVideoId — creator must upload a new video before resubmitting
+    if (!reel.bunnyVideoId) {
+      return res.status(400).json({
+        error: 'Upload a new video before resubmitting. The previous video was removed when your reel was rejected.',
+        code:  'VIDEO_REQUIRED',
       })
     }
 

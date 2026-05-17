@@ -2,9 +2,10 @@ import { useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import {
   X, Upload, Video, Hash, CheckCircle2, AlertTriangle,
-  Loader2, Info, Play, Clock, AlignLeft,
+  Loader2, Info, Play, Clock, AlignLeft, ImagePlus,
 } from 'lucide-react'
 import { createCreatorReel, createReelUploadJob, uploadReelFile } from '../services/api'
+import { uploadToCloudinary } from '../services/cloudinary'
 import styles from './ReelUploadModal.module.css'
 
 const MAX_DURATION_SECS = 30
@@ -73,8 +74,12 @@ export default function ReelUploadModal({ onClose, onCreated }) {
   const [phase,               setPhase]               = useState('configure')
   const [summary,             setSummary]             = useState(null)
   const [dragging,            setDragging]            = useState(false)
+  const [thumbnailUrl,        setThumbnailUrl]        = useState('')
+  const [thumbUploading,      setThumbUploading]      = useState(false)
+  const [thumbError,          setThumbError]          = useState('')
 
-  const inputRef = useRef(null)
+  const inputRef     = useRef(null)
+  const thumbInputRef = useRef(null)
 
   // ── Add files to queue ────────────────────────────────────────────────────
 
@@ -133,6 +138,13 @@ export default function ReelUploadModal({ onClose, onCreated }) {
           hashtags:     tags,
           aspectRatio:  sharedAspectRatio || item.aspectRatio,
           durationSecs: item.duration,
+          thumbnailUrl: thumbnailUrl.trim(),
+        }).catch((err) => {
+          // Surface the daily limit error with a clear message
+          if (err?.message?.includes('Daily upload limit')) {
+            throw new Error(`Daily limit reached — you can upload up to 5 reels per day. Remaining items skipped.`)
+          }
+          throw err
         })
         await createReelUploadJob(reel._id)
         await uploadReelFile(reel._id, item.file, {
@@ -353,6 +365,61 @@ export default function ReelUploadModal({ onClose, onCreated }) {
                     : '9:16 is recommended for vertical mobile reels. Each file\'s ratio will be auto-detected.'}
                 </p>
               </div>
+
+              {/* Thumbnail upload */}
+              <div className={styles.field}>
+                <label className={styles.label}>
+                  <ImagePlus size={12} /> Cover thumbnail
+                  <span className={styles.optional}>(optional · shown in the Reels feed before playback)</span>
+                </label>
+                <input
+                  ref={thumbInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                  className={styles.hiddenInput}
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0]
+                    if (!f) return
+                    setThumbError('')
+                    setThumbUploading(true)
+                    try {
+                      const url = await uploadToCloudinary(f, { folder: 'dhara/reels/thumbnails' })
+                      setThumbnailUrl(url)
+                    } catch (err) {
+                      setThumbError(err?.message || 'Thumbnail upload failed')
+                    } finally {
+                      setThumbUploading(false)
+                      e.target.value = ''
+                    }
+                  }}
+                />
+                <div className={styles.thumbRow}>
+                  {thumbnailUrl ? (
+                    <>
+                      <img src={thumbnailUrl} alt="Thumbnail preview" className={styles.thumbPreview} />
+                      <div className={styles.thumbActions}>
+                        <button type="button" className={styles.thumbChangeBtn}
+                          onClick={() => thumbInputRef.current?.click()} disabled={thumbUploading}>
+                          Change
+                        </button>
+                        <button type="button" className={styles.thumbRemoveBtn}
+                          onClick={() => setThumbnailUrl('')}>
+                          Remove
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <button type="button" className={styles.thumbUploadBtn}
+                      onClick={() => thumbInputRef.current?.click()} disabled={thumbUploading}>
+                      {thumbUploading
+                        ? <><Loader2 size={14} className={styles.spin} /> Uploading…</>
+                        : <><ImagePlus size={14} /> Upload cover image</>}
+                    </button>
+                  )}
+                </div>
+                {thumbError && <p className={styles.fieldError}><AlertTriangle size={12} /> {thumbError}</p>}
+              </div>
+
             </div>
           )}
 

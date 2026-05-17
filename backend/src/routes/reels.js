@@ -33,19 +33,12 @@ const router = Router()
 const VIEW_MIN_POSITION_SECS = 5
 const VIEW_DEDUP_WINDOW_MS   = 24 * 60 * 60 * 1000
 
-// Slug of the dedicated Bunny Stream collection for reels.
-// Create this collection in the admin panel first, then set this env var.
 const REEL_COLLECTION_SLUG = process.env.REEL_COLLECTION_SLUG || 'dhara-reels'
 
 const PUBLIC_FIELDS = '-bunnyVideoId'
 
 // ── Feed ─────────────────────────────────────────────────────────────────────
 
-/**
- * GET /api/reels
- * Auth required. Paginated feed of published approved reels, newest first.
- * Query: page, limit, hashtag
- */
 router.get('/', requireAuth, async (req, res, next) => {
   try {
     const page    = Math.max(1, parseInt(req.query.page,  10) || 1)
@@ -73,10 +66,48 @@ router.get('/', requireAuth, async (req, res, next) => {
   }
 })
 
+// ── Search ────────────────────────────────────────────────────────────────────
+
 /**
- * GET /api/reels/:id
- * Auth required. Single reel metadata with creator info.
+ * GET /api/reels/search?q=comedy
+ * Auth required. Searches published approved reels by title and hashtags.
+ * A '#' prefix targets hashtags only (e.g. ?q=#comedy).
  */
+router.get('/search', requireAuth, async (req, res, next) => {
+  try {
+    const raw = (req.query.q || '').trim()
+    if (raw.length < 2) return res.json([])
+
+    const filter = { isPublished: true, isDeleted: { $ne: true }, submissionStatus: 'approved' }
+
+    // '#comedy' → hashtag-only search; 'comedy' → title + hashtag
+    if (raw.startsWith('#')) {
+      const tag = raw.slice(1).toLowerCase()
+      filter.hashtags = { $regex: tag, $options: 'i' }
+    } else {
+      const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      filter.$or = [
+        { title:    { $regex: escaped, $options: 'i' } },
+        { hashtags: { $regex: escaped, $options: 'i' } },
+        { description: { $regex: escaped, $options: 'i' } },
+      ]
+    }
+
+    const reels = await Reel.find(filter)
+      .sort({ viewCount: -1, createdAt: -1 })
+      .limit(20)
+      .select(PUBLIC_FIELDS)
+      .populate('creatorId', 'displayName creatorProfile.studioName photoURL')
+      .lean()
+
+    res.json(reels)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ── Single reel ───────────────────────────────────────────────────────────────
+
 router.get('/:id', requireAuth, async (req, res, next) => {
   try {
     const reel = await Reel.findOne({
@@ -93,10 +124,6 @@ router.get('/:id', requireAuth, async (req, res, next) => {
   }
 })
 
-/**
- * GET /api/reels/:id/stream
- * Auth required. Signed HLS URL.
- */
 router.get('/:id/stream', requireAuth, async (req, res, next) => {
   try {
     const reel = await Reel.findById(req.params.id)
@@ -118,10 +145,6 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
 
 // ── Engagement ────────────────────────────────────────────────────────────────
 
-/**
- * POST /api/reels/:id/view
- * Auth required. 5 s threshold, 24 h dedup.
- */
 router.post('/:id/view', requireAuth, async (req, res, next) => {
   try {
     const positionSecs = Number(req.body.positionSecs ?? 0)
@@ -168,10 +191,6 @@ router.post('/:id/view', requireAuth, async (req, res, next) => {
   }
 })
 
-/**
- * POST /api/reels/:id/like
- * Auth required. Toggles like, returns updated counts.
- */
 router.post('/:id/like', requireAuth, async (req, res, next) => {
   try {
     const reelId = String(req.params.id)
@@ -180,17 +199,25 @@ router.post('/:id/like', requireAuth, async (req, res, next) => {
     const userDoc      = await User.findById(userId).select('likedContent').lean()
     const alreadyLiked = (userDoc?.likedContent ?? []).includes(reelId)
 
+    // $addToSet and $push on the same field in one update causes a MongoDB conflict error.
+    // Use $addToSet only (idempotent), then apply the cap as a separate update.
+    const userUpdate = alreadyLiked
+      ? { $pull: { likedContent: reelId } }
+      : { $addToSet: { likedContent: reelId } }
+
     const [reel, user] = await Promise.all([
       Reel.findByIdAndUpdate(reelId, { $inc: { likeCount: alreadyLiked ? -1 : 1 } }, { new: true })
         .select('likeCount commentCount viewCount').lean(),
-      User.findByIdAndUpdate(
-        userId,
-        alreadyLiked
-          ? { $pull: { likedContent: reelId } }
-          : { $addToSet: { likedContent: reelId }, $push: { likedContent: { $each: [], $slice: -2000 } } },
-        { new: true }
-      ).select('likedContent').lean(),
+      User.findByIdAndUpdate(userId, userUpdate, { new: true })
+        .select('likedContent').lean(),
     ])
+
+    // Trim likedContent to last 2000 entries in a separate step (avoids conflict with $addToSet)
+    if (!alreadyLiked) {
+      User.findByIdAndUpdate(userId, {
+        $push: { likedContent: { $each: [], $slice: -2000 } },
+      }).catch(() => {})
+    }
 
     if (!reel) return res.status(404).json({ error: 'Reel not found' })
 
@@ -206,37 +233,22 @@ router.post('/:id/like', requireAuth, async (req, res, next) => {
 
 // ── Comments ──────────────────────────────────────────────────────────────────
 
-/**
- * GET /api/reels/:id/comments
- * Auth required. Paginated comments, newest first.
- */
 router.get('/:id/comments', requireAuth, async (req, res, next) => {
   try {
     const page  = Math.max(1, parseInt(req.query.page, 10) || 1)
     const limit = Math.min(30, Math.max(1, parseInt(req.query.limit, 10) || 20))
-
     const filter = { reelId: req.params.id, isDeleted: false }
-
     const [comments, total] = await Promise.all([
-      Comment.find(filter)
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .populate('userId', 'displayName photoURL')
-        .lean(),
+      Comment.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit)
+        .populate('userId', 'displayName photoURL').lean(),
       Comment.countDocuments(filter),
     ])
-
     res.json({ comments, total, page, pages: Math.ceil(total / limit) })
   } catch (err) {
     next(err)
   }
 })
 
-/**
- * POST /api/reels/:id/comments
- * Auth required. Body: { text }
- */
 router.post('/:id/comments', requireAuth, async (req, res, next) => {
   try {
     const text = String(req.body.text || '').trim()
@@ -244,16 +256,12 @@ router.post('/:id/comments', requireAuth, async (req, res, next) => {
     if (text.length > COMMENT_MAX_LENGTH) {
       return res.status(400).json({ error: `Comment must be ${COMMENT_MAX_LENGTH} characters or fewer` })
     }
-
-    // Verify reel exists and is visible
     const reel = await Reel.findOne({
       _id: req.params.id, isPublished: true, isDeleted: { $ne: true }, submissionStatus: 'approved',
     }).lean()
     if (!reel) return res.status(404).json({ error: 'Reel not found' })
-
     const comment = await Comment.create({ reelId: req.params.id, userId: req.user._id, text })
     await Reel.findByIdAndUpdate(req.params.id, { $inc: { commentCount: 1 } })
-
     const populated = await comment.populate('userId', 'displayName photoURL')
     res.status(201).json(populated)
   } catch (err) {
@@ -261,25 +269,17 @@ router.post('/:id/comments', requireAuth, async (req, res, next) => {
   }
 })
 
-/**
- * DELETE /api/reels/:id/comments/:commentId
- * Auth required. Owner can delete their own comment; admins can delete any.
- */
 router.delete('/:id/comments/:commentId', requireAuth, async (req, res, next) => {
   try {
     const comment = await Comment.findById(req.params.commentId)
     if (!comment || comment.isDeleted) return res.status(404).json({ error: 'Comment not found' })
-
     const isOwner = comment.userId.toString() === req.user._id.toString()
     const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase())
     const isAdmin = adminEmails.includes((req.user.email || '').toLowerCase())
-
     if (!isOwner && !isAdmin) return res.status(403).json({ error: 'Cannot delete this comment' })
-
     comment.isDeleted = true
     await comment.save()
     await Reel.findByIdAndUpdate(req.params.id, { $inc: { commentCount: -1 } })
-
     res.json({ success: true })
   } catch (err) {
     next(err)
@@ -288,22 +288,16 @@ router.delete('/:id/comments/:commentId', requireAuth, async (req, res, next) =>
 
 // ── Creator upload ────────────────────────────────────────────────────────────
 
-/**
- * POST /api/reels/:id/upload-job
- * Approved creators only. Creates an UploadJob that targets the dhara-reels
- * Bunny Stream collection (configured via REEL_COLLECTION_SLUG env var).
- * The creator then uploads bytes to PUT /api/reels/:id/file.
- */
 router.post('/:id/upload-job', requireAuth, async (req, res, next) => {
   try {
     if (!req.user.isCreator || req.user.creatorStatus !== 'approved') {
       return res.status(403).json({ error: 'Creator access required' })
     }
-
     const reel = await Reel.findOne({ _id: req.params.id, creatorId: req.user._id }).lean()
     if (!reel) return res.status(404).json({ error: 'Reel not found' })
-
-    // Find the dedicated reel collection in Bunny
+    if (reel.submissionStatus === 'approved') {
+      return res.status(400).json({ error: 'Live reels cannot be re-uploaded.', code: 'REEL_ALREADY_LIVE' })
+    }
     const collection = await StreamCollection.findOne({ slug: REEL_COLLECTION_SLUG, isActive: true }).lean()
     if (!collection) {
       return res.status(503).json({
@@ -311,11 +305,8 @@ router.post('/:id/upload-job', requireAuth, async (req, res, next) => {
         code:  'REEL_COLLECTION_NOT_FOUND',
       })
     }
-
-    // Idempotent: reuse existing awaiting_file job for this reel
     const existing = await UploadJob.findOne({ reelId: reel._id, status: 'awaiting_file' }).lean()
     if (existing) return res.json(existing)
-
     const job = await UploadJob.create({
       createdByEmail:    req.user.email,
       title:             reel.title || `Reel-${reel._id}`,
@@ -327,18 +318,12 @@ router.post('/:id/upload-job', requireAuth, async (req, res, next) => {
       progress:          0,
       note:              'Upload job created. Waiting for file bytes.',
     })
-
     res.status(201).json(job)
   } catch (err) {
     next(err)
   }
 })
 
-/**
- * PUT /api/reels/:id/file
- * Approved creators only. Raw video bytes — streamed directly to Bunny.
- * Must call POST /api/reels/:id/upload-job first to get the job ID.
- */
 router.put('/:id/file',
   requireAuth,
   express.raw({ type: 'application/octet-stream', limit: '512mb' }),
@@ -347,29 +332,21 @@ router.put('/:id/file',
       if (!req.user.isCreator || req.user.creatorStatus !== 'approved') {
         return res.status(403).json({ error: 'Creator access required' })
       }
-
       const reel = await Reel.findOne({ _id: req.params.id, creatorId: req.user._id }).lean()
       if (!reel) return res.status(404).json({ error: 'Reel not found' })
-
       const job = await UploadJob.findOne({ reelId: reel._id, status: 'awaiting_file' })
       if (!job) {
-        return res.status(409).json({
-          error: 'No pending upload job. Call POST /api/reels/:id/upload-job first.',
-        })
+        return res.status(409).json({ error: 'No pending upload job. Call POST /api/reels/:id/upload-job first.' })
       }
-
       if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
         return res.status(400).json({ error: 'Binary file body is required' })
       }
-
       const fileName = String(req.headers['x-file-name'] || '').slice(0, 240)
       await UploadJob.findByIdAndUpdate(job._id, {
         $set: { status: 'queued', progress: 10, note: 'File received. Queued for upload.', fileName },
       })
-
       const fileBuffer = Buffer.from(req.body)
       setImmediate(() => { void processUploadJob(job._id, fileBuffer) })
-
       res.status(202).json({ success: true, jobId: job._id, message: 'File accepted and queued.' })
     } catch (err) {
       next(err)

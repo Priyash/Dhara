@@ -68,18 +68,21 @@
   border-bottom-color: #a78bfa;
 }
 
-/* Hashtag chips */
-.chips {
+/* ── Topic filter bar ─────────────────────────────────────────────────────── */
+.topicBar {
   display: flex;
+  align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   margin-bottom: 20px;
+  overflow: visible;
 }
+
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 12px;
+  padding: 5px 11px;
   border-radius: 99px;
   border: 1px solid rgba(255,255,255,0.1);
   background: rgba(255,255,255,0.04);
@@ -88,9 +91,94 @@
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-.chip:hover   { border-color: rgba(167,139,250,0.4); color: #fff; }
-.chipActive   { border-color: #7c3aed; background: rgba(124,58,237,0.15); color: #fff; }
+.chip:hover { border-color: rgba(167,139,250,0.4); color: #fff; }
+.chipActive  { border-color: #7c3aed; background: rgba(124,58,237,0.15); color: #fff; }
+.chipCount {
+  background: rgba(255,255,255,0.1);
+  border-radius: 99px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.5);
+}
+
+/* Browse topics popover */
+.topicsMenu { position: relative; flex-shrink: 0; }
+
+.topicsDropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 50;
+  width: 240px;
+  background: #18181f;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.55);
+  overflow: hidden;
+}
+
+.topicsSearch {
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.topicsInput {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  color: #fff;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.topicsInput::placeholder { color: rgba(255,255,255,0.3); }
+.topicsInput:focus { border-color: rgba(124,58,237,0.45); }
+
+.topicsList {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px 0;
+  scrollbar-width: none;
+}
+.topicsList::-webkit-scrollbar { display: none; }
+
+.topicsItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+.topicsItem:hover { background: rgba(124,58,237,0.1); color: #fff; }
+.topicsItem span:first-of-type { flex: 1; }
+
+.topicsCount {
+  font-size: 11px;
+  color: rgba(255,255,255,0.3);
+  font-weight: 600;
+}
+
+/* Legacy .chips kept for backward compat */
+.chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
 
 /* Grid */
 .grid {
@@ -195,12 +283,15 @@
 }
 .card:hover .cardPlay { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 
+/* Engagement stats row — views, likes, comments */
 .cardStats {
   position: absolute;
   bottom: 8px;
-  left: 8px;
+  left: 7px;
+  right: 7px;
   display: flex;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
 }
 .cardStats span {
   display: inline-flex;
@@ -208,8 +299,22 @@
   gap: 3px;
   font-size: 11px;
   font-weight: 600;
-  color: rgba(255,255,255,0.85);
-  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  color: rgba(255,255,255,0.9);
+  text-shadow: 0 1px 5px rgba(0,0,0,0.8);
+}
+
+/* Duration badge — top right */
+.cardDur {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.9);
+  background: rgba(0,0,0,0.55);
+  border-radius: 4px;
+  padding: 2px 5px;
+  backdrop-filter: blur(4px);
 }
 
 .cardMeta {
@@ -245,7 +350,7 @@
 
 
 /* ═══════════════════════════════════════════════════════════════
-   PLAYER MODE  (full-screen vertical)
+   PLAYER MODE  — Instagram Reels style
 ═══════════════════════════════════════════════════════════════ */
 
 .root {
@@ -260,47 +365,182 @@
 .stage {
   position: relative;
   width: 100%;
-  max-width: 420px;
+  max-width: 430px;
   height: 100dvh;
   overflow: hidden;
+  background: #000;
 }
 
-.slide { position: absolute; inset: 0; display: none; background: #0a0a0a; }
+.slide { position: absolute; inset: 0; display: none; background: #000; }
 .on    { display: block; }
 
 .vid  { width: 100%; height: 100%; object-fit: cover; display: block; }
 
+/* Scrim — light at top (for chrome), heavy at bottom (for text) */
 .scrim {
-  position: absolute; inset: 0;
+  position: absolute; inset: 0; pointer-events: none;
   background:
-    linear-gradient(to top,  rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.30) 35%, transparent 60%),
-    linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, transparent 18%);
-  pointer-events: none;
+    linear-gradient(to bottom, rgba(0,0,0,0.28) 0%, transparent 22%),
+    linear-gradient(to top,    rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 45%, transparent 65%);
 }
 
-.bar  { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: rgba(255,255,255,0.18); z-index: 5; }
-.fill { height: 100%; background: #fff; transition: width 0.2s linear; border-radius: 1px; }
+/* Thin progress bar — bottom of frame, Instagram style */
+.bar  {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  height: 2px; background: rgba(255,255,255,0.15); z-index: 5;
+}
+.fill { height: 100%; background: rgba(255,255,255,0.9); transition: width 0.25s linear; }
 
+/* ── Bottom-left: creator + caption + hashtags ── */
 .meta {
-  position: absolute; bottom: 88px; left: 16px; right: 76px;
-  display: flex; flex-direction: column; gap: 5px; z-index: 4;
+  position: absolute;
+  bottom: 72px;
+  left: 14px;
+  right: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 4;
 }
-.creatorRow { display: flex; align-items: center; gap: 9px; margin-bottom: 2px; }
-.avatar     { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; border: 1.5px solid rgba(255,255,255,0.45); flex-shrink: 0; }
-.avatarFb   { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg,#7c3aed,#4f46e5); color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1.5px solid rgba(255,255,255,0.25); }
-.creatorName{ font-size: 13.5px; font-weight: 600; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
-.caption    { font-size: 13.5px; font-weight: 500; color: rgba(255,255,255,0.93); line-height: 1.45; margin: 0; text-shadow: 0 1px 5px rgba(0,0,0,0.55); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.desc       { font-size: 12.5px; color: rgba(255,255,255,0.68); line-height: 1.4; margin: 0; text-shadow: 0 1px 4px rgba(0,0,0,0.5); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.tags       { display: flex; flex-wrap: wrap; gap: 6px; }
-.tag        { display: inline-flex; align-items: center; gap: 2px; font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,0.65); text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
 
-.actions    { position: absolute; bottom: 88px; right: 12px; display: flex; flex-direction: column; align-items: center; gap: 22px; z-index: 4; }
-.act        { background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px; color: #fff; filter: drop-shadow(0 1px 5px rgba(0,0,0,0.7)); padding: 2px; transition: transform 0.12s; }
-.act:hover  { transform: scale(1.1); }
-.act:active { transform: scale(0.92); }
-.actLiked   { color: #f87171; }
-.act > span, .actStat > span { font-size: 11.5px; font-weight: 600; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.65); }
-.actStat    { display: flex; flex-direction: column; align-items: center; gap: 5px; color: rgba(255,255,255,0.75); filter: drop-shadow(0 1px 4px rgba(0,0,0,0.6)); }
+.creatorRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Avatar ring (Instagram ring style) */
+.avatarRing {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  padding: 2px;
+  background: linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  flex-shrink: 0;
+}
+.avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #000;
+  display: block;
+}
+.avatarFb {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: linear-gradient(135deg,#7c3aed,#4f46e5);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #000;
+}
+
+.creatorName {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+}
+
+.caption {
+  font-size: 13.5px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.92);
+  line-height: 1.5;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.75);
+}
+
+/* ── Right sidebar — Instagram style (icon above, count below) ── */
+.actions {
+  position: absolute;
+  bottom: 80px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  z-index: 4;
+}
+
+/* Shared action item: icon + count stacked vertically */
+.igAction {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  padding: 0;
+  transition: transform 0.15s;
+  filter: drop-shadow(0 1px 4px rgba(0,0,0,0.55));
+}
+.igAction:hover  { transform: scale(1.12); }
+.igAction:active { transform: scale(0.92); }
+
+.igAction > span:last-child,
+.igActionStat > span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.01em;
+}
+
+.igActionLiked { color: #ff3b30; }
+
+/* Heart pop animation on like */
+.igHeartPop { animation: heartPop 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+@keyframes heartPop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.4); }
+  70%  { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
+/* Views — non-interactive */
+.igActionStat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: rgba(255,255,255,0.75);
+  filter: drop-shadow(0 1px 4px rgba(0,0,0,0.55));
+}
+
+/* Legacy stubs */
+.act { display: none; }
+.actLiked { display: none; }
+.actStat  { display: none; }
+.actionPill { display: none; }
+.actionPillLiked { display: none; }
+.actionPillStatic { display: none; }
+.actionPillIcon { display: none; }
+.actionPillCount { display: none; }
 
 .btnFloat   { position: fixed; z-index: 20; width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; background: rgba(0,0,0,0.4); backdrop-filter: blur(10px); transition: background 0.15s, transform 0.12s; }
 .btnFloat:hover { background: rgba(0,0,0,0.62); transform: scale(1.06); }

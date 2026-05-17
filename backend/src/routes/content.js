@@ -466,7 +466,6 @@ router.post('/:id/like', requireAuth, async (req, res, next) => {
     const contentId = String(req.params.id)
     const userId    = req.user._id
 
-    // Fetch only the reaction arrays — excluded from req.user for perf on every request
     const userReact = await User.findById(userId).select('likedContent dislikedContent').lean()
     const alreadyLiked    = (userReact?.likedContent    ?? []).includes(contentId)
     const alreadyDisliked = (userReact?.dislikedContent ?? []).includes(contentId)
@@ -475,15 +474,10 @@ router.post('/:id/like', requireAuth, async (req, res, next) => {
       ? { likeCount: -1 }
       : { likeCount: 1, ...(alreadyDisliked ? { dislikeCount: -1 } : {}) }
 
-    // Cap likedContent at 2000 entries — prevents document bloat for power users.
-    // $addToSet deduplicates; the $slice keeps only the 2000 most-recent.
+    // Separate $addToSet and $push on likedContent — combining them causes a MongoDB conflict error
     const userOp = alreadyLiked
       ? { $pull: { likedContent: contentId } }
-      : {
-          $addToSet: { likedContent: contentId },
-          $pull:     { dislikedContent: contentId },
-          $push:     { likedContent: { $each: [], $slice: -2000 } },
-        }
+      : { $addToSet: { likedContent: contentId }, $pull: { dislikedContent: contentId } }
 
     const [content, user] = await Promise.all([
       Content.findByIdAndUpdate(contentId, { $inc: contentInc }, { new: true })
@@ -493,6 +487,11 @@ router.post('/:id/like', requireAuth, async (req, res, next) => {
     ])
 
     if (!content) return res.status(404).json({ error: 'Content not found' })
+
+    // Trim likedContent cap in a separate fire-and-forget step
+    if (!alreadyLiked) {
+      User.findByIdAndUpdate(userId, { $push: { likedContent: { $each: [], $slice: -2000 } } }).catch(() => {})
+    }
 
     res.json({
       likeCount:    Math.max(0, content.likeCount),
@@ -525,11 +524,7 @@ router.post('/:id/dislike', requireAuth, async (req, res, next) => {
 
     const userOp = alreadyDisliked
       ? { $pull: { dislikedContent: contentId } }
-      : {
-          $addToSet: { dislikedContent: contentId },
-          $pull:     { likedContent: contentId },
-          $push:     { dislikedContent: { $each: [], $slice: -2000 } },
-        }
+      : { $addToSet: { dislikedContent: contentId }, $pull: { likedContent: contentId } }
 
     const [content, user] = await Promise.all([
       Content.findByIdAndUpdate(contentId, { $inc: contentInc }, { new: true })
@@ -539,6 +534,10 @@ router.post('/:id/dislike', requireAuth, async (req, res, next) => {
     ])
 
     if (!content) return res.status(404).json({ error: 'Content not found' })
+
+    if (!alreadyDisliked) {
+      User.findByIdAndUpdate(userId, { $push: { dislikedContent: { $each: [], $slice: -2000 } } }).catch(() => {})
+    }
 
     res.json({
       likeCount:    Math.max(0, content.likeCount),

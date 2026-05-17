@@ -604,6 +604,31 @@
   background: rgba(245,158,11,0.08);
 }
 
+/* Engagement metrics strip */
+.engagementRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.engagementStat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.engagementStat em {
+  font-style: normal;
+  font-weight: 400;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
 .genreRow {
   display: flex;
   gap: 6px;

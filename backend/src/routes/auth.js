@@ -65,7 +65,7 @@ router.post('/login', async (req, res, next) => {
           emailVerified: Boolean(decoded.email_verified),
           displayName:   decoded.name  || decoded.email?.split('@')[0] || '',
           photoURL:      decoded.picture || '',
-          ...(tokenAuthTime ? { lastLoginAt: tokenAuthTime } : {}),
+          lastLoginAt: new Date(),   // always current time — auth_time is when Firebase issued the token, not when the user is active now
         },
         $setOnInsert: {
           firebaseUid:        decoded.uid,

@@ -32,16 +32,26 @@ export async function requireAuth(req, res, next) {
         { firebaseUid: decoded.uid },
         {
           $set: {
-            email:         decoded.email || '',
+            email:        decoded.email || '',
             emailVerified: Boolean(decoded.email_verified),
-            displayName:   decoded.name || decoded.email?.split('@')[0] || '',
-            photoURL:      decoded.picture || '',
-            ...(tokenAuthTime ? { lastLoginAt: tokenAuthTime } : {}),
+            displayName:  decoded.name || decoded.email?.split('@')[0] || '',
+            photoURL:     decoded.picture || '',
+            lastLoginAt:  new Date(),
           },
           $setOnInsert: { firebaseUid: decoded.uid },
         },
         { upsert: true, new: true, select: AUTH_SELECT }
       )
+    } else {
+      // Refresh lastLoginAt at most once per hour so DAU tracking reflects
+      // any active session — not just explicit sign-ins.
+      const ONE_HOUR_MS = 60 * 60 * 1000
+      const lastSeen    = user.lastLoginAt ? new Date(user.lastLoginAt).getTime() : 0
+      if (Date.now() - lastSeen > ONE_HOUR_MS) {
+        // Fire-and-forget — never block the request on a DAU timestamp update
+        User.findByIdAndUpdate(user._id, { $set: { lastLoginAt: new Date() } }).catch(() => {})
+        user.lastLoginAt = new Date()   // reflect the update in req.user immediately
+      }
     }
 
     req.user = user

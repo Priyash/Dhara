@@ -8,7 +8,7 @@ import {
   BarChart2, ThumbsUp, ChevronDown, ChevronRight, Award,
   IndianRupee, Wallet, Banknote, Trophy, CalendarDays, Sparkles,
   MapPin, Clock3, Activity, Flame, Minus, TrendingDown, Zap,
-  Heart, MessageCircle, Search,
+  Heart, MessageCircle, Search, Upload,
 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { uploadToCloudinary } from '../services/cloudinary'
@@ -2044,13 +2044,26 @@ export default function CreatorStudio() {
                         {/* Actions */}
                         <div className={styles.reelCardActions}>
                           {reel.submissionStatus === 'rejected' && (
-                            <button className={styles.resubmitBtn}
-                              onClick={async () => {
-                                try { await resubmitCreatorReel(reel._id); showToast({ type: 'success', message: 'Reel resubmitted.' }); loadReels() }
-                                catch (err) { showToast({ type: 'error', message: err?.message || 'Could not resubmit.' }) }
-                              }}>
-                              <RotateCcw size={13} /> Resubmit
-                            </button>
+                            <>
+                              {/* If bunnyVideoId is cleared (video deleted on rejection),
+                                  creator must upload a new video first, then can resubmit */}
+                              {!reel.bunnyVideoId && (
+                                <button className={styles.resubmitBtn}
+                                  onClick={() => setShowReelModal(true)}
+                                  title="Your video was removed on rejection. Upload a new video to resubmit.">
+                                  <Upload size={13} /> Upload new video
+                                </button>
+                              )}
+                              {reel.bunnyVideoId && (
+                                <button className={styles.resubmitBtn}
+                                  onClick={async () => {
+                                    try { await resubmitCreatorReel(reel._id); showToast({ type: 'success', message: 'Reel resubmitted.' }); loadReels() }
+                                    catch (err) { showToast({ type: 'error', message: err?.message || 'Could not resubmit.' }) }
+                                  }}>
+                                  <RotateCcw size={13} /> Resubmit
+                                </button>
+                              )}
+                            </>
                           )}
                           {reel.submissionStatus !== 'approved' && (
                             <button className={styles.deleteBtn}
