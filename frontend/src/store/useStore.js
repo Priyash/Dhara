@@ -36,7 +36,8 @@ export const useStore = create((set, get) => ({
   showPaywall: false,
   showSearch: false,
   showAuth: false,
-  authMode: 'signin',   // 'signin' | 'signup'
+  authMode: 'signin',        // 'signin' | 'signup'
+  authRedirectPath: null,    // where to navigate after successful sign-in/sign-up
   selectedItem: null,
   muted: true,
   transitionActive: false,
@@ -313,8 +314,11 @@ export const useStore = create((set, get) => ({
   setSelectedItem:(item) => set({ selectedItem: item }),
   toggleMuted:    () => set((s) => ({ muted: !s.muted })),
 
-  openAuth:    (mode = 'signin') => set({ showAuth: true, authMode: mode }),
-  closeAuth:   () => set({ showAuth: false }),
+  // redirectPath — where to go after successful auth. Pass the current URL
+  // (e.g. `/watch/${id}`) when the user was trying to do something specific.
+  // Omit for generic sign-in (Navbar button, Reels likes) — defaults to staying put.
+  openAuth:    (mode = 'signin', redirectPath = null) => set({ showAuth: true, authMode: mode, authRedirectPath: redirectPath }),
+  closeAuth:   () => set({ showAuth: false, authRedirectPath: null }),
   setAuthMode: (mode) => set({ authMode: mode }),
 
   openPaywall: () => {

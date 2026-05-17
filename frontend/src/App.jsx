@@ -20,6 +20,7 @@ const Watch         = lazy(() => import('./pages/Watch'))
 const Profile       = lazy(() => import('./pages/Profile'))
 const Admin         = lazy(() => import('./pages/Admin'))
 const CreatorStudio = lazy(() => import('./pages/CreatorStudio'))
+const Reels         = lazy(() => import('./pages/Reels'))
 
 function PageFallback() {
   return <div className={styles.pageFallback} />
@@ -37,6 +38,8 @@ function AnimatedRoutes() {
           <Route path="/profile"         element={<Profile />} />
           <Route path="/admin"           element={<Admin />} />
           <Route path="/creator-studio"  element={<CreatorStudio />} />
+          <Route path="/reels"           element={<Reels />} />
+          <Route path="/reels/:id"       element={<Reels />} />
           <Route path="*"                element={<NotFound />} />
         </Routes>
       </Suspense>

@@ -21,6 +21,7 @@ export async function requireAuth(req, res, next) {
       '_id firebaseUid email emailVerified displayName photoURL lastLoginAt',
       'subscriptionStatus subscriptionPlan subscriptionExpiresAt trialEndsAt graceEndsAt',
       'isCreator creatorStatus creatorProfile creatorRejectionReason creatorRejectedAt',
+      'creatorRejectionCount creatorReapplyAfter creatorTier',
     ].join(' ')
 
     let user = await User.findOne({ firebaseUid: decoded.uid }).select(AUTH_SELECT)

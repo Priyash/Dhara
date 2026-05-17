@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Clapperboard, Users, Globe, Play, SkipForward, VideoOff, RotateCcw } from 'lucide-react'
 import VideoPlayer from '../components/VideoPlayer'
 import PosterCard from '../components/PosterCard'
-import { fetchContentById, fetchStreamUrl, saveWatchProgress, recordView, fetchContent, rateContent } from '../services/api'
+import { fetchContentById, fetchStreamUrl, saveWatchProgress, recordView, fetchContent, rateContent, recordInteractionEvent } from '../services/api'
 import { useStore } from '../store/useStore'
 import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './Watch.module.css'
@@ -82,7 +82,10 @@ export default function Watch() {
   const [streamError,    setStreamError]   = useState(null)
   const [related,        setRelated]       = useState([])
   const [resumePos,      setResumePos]     = useState(null)
-  const resumeTimerRef = useRef(null)
+  // Tracks which content+episode sessions have already had their view recorded
+  // this mount. Key: `${id}-${episodeIndex}`. Prevents double-counting on re-renders.
+  const viewRecordedRef = useRef(new Set())
+  const milestoneRef = useRef(new Set())
 
   useEffect(() => {
     setLoading(true)
@@ -140,14 +143,89 @@ export default function Watch() {
       .catch(() => setStreamError('Video temporarily unavailable · We\'re working on it'))
   }, [content, id, activeEp, isLoggedIn, isSubscribed, user?.emailVerified])
 
-  // Record a view (and episode view) each time the active stream changes
+  // Recommendation events: play, 3-second view, 50% view, completion, skip.
   useEffect(() => {
-    if (!hlsUrl) return
+    if (!hlsUrl || !isLoggedIn) return
+
+    const STORAGE_KEY = `dhara_progress_${id}`
+    const sessionKey = `${id}-${activeEp}`
+    const milestones = milestoneRef.current
+    const eventKey = (name) => `${sessionKey}:${name}`
     const epNumber = content?.episodes?.length > 0
       ? (content.episodes[activeEp]?.number ?? null)
       : null
-    recordView(id, epNumber).catch(() => {})
-  }, [hlsUrl, id])  // intentionally omit activeEp — hlsUrl change is the signal
+
+    const send = (eventType, extra = {}) => {
+      const key = eventKey(eventType)
+      if (milestones.has(key)) return
+      milestones.add(key)
+      recordInteractionEvent({
+        itemId: id,
+        eventType,
+        source: 'watch',
+        episodeNumber: epNumber,
+        ...extra,
+      }).catch(() => {})
+    }
+
+    send('play')
+
+    const readProgress = () => {
+      const positionSecs = parseFloat(localStorage.getItem(STORAGE_KEY) || '0')
+      const durationSecs = parseFloat(localStorage.getItem(`${STORAGE_KEY}_dur`) || '0')
+      const percent = durationSecs > 0 ? Math.min(1, positionSecs / durationSecs) : 0
+      return { positionSecs, durationSecs, percent }
+    }
+
+    const poll = setInterval(() => {
+      const progress = readProgress()
+      if (progress.positionSecs >= 3) send('view_3s', progress)
+      if (progress.durationSecs > 0 && progress.percent >= 0.5) send('view_50', progress)
+      if (progress.durationSecs > 0 && (progress.percent >= 0.95 || progress.positionSecs >= progress.durationSecs - 15)) {
+        send('completion', progress)
+      }
+    }, 3_000)
+
+    return () => {
+      clearInterval(poll)
+      const progress = readProgress()
+      const completed = milestones.has(eventKey('completion'))
+      const earlyExit = progress.positionSecs >= 3 && (
+        progress.durationSecs > 0 ? progress.percent < 0.5 : progress.positionSecs < 30
+      )
+      if (!completed && earlyExit) send('skip', progress)
+    }
+  }, [hlsUrl, isLoggedIn, id, activeEp, content])
+
+  // Record a view only after the user has genuinely watched 30 seconds.
+  // Polls localStorage position (written by the player) every 5 s so we don't
+  // need to touch VideoPlayer internals. The Set prevents double-counting
+  // if the effect re-runs while the same session is active.
+  useEffect(() => {
+    if (!hlsUrl || !isLoggedIn) return
+
+    const STORAGE_KEY = `dhara_progress_${id}`
+    const sessionKey  = `${id}-${activeEp}`
+    const VIEW_THRESHOLD_SECS = 30
+
+    if (viewRecordedRef.current.has(sessionKey)) return
+
+    const poll = setInterval(() => {
+      const pos = parseFloat(localStorage.getItem(STORAGE_KEY) || '0')
+      if (pos < VIEW_THRESHOLD_SECS) return
+
+      clearInterval(poll)
+      if (viewRecordedRef.current.has(sessionKey)) return
+      viewRecordedRef.current.add(sessionKey)
+
+      const epNumber = content?.episodes?.length > 0
+        ? (content.episodes[activeEp]?.number ?? null)
+        : null
+      recordView(id, epNumber, Math.floor(pos)).catch(() => {})
+    }, 5_000)
+
+    return () => clearInterval(poll)
+  }, [hlsUrl, isLoggedIn, id, activeEp, content])
 
   // Persist watch progress to backend every 30 s while playing
   useEffect(() => {
@@ -172,15 +250,7 @@ export default function Watch() {
     return () => { clearInterval(timer); tick() }  // flush final position on navigate-away
   }, [hlsUrl, isLoggedIn, id, activeEp, content])
 
-  // Auto-dismiss resume prompt after 8 s
-  useEffect(() => {
-    if (!resumePos) return
-    resumeTimerRef.current = setTimeout(() => setResumePos(null), 8000)
-    return () => clearTimeout(resumeTimerRef.current)
-  }, [resumePos])
-
   const dismissResume = useCallback((startOver) => {
-    clearTimeout(resumeTimerRef.current)
     if (startOver) {
       const key = `dhara_progress_${id}`
       localStorage.removeItem(key)
@@ -259,7 +329,7 @@ export default function Watch() {
                 <p className={styles.gatePanelDesc}>
                   Join Dhara and enjoy unlimited Bengali cinema, series & documentaries.
                 </p>
-                <button className={styles.gatePanelBtn} onClick={() => openAuth('signin')}>
+                <button className={styles.gatePanelBtn} onClick={() => openAuth('signin', `/watch/${id}`)}>
                   <Play size={14} fill="currentColor" /> Sign In to Continue
                 </button>
                 <p className={styles.gatePanelFine}>Free trial available · No credit card required</p>

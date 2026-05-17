@@ -143,14 +143,72 @@ router.post('/watch-progress', async (req, res, next) => {
 })
 
 /**
+ * DELETE /api/user/watch-progress
+ * Clears all watch progress entries for the current user.
+ */
+router.delete('/watch-progress', async (req, res, next) => {
+  try {
+    await User.findByIdAndUpdate(req.user._id, { $set: { watchProgress: [] } })
+    res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * DELETE /api/user/watch-progress/:contentId
+ * Removes the watch progress entry for a specific content item (all episodes).
+ */
+router.delete('/watch-progress/:contentId', async (req, res, next) => {
+  try {
+    await User.findByIdAndUpdate(req.user._id, {
+      $pull: { watchProgress: { contentId: req.params.contentId } },
+    })
+    res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/user/profile
+ * Update mutable user profile fields: displayName, photoURL.
+ */
+router.patch('/profile', async (req, res, next) => {
+  try {
+    const ALLOWED = ['displayName', 'photoURL']
+    const updates = {}
+    for (const key of ALLOWED) {
+      if (key in req.body) updates[key] = String(req.body[key] || '').trim()
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided' })
+    }
+    const user = await User.findByIdAndUpdate(req.user._id, { $set: updates }, { new: true })
+    if (!user) return res.status(404).json({ error: 'User not found' })
+    res.json({ displayName: user.displayName, photoURL: user.photoURL })
+  } catch (err) {
+    next(err)
+  }
+})
+
+const CONTINUE_WATCHING_MAX_AGE_DAYS = 90
+
+/**
  * GET /api/user/continue-watching
  * Returns up to 8 in-progress content items, sorted by most recent activity.
+ * Entries older than 90 days are automatically excluded.
  */
 router.get('/continue-watching', async (req, res, next) => {
   try {
+    const cutoff   = new Date(Date.now() - CONTINUE_WATCHING_MAX_AGE_DAYS * 86_400_000)
     const u        = await User.findById(req.user._id).select('watchProgress').lean()
     const progress = (u?.watchProgress || [])
-      .filter((p) => p.positionSecs > 30 && (p.durationSecs === 0 || p.positionSecs < p.durationSecs - 30))
+      .filter((p) =>
+        p.positionSecs > 30 &&
+        (p.durationSecs === 0 || p.positionSecs < p.durationSecs - 30) &&
+        (!p.updatedAt || new Date(p.updatedAt) >= cutoff)
+      )
       .slice(0, 8)
 
     if (progress.length === 0) return res.json([])

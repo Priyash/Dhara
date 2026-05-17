@@ -13,8 +13,47 @@
  */
 
 import { User } from '../models/User.js'
+import { emailSubscriptionRenewalReminder } from './email.js'
 
-const INTERVAL_MS = 6 * 60 * 60 * 1000  // run every 6 hours
+const INTERVAL_MS        = 6 * 60 * 60 * 1000   // run every 6 hours
+const REMINDER_WINDOW_MS = 3  * 86_400_000       // send reminder 3 days before expiry
+const REMINDER_COOLDOWN  = 2  * 86_400_000       // don't re-send within 2 days
+
+async function runRenewalReminders() {
+  try {
+    const now         = new Date()
+    const windowStart = now
+    const windowEnd   = new Date(now.getTime() + REMINDER_WINDOW_MS)
+    const cooloffCut  = new Date(now.getTime() - REMINDER_COOLDOWN)
+
+    // Find active subscribers expiring in the next 3 days who haven't been reminded recently
+    const users = await User.find({
+      subscriptionStatus:     'active',
+      subscriptionExpiresAt:  { $gte: windowStart, $lte: windowEnd },
+      $or: [
+        { renewalReminderSentAt: null },
+        { renewalReminderSentAt: { $lt: cooloffCut } },
+      ],
+    }).select('displayName email subscriptionExpiresAt subscriptionPlan renewalReminderSentAt').lean()
+
+    for (const user of users) {
+      emailSubscriptionRenewalReminder(
+        user.displayName || user.email,
+        user.email,
+        user.subscriptionExpiresAt,
+        user.subscriptionPlan || 'subscription'
+      ).catch((err) => console.error('[email] renewal-reminder failed:', err.message))
+
+      await User.findByIdAndUpdate(user._id, { $set: { renewalReminderSentAt: now } })
+    }
+
+    if (users.length > 0) {
+      console.log(`[renewal-reminder] sent to ${users.length} user(s)`)
+    }
+  } catch (err) {
+    console.error('[renewal-reminder] failed:', err.message)
+  }
+}
 
 async function runExpiryCheck() {
   const now = new Date()
@@ -41,6 +80,9 @@ async function runExpiryCheck() {
     if (total > 0) {
       console.log(`[expiry] ${toGrace.modifiedCount} → grace, ${trialExpired.modifiedCount} trial expired, ${toLapsed.modifiedCount} → lapsed`)
     }
+
+    // Send renewal reminders in the same pass
+    await runRenewalReminders()
   } catch (err) {
     console.error('[expiry] check failed:', err.message)
   }

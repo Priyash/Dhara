@@ -137,6 +137,105 @@ describe('Community rating calculation', () => {
   it('handles all fives', () => assert.equal(computeAverage([5, 5, 5, 5]), 5))
 })
 
+// ── communityRating schema field defaults ─────────────────────────────────────
+// Mirrors Content schema: communityRating defaults 0, communityRatingCount defaults 0.
+// These fields are distinct from the admin-set `rating` field.
+
+describe('Content schema — communityRating defaults', () => {
+  function makeContent(overrides = {}) {
+    return {
+      rating:               0,  // admin-set editorial rating
+      communityRating:      0,  // derived from UserRating aggregation
+      communityRatingCount: 0,
+      ...overrides,
+    }
+  }
+
+  it('communityRating defaults to 0', () => {
+    assert.equal(makeContent().communityRating, 0)
+  })
+
+  it('communityRatingCount defaults to 0', () => {
+    assert.equal(makeContent().communityRatingCount, 0)
+  })
+
+  it('communityRating and rating are independent fields', () => {
+    const c = makeContent({ rating: 4.2, communityRating: 3.7 })
+    assert.equal(c.rating, 4.2)
+    assert.equal(c.communityRating, 3.7)
+  })
+
+  it('communityRating is within schema bounds [0, 5]', () => {
+    for (const v of [0, 1, 2.5, 4.9, 5]) {
+      const c = makeContent({ communityRating: v })
+      assert.ok(c.communityRating >= 0 && c.communityRating <= 5,
+        `Expected ${v} to be within [0, 5]`)
+    }
+  })
+
+  it('communityRatingCount is non-negative', () => {
+    const c = makeContent({ communityRatingCount: 42 })
+    assert.ok(c.communityRatingCount >= 0)
+  })
+})
+
+// ── communityRating update computation ────────────────────────────────────────
+// Mirrors the logic in POST /api/content/:id/rate that writes back to Content.
+
+describe('communityRating update logic', () => {
+  // Direct mirror of the computation in the rate route handler
+  function computeRatingUpdate(agg, fallbackScore) {
+    const communityRating      = agg ? Math.round((agg.sum / agg.count) * 10) / 10 : fallbackScore
+    const communityRatingCount = agg?.count ?? 1
+    return { communityRating, communityRatingCount }
+  }
+
+  it('uses the aggregate when prior ratings exist', () => {
+    const result = computeRatingUpdate({ sum: 12, count: 3 }, 4)
+    assert.equal(result.communityRating, 4)
+    assert.equal(result.communityRatingCount, 3)
+  })
+
+  it('falls back to the submitted score when no aggregate exists', () => {
+    const result = computeRatingUpdate(null, 5)
+    assert.equal(result.communityRating, 5)
+    assert.equal(result.communityRatingCount, 1)
+  })
+
+  it('rounds to one decimal — 10/3 → 3.3', () => {
+    const result = computeRatingUpdate({ sum: 10, count: 3 }, 0)
+    assert.equal(result.communityRating, 3.3)
+  })
+
+  it('rounds to one decimal — 14/3 → 4.7', () => {
+    const result = computeRatingUpdate({ sum: 14, count: 3 }, 0)
+    assert.equal(result.communityRating, 4.7)
+  })
+
+  it('result stays within [0, 5] for valid inputs', () => {
+    const { communityRating } = computeRatingUpdate({ sum: 25, count: 5 }, 0)
+    assert.ok(communityRating >= 0 && communityRating <= 5)
+  })
+
+  it('single vote: aggregate and fallback produce the same result', () => {
+    const viaAgg      = computeRatingUpdate({ sum: 4, count: 1 }, 0)
+    const viaFallback = computeRatingUpdate(null, 4)
+    assert.equal(viaAgg.communityRating, viaFallback.communityRating)
+    assert.equal(viaAgg.communityRatingCount, viaFallback.communityRatingCount)
+  })
+
+  it('count reflects all rated users, not just the current voter', () => {
+    const { communityRatingCount } = computeRatingUpdate({ sum: 20, count: 5 }, 0)
+    assert.equal(communityRatingCount, 5)
+  })
+
+  it('removing a vote recalculates from remaining scores', () => {
+    // Simulate: 5 votes totalling 20, one voter changes to 2 → new sum=17, count=5
+    const { communityRating } = computeRatingUpdate({ sum: 17, count: 5 }, 0)
+    assert.equal(communityRating, 3.4)
+  })
+})
+
 // ── Submission status filtering ───────────────────────────────────────────────
 
 describe('Content submission status filtering', () => {

@@ -16,6 +16,8 @@ const contentSchema = new mongoose.Schema(
     duration:     { type: String, default: '' },  // Film/Documentary runtime e.g. "1h 45m"; Series uses episode durations
     genre:        [String],
     rating:       { type: Number, min: 0, max: 5, default: 0 },
+    communityRating:      { type: Number, min: 0, max: 5, default: 0 },
+    communityRatingCount: { type: Number, min: 0, default: 0 },
     isPremium:    { type: Boolean, default: false },
     isFeatured:   { type: Boolean, default: false },
     badge:        { type: String, default: null },   // e.g. 'NEW'
@@ -42,6 +44,8 @@ const contentSchema = new mongoose.Schema(
     dislikeCount:      { type: Number, default: 0, min: 0 },
 
     isPublished:  { type: Boolean, default: false },
+    isDeleted:    { type: Boolean, default: false },     // soft-delete — excluded from all public queries
+    featuredOrder: { type: Number, default: 0 },          // admin-defined sort for featured row
 
     // Creator Studio
     creatorId:        { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
@@ -60,7 +64,8 @@ contentSchema.index({ isPublished: 1, submissionStatus: 1, type: 1, isPremium: 1
 // Genre facet aggregation
 contentSchema.index({ isPublished: 1, submissionStatus: 1, genre: 1 })
 contentSchema.index({ creatorId: 1, submissionStatus: 1 })
-contentSchema.index({ isPublished: 1, isFeatured: 1 })
+contentSchema.index({ isPublished: 1, isFeatured: 1, featuredOrder: 1 })
+contentSchema.index({ isDeleted: 1, isPublished: 1, submissionStatus: 1 })
 contentSchema.index({ isPublished: 1, badge: 1 })
 
 export const Content = mongoose.model('Content', contentSchema)

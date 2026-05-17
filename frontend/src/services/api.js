@@ -2,6 +2,17 @@ import { auth } from '../lib/firebase.js'
 import { signOut as firebaseSignOut } from 'firebase/auth'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+const SESSION_KEY = 'dhara:session-id'
+
+function getRecommendationSessionId() {
+  if (typeof localStorage === 'undefined') return ''
+  let id = localStorage.getItem(SESSION_KEY)
+  if (!id) {
+    id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    localStorage.setItem(SESSION_KEY, id)
+  }
+  return id
+}
 
 async function authHeaders() {
   const token = await auth.currentUser?.getIdToken()
@@ -129,7 +140,11 @@ export async function fetchStreamUrl(contentId, episodeNumber = null) {
 }
 
 export async function likeContent(contentId) {
-  return request(`/api/content/${contentId}/like`, { method: 'POST' })
+  const result = await request(`/api/content/${contentId}/like`, { method: 'POST' })
+  if (result?.liked) {
+    recordInteractionEvent({ itemId: contentId, eventType: 'like', source: 'content_detail' }).catch(() => {})
+  }
+  return result
 }
 
 export async function dislikeContent(contentId) {
@@ -141,6 +156,31 @@ export async function rateContent(contentId, score) {
     method: 'POST',
     body: JSON.stringify({ score }),
   })
+}
+
+// ── Recommendations & Interaction Events ─────────────────────────────────────
+
+export async function recordInteractionEvent(payload) {
+  return request('/api/recommendations/events', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: getRecommendationSessionId(),
+      itemType: 'content',
+      ...payload,
+    }),
+  })
+}
+
+export async function fetchRecommendations(params = {}) {
+  const qs = new URLSearchParams({
+    sessionId: getRecommendationSessionId(),
+    ...Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== '')),
+  }).toString()
+  const data = await request(`/api/recommendations${qs ? `?${qs}` : ''}`)
+  return {
+    ...data,
+    items: Array.isArray(data?.items) ? data.items.map(normalizeItem) : [],
+  }
 }
 
 // ── Search ────────────────────────────────────────────────────────────────────
@@ -380,11 +420,123 @@ export async function getCreatorRevenue() {
   return request('/api/creator/revenue')
 }
 
-export async function recordView(id, episodeNumber = null) {
+export async function recordView(id, episodeNumber = null, positionSecs = 30) {
   return request(`/api/content/${id}/view`, {
     method: 'POST',
-    body: JSON.stringify(episodeNumber != null ? { episodeNumber } : {}),
+    body: JSON.stringify({
+      positionSecs,
+      ...(episodeNumber != null ? { episodeNumber } : {}),
+    }),
   })
+}
+
+// ── Reels ─────────────────────────────────────────────────────────────────────
+
+export async function fetchReels(params = {}) {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  return request(`/api/reels${qs ? `?${qs}` : ''}`)
+}
+
+export async function fetchReelById(id) {
+  return request(`/api/reels/${id}`)
+}
+
+export async function fetchReelStreamUrl(id) {
+  return request(`/api/reels/${id}/stream`)
+}
+
+export async function recordReelView(id, positionSecs = 5) {
+  return request(`/api/reels/${id}/view`, {
+    method: 'POST',
+    body:   JSON.stringify({ positionSecs }),
+  })
+}
+
+export async function likeReel(id) {
+  const result = await request(`/api/reels/${id}/like`, { method: 'POST' })
+  if (result?.liked) {
+    recordInteractionEvent({ itemType: 'reel', itemId: id, eventType: 'like', source: 'reels' }).catch(() => {})
+  }
+  return result
+}
+
+export async function fetchReelComments(id, params = {}) {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  return request(`/api/reels/${id}/comments${qs ? `?${qs}` : ''}`)
+}
+
+export async function postReelComment(id, text) {
+  return request(`/api/reels/${id}/comments`, {
+    method: 'POST',
+    body:   JSON.stringify({ text }),
+  })
+}
+
+export async function deleteReelComment(reelId, commentId) {
+  return request(`/api/reels/${reelId}/comments/${commentId}`, { method: 'DELETE' })
+}
+
+export async function createReelUploadJob(reelId) {
+  return request(`/api/reels/${reelId}/upload-job`, { method: 'POST' })
+}
+
+// XHR-based so callers can track upload progress via onProgress(0–100).
+export function uploadReelFile(reelId, file, { onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    auth.currentUser?.getIdToken()
+      .then((token) => {
+        const xhr = new XMLHttpRequest()
+        if (onProgress) {
+          xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+          })
+        }
+        xhr.addEventListener('load', () => {
+          try {
+            const data = JSON.parse(xhr.responseText)
+            if (xhr.status >= 200 && xhr.status < 300) resolve(data)
+            else reject(new Error(data?.error || `HTTP ${xhr.status}`))
+          } catch { reject(new Error(`HTTP ${xhr.status}`)) }
+        })
+        xhr.addEventListener('error', () => reject(new Error('Network error during upload')))
+        xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')))
+        xhr.open('PUT', `${BASE_URL}/api/reels/${reelId}/file`)
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+        xhr.setRequestHeader('x-file-name', encodeURIComponent(file.name || 'reel.mp4'))
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+        xhr.send(file)
+      })
+      .catch(reject)
+  })
+}
+
+// ── Creator reel management ───────────────────────────────────────────────────
+
+export async function fetchReelAnalytics() {
+  return request('/api/creator/reels/analytics')
+}
+
+export async function listCreatorReels(params = {}) {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  return request(`/api/creator/reels${qs ? `?${qs}` : ''}`)
+}
+
+export async function createCreatorReel(payload) {
+  return request('/api/creator/reels', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function deleteCreatorReel(id) {
+  return request(`/api/creator/reels/${id}`, { method: 'DELETE' })
+}
+
+export async function resubmitCreatorReel(id) {
+  return request(`/api/creator/reels/${id}/resubmit`, { method: 'POST' })
 }
 
 // ── Admin Creator Hub ─────────────────────────────────────────────────────────
@@ -453,4 +605,28 @@ export async function deleteAdminShelf(id) {
 
 export async function reorderAdminShelves(order) {
   return request('/api/admin/shelves/reorder', { method: 'PATCH', body: JSON.stringify({ order }) })
+}
+
+// ── Admin Reels ───────────────────────────────────────────────────────────────
+
+export async function listAdminReels(params = {}) {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  return request(`/api/admin/reels${qs ? `?${qs}` : ''}`)
+}
+
+export async function approveAdminReel(id) {
+  return request(`/api/admin/reels/${id}/approve`, { method: 'PATCH' })
+}
+
+export async function rejectAdminReel(id, reason) {
+  return request(`/api/admin/reels/${id}/reject`, {
+    method: 'PATCH',
+    body:   JSON.stringify({ reason }),
+  })
+}
+
+export async function deleteAdminReel(id) {
+  return request(`/api/admin/reels/${id}`, { method: 'DELETE' })
 }

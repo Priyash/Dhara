@@ -1,7 +1,8 @@
-import express, { Router } from 'express'
+import { Router } from 'express'
 import { Content } from '../models/Content.js'
 import { CuratedShelf } from '../models/CuratedShelf.js'
 import { StreamCollection } from '../models/StreamCollection.js'
+import { AdminAction } from '../models/AdminAction.js'
 import { cache } from '../config/cache.js'
 import {
   emailCreatorApproved, emailCreatorRejected,
@@ -16,42 +17,40 @@ import { Transaction } from '../models/Transaction.js'
 import { User } from '../models/User.js'
 import { CreatorEarning } from '../models/CreatorEarning.js'
 import { CreatorPayout } from '../models/CreatorPayout.js'
+import { ViewEvent } from '../models/ViewEvent.js'
+import { SearchLog } from '../models/SearchLog.js'
+import { Reel, REEL_MAX_DURATION_SECS } from '../models/Reel.js'
 import { SUPPORTED_PROVIDERS, getProviderStatus } from '../providers/index.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
+
+// Escape HTML entities to prevent XSS when admin-supplied text is rendered in emails or UI
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+}
+
+// Fire-and-forget admin audit log — never blocks the response
+function logAdminAction(req, action, targetType, targetId, targetLabel, metadata = {}) {
+  AdminAction.create({
+    adminEmail:  req.user?.email || '',
+    adminUid:    req.user?.firebaseUid || '',
+    action,
+    targetType,
+    targetId:    targetId || null,
+    targetLabel: targetLabel || '',
+    metadata,
+  }).catch((err) => console.error('[audit]', err.message))
+}
+
+import { bunnyRequest, processUploadJob } from '../services/bunnyUpload.js'
 
 const router = Router()
 
 const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID
-const accessKey = process.env.BUNNY_STREAM_API_KEY
-
-async function bunnyRequest(path, { method = 'GET', body, headers = {} } = {}) {
-  if (!libraryId || !accessKey) {
-    throw new Error('Bunny Stream is not configured. Set BUNNY_STREAM_LIBRARY_ID and BUNNY_STREAM_API_KEY.')
-  }
-
-  const res = await fetch(`https://video.bunnycdn.com${path}`, {
-    method,
-    headers: {
-      AccessKey: accessKey,
-      ...headers,
-    },
-    body,
-  })
-
-  const text = await res.text()
-  let data = null
-  try {
-    data = text ? JSON.parse(text) : null
-  } catch {
-    data = text
-  }
-
-  if (!res.ok) {
-    throw new Error(typeof data === 'string' ? data : data?.message || `Bunny API HTTP ${res.status}`)
-  }
-
-  return data
-}
 
 async function listAllBunnyCollections() {
   const result = await bunnyRequest(`/library/${libraryId}/collections?itemsPerPage=100&page=1`)
@@ -95,7 +94,10 @@ async function syncProcessingJob(job) {
       { new: true }
     )
 
-    if (isReady && updated?.contentId) {
+    if (isReady && updated?.reelId) {
+      // Reel upload — link directly to Reel.bunnyVideoId
+      await Reel.findByIdAndUpdate(updated.reelId, { $set: { bunnyVideoId: updated.bunnyVideoId } })
+    } else if (isReady && updated?.contentId) {
       if (updated.episodeNumber) {
         // Try to update an existing episode entry first
         const linked = await Content.findOneAndUpdate(
@@ -108,9 +110,9 @@ async function syncProcessingJob(job) {
           await Content.findByIdAndUpdate(updated.contentId, {
             $push: {
               episodes: {
-                number:      updated.episodeNumber,
-                title:       updated.episodeTitle    || `Episode ${updated.episodeNumber}`,
-                duration:    updated.episodeDuration || '',
+                number:       updated.episodeNumber,
+                title:        updated.episodeTitle    || `Episode ${updated.episodeNumber}`,
+                duration:     updated.episodeDuration || '',
                 bunnyVideoId: updated.bunnyVideoId,
               },
             },
@@ -125,59 +127,6 @@ async function syncProcessingJob(job) {
     return updated || job
   } catch {
     return job
-  }
-}
-
-async function processUploadJob(jobId, fileBuffer) {
-  try {
-    const job = await UploadJob.findById(jobId)
-    if (!job) return
-
-    await UploadJob.findByIdAndUpdate(jobId, {
-      $set: { status: 'uploading', progress: 20, note: 'Creating video in Bunny Stream...', error: '' },
-    })
-
-    const created = await bunnyRequest(`/library/${libraryId}/videos`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: job.title,
-        collectionId: job.bunnyCollectionId,
-      }),
-    })
-
-    const bunnyVideoId = created?.guid
-    if (!bunnyVideoId) throw new Error('Bunny did not return a video ID.')
-
-    await UploadJob.findByIdAndUpdate(jobId, {
-      $set: {
-        bunnyVideoId,
-        progress: 45,
-        note: 'Uploading source file to Bunny Stream...',
-      },
-    })
-
-    await bunnyRequest(`/library/${libraryId}/videos/${bunnyVideoId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: fileBuffer,
-    })
-
-    await UploadJob.findByIdAndUpdate(jobId, {
-      $set: {
-        status: 'processing',
-        progress: 70,
-        note: 'Upload complete. Bunny is transcoding...',
-      },
-    })
-  } catch (err) {
-    await UploadJob.findByIdAndUpdate(jobId, {
-      $set: {
-        status: 'failed',
-        progress: 0,
-        error: err?.message || 'Upload failed',
-      },
-    })
   }
 }
 
@@ -581,6 +530,7 @@ router.patch('/content/:id/publish', async (req, res, next) => {
     ).select('title isPublished').lean()
 
     bustContentCache()
+    logAdminAction(req, publish ? 'publish_content' : 'unpublish_content', 'content', updated._id, updated.title)
     res.json(updated)
   } catch (err) {
     next(err)
@@ -632,14 +582,18 @@ router.post('/upload-jobs', async (req, res, next) => {
   try {
     const {
       title, collectionId,
-      contentId      = null,
-      episodeNumber  = null,
-      episodeTitle   = '',
+      contentId       = null,
+      reelId          = null,
+      episodeNumber   = null,
+      episodeTitle    = '',
       episodeDuration = '',
     } = req.body
 
     if (!title || !collectionId) {
       return res.status(400).json({ error: 'title and collectionId are required' })
+    }
+    if (contentId && reelId) {
+      return res.status(400).json({ error: 'Provide contentId or reelId, not both' })
     }
 
     const collection = await StreamCollection.findById(collectionId).lean()
@@ -648,15 +602,16 @@ router.post('/upload-jobs', async (req, res, next) => {
     }
 
     const job = await UploadJob.create({
-      createdByEmail:  req.user.email,
-      title:           title.trim(),
-      collectionId:    collection._id,
-      collectionName:  collection.name,
+      createdByEmail:    req.user.email,
+      title:             title.trim(),
+      collectionId:      collection._id,
+      collectionName:    collection.name,
       bunnyCollectionId: collection.bunnyCollectionId,
       contentId,
-      episodeNumber:   episodeNumber   ? Number(episodeNumber)      : null,
-      episodeTitle:    episodeTitle    ? String(episodeTitle).trim() : '',
-      episodeDuration: episodeDuration ? String(episodeDuration).trim() : '',
+      reelId,
+      episodeNumber:     episodeNumber   ? Number(episodeNumber)      : null,
+      episodeTitle:      episodeTitle    ? String(episodeTitle).trim() : '',
+      episodeDuration:   episodeDuration ? String(episodeDuration).trim() : '',
       status:   'awaiting_file',
       progress: 0,
       note:     'Upload job created. Waiting for file bytes.',
@@ -668,7 +623,7 @@ router.post('/upload-jobs', async (req, res, next) => {
   }
 })
 
-router.put('/upload-jobs/:id/file', express.raw({ type: 'application/octet-stream', limit: '1024mb' }), async (req, res, next) => {
+router.put('/upload-jobs/:id/file', async (req, res, next) => {
   try {
     const job = await UploadJob.findById(req.params.id)
     if (!job) return res.status(404).json({ error: 'Upload job not found' })
@@ -676,8 +631,13 @@ router.put('/upload-jobs/:id/file', express.raw({ type: 'application/octet-strea
       return res.status(409).json({ error: `Job is already in "${job.status}" state` })
     }
 
-    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
-      return res.status(400).json({ error: 'Binary file body is required' })
+    const contentLength = Number(req.headers['content-length'] || 0)
+    const maxBytes = 1024 * 1024 * 1024
+    if (!contentLength) {
+      return res.status(411).json({ error: 'Content-Length is required for video uploads' })
+    }
+    if (contentLength > maxBytes) {
+      return res.status(413).json({ error: 'Upload exceeds the 1GB limit' })
     }
 
     const fileName = String(req.headers['x-file-name'] || '').slice(0, 240)
@@ -690,12 +650,9 @@ router.put('/upload-jobs/:id/file', express.raw({ type: 'application/octet-strea
       },
     })
 
-    const fileBuffer = Buffer.from(req.body)
-    setImmediate(() => {
-      void processUploadJob(job._id, fileBuffer)
-    })
+    await processUploadJob(job._id, req)
 
-    res.status(202).json({ success: true, jobId: job._id, message: 'File accepted and queued for async upload.' })
+    res.status(202).json({ success: true, jobId: job._id, message: 'File uploaded. Bunny is transcoding.' })
   } catch (err) {
     next(err)
   }
@@ -878,8 +835,11 @@ router.patch('/creator-applications/:userId/approve', async (req, res, next) => 
     ).select('email displayName creatorStatus isCreator creatorProfile')
 
     if (!user) return res.status(404).json({ error: 'User not found' })
-    // Fire-and-forget — email failure must never block the API response
+
     emailCreatorApproved(user.creatorProfile?.studioName || user.displayName, user.email)
+      .catch((err) => console.error('[email] creator-approved failed:', err.message))
+
+    logAdminAction(req, 'approve_creator', 'user', user._id, user.email)
     res.json({ success: true, user })
   } catch (err) {
     next(err)
@@ -892,14 +852,35 @@ router.patch('/creator-applications/:userId/approve', async (req, res, next) => 
 router.patch('/creator-applications/:userId/reject', async (req, res, next) => {
   try {
     const { reason = '' } = req.body
+    const safeReason = escapeHtml(reason.trim())
+
+    // Fetch current rejection count to enforce three-strikes cooldown
+    const existing = await User.findById(req.params.userId).select('creatorRejectionCount').lean()
+    if (!existing) return res.status(404).json({ error: 'User not found' })
+
+    const newCount = (existing.creatorRejectionCount || 0) + 1
+    // After 3 rejections, enforce a 30-day cooldown before the creator can reapply
+    const reapplyAfter = newCount >= 3 ? new Date(Date.now() + 30 * 86_400_000) : null
+
     const user = await User.findByIdAndUpdate(
       req.params.userId,
-      { $set: { creatorStatus: 'rejected', isCreator: false, creatorRejectionReason: reason.trim(), creatorRejectedAt: new Date() } },
+      {
+        $set: {
+          creatorStatus:          'rejected',
+          isCreator:              false,
+          creatorRejectionReason: safeReason,
+          creatorRejectedAt:      new Date(),
+          creatorRejectionCount:  newCount,
+          ...(reapplyAfter ? { creatorReapplyAfter: reapplyAfter } : {}),
+        },
+      },
       { new: true }
-    ).select('email displayName creatorStatus isCreator creatorProfile')
+    ).select('email displayName creatorStatus isCreator creatorProfile creatorRejectionCount creatorReapplyAfter')
 
-    if (!user) return res.status(404).json({ error: 'User not found' })
-    emailCreatorRejected(user.creatorProfile?.studioName || user.displayName, user.email, reason)
+    emailCreatorRejected(user.creatorProfile?.studioName || user.displayName, user.email, safeReason)
+      .catch((err) => console.error('[email] creator-rejected failed:', err.message))
+
+    logAdminAction(req, 'reject_creator', 'user', user._id, user.email, { reason: safeReason, rejectionCount: newCount })
     res.json({ success: true, user })
   } catch (err) {
     next(err)
@@ -948,9 +929,10 @@ router.patch('/submissions/:id/approve', async (req, res, next) => {
         creator.creatorProfile?.studioName || creator.displayName,
         creator.email,
         content.title
-      )
+      ).catch((err) => console.error('[email] submission-approved failed:', err.message))
     }
 
+    logAdminAction(req, 'approve_submission', 'content', content._id, content.title)
     res.json({ success: true, content })
   } catch (err) {
     next(err)
@@ -965,9 +947,11 @@ router.patch('/submissions/:id/reject', async (req, res, next) => {
     const { reason = '' } = req.body
     if (!reason.trim()) return res.status(400).json({ error: 'Rejection reason is required' })
 
+    const safeReason = escapeHtml(reason.trim())
+
     const content = await Content.findOneAndUpdate(
       { _id: req.params.id, creatorId: { $ne: null } },
-      { $set: { submissionStatus: 'rejected', rejectionReason: reason.trim() } },
+      { $set: { submissionStatus: 'rejected', rejectionReason: safeReason } },
       { new: true }
     ).populate('creatorId', 'email displayName creatorProfile').lean()
 
@@ -979,10 +963,11 @@ router.patch('/submissions/:id/reject', async (req, res, next) => {
         creator.creatorProfile?.studioName || creator.displayName,
         creator.email,
         content.title,
-        reason
-      )
+        safeReason
+      ).catch((err) => console.error('[email] submission-rejected failed:', err.message))
     }
 
+    logAdminAction(req, 'reject_submission', 'content', content._id, content.title, { reason: safeReason })
     res.json({ success: true, content })
   } catch (err) {
     next(err)
@@ -1227,6 +1212,12 @@ router.post('/creator-payouts', requireAuth, requireAdmin, async (req, res, next
       { _id: { $in: pendingEarnings.map((e) => e._id) } },
       { $set: { status: 'paid', payoutId: payout._id } }
     )
+
+    logAdminAction(req, 'initiate_payout', 'user', creatorId, '', {
+      amountRupees: Math.round(totalPaise / 100),
+      earningsCount: pendingEarnings.length,
+      method,
+    })
 
     res.json({
       payoutId:    payout._id,
@@ -1497,6 +1488,241 @@ router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
         states:  geoAgg.map(g => ({ state: g._id || 'Unknown', count: g.count })),
       },
     })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * DELETE /api/admin/content/:id
+ * Soft-deletes content — sets isDeleted=true and unpublishes. Recoverable by admin.
+ */
+router.delete('/content/:id', async (req, res, next) => {
+  try {
+    const item = await Content.findByIdAndUpdate(
+      req.params.id,
+      { $set: { isDeleted: true, isPublished: false } },
+      { new: true }
+    ).select('title isDeleted isPublished').lean()
+
+    if (!item) return res.status(404).json({ error: 'Content not found' })
+    bustContentCache()
+    logAdminAction(req, 'delete_content', 'content', item._id, item.title)
+    res.json({ success: true, item })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/admin/content/:id/restore
+ * Restores a soft-deleted content item (does not auto-publish).
+ */
+router.post('/content/:id/restore', async (req, res, next) => {
+  try {
+    const item = await Content.findByIdAndUpdate(
+      req.params.id,
+      { $set: { isDeleted: false } },
+      { new: true }
+    ).select('title isDeleted isPublished').lean()
+
+    if (!item) return res.status(404).json({ error: 'Content not found' })
+    bustContentCache()
+    logAdminAction(req, 'restore_content', 'content', item._id, item.title)
+    res.json({ success: true, item })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/admin/content/:id/featured-order
+ * Sets the admin-defined sort position for featured content.
+ * Body: { featuredOrder: number }
+ */
+router.patch('/content/:id/featured-order', async (req, res, next) => {
+  try {
+    const order = Number(req.body.featuredOrder)
+    if (!Number.isFinite(order)) return res.status(400).json({ error: 'featuredOrder must be a number' })
+
+    const item = await Content.findByIdAndUpdate(
+      req.params.id,
+      { $set: { featuredOrder: order } },
+      { new: true }
+    ).select('title featuredOrder').lean()
+
+    if (!item) return res.status(404).json({ error: 'Content not found' })
+    bustContentCache()
+    res.json(item)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/admin/bunny/prune-collections
+ * Deactivates StreamCollection records whose bunnyCollectionId no longer exists in Bunny.
+ * Safe to run anytime — only marks records inactive, does not delete them.
+ */
+router.post('/bunny/prune-collections', async (req, res, next) => {
+  try {
+    const liveCollections = await listAllBunnyCollections()
+    const liveIds = new Set(liveCollections.map((c) => String(c.guid || '')).filter(Boolean))
+
+    const all = await StreamCollection.find({ isActive: true }).select('_id bunnyCollectionId name').lean()
+    const stale = all.filter((c) => c.bunnyCollectionId && !liveIds.has(c.bunnyCollectionId))
+
+    if (stale.length > 0) {
+      await StreamCollection.updateMany(
+        { _id: { $in: stale.map((c) => c._id) } },
+        { $set: { isActive: false } }
+      )
+    }
+
+    logAdminAction(req, 'prune_collections', 'config', null, '', { pruned: stale.length })
+    res.json({ pruned: stale.length, stale: stale.map((c) => ({ id: c._id, name: c.name })) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/admin/search-analytics
+ * Top zero-result queries — reveals catalog gaps.
+ * Query: ?days=30&limit=20
+ */
+router.get('/search-analytics', async (req, res, next) => {
+  try {
+    const days  = Math.min(365, Math.max(1, Number(req.query.days  || 30)))
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 20)))
+    const since = new Date(Date.now() - days * 86_400_000)
+
+    const topMissed = await SearchLog.aggregate([
+      { $match: { resultCount: 0, createdAt: { $gte: since } } },
+      { $group: { _id: '$query', count: { $sum: 1 }, lang: { $first: '$lang' } } },
+      { $sort: { count: -1 } },
+      { $limit: limit },
+    ])
+
+    res.json({ days, topMissedQueries: topMissed.map((r) => ({ query: r._id, count: r.count, lang: r.lang })) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ── Admin Reels ───────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/reels
+ * Lists all reels. Query: ?status=pending|approved|rejected|all
+ */
+router.get('/reels', async (req, res, next) => {
+  try {
+    const { status = 'pending', page = 1 } = req.query
+    const limit  = 50
+    const filter = { isDeleted: { $ne: true } }
+    if (status !== 'all') filter.submissionStatus = status
+
+    const [items, total] = await Promise.all([
+      Reel.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((Number(page) - 1) * limit)
+        .limit(limit)
+        .populate('creatorId', 'email displayName creatorProfile')
+        .lean(),
+      Reel.countDocuments(filter),
+    ])
+
+    res.json({ items, total, page: Number(page), pages: Math.ceil(total / limit) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/admin/reels/:id/approve
+ */
+router.patch('/reels/:id/approve', async (req, res, next) => {
+  try {
+    const reel = await Reel.findByIdAndUpdate(
+      req.params.id,
+      { $set: { submissionStatus: 'approved', isPublished: true, rejectionReason: '' } },
+      { new: true }
+    ).lean()
+
+    if (!reel) return res.status(404).json({ error: 'Reel not found' })
+    logAdminAction(req, 'approve_reel', 'reel', reel._id, reel.title || reel._id.toString())
+    res.json({ success: true, reel })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/admin/reels/:id/reject
+ */
+router.patch('/reels/:id/reject', async (req, res, next) => {
+  try {
+    const { reason = '' } = req.body
+    if (!reason.trim()) return res.status(400).json({ error: 'Rejection reason is required' })
+
+    const safeReason = escapeHtml(reason.trim())
+    const reel = await Reel.findByIdAndUpdate(
+      req.params.id,
+      { $set: { submissionStatus: 'rejected', isPublished: false, rejectionReason: safeReason } },
+      { new: true }
+    ).lean()
+
+    if (!reel) return res.status(404).json({ error: 'Reel not found' })
+    logAdminAction(req, 'reject_reel', 'reel', reel._id, reel.title || reel._id.toString(), { reason: safeReason })
+    res.json({ success: true, reel })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * DELETE /api/admin/reels/:id
+ * Soft-deletes a reel and unpublishes it.
+ */
+router.delete('/reels/:id', async (req, res, next) => {
+  try {
+    const reel = await Reel.findByIdAndUpdate(
+      req.params.id,
+      { $set: { isDeleted: true, isPublished: false } },
+      { new: true }
+    ).lean()
+
+    if (!reel) return res.status(404).json({ error: 'Reel not found' })
+    logAdminAction(req, 'delete_reel', 'reel', reel._id, reel.title || reel._id.toString())
+    res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/admin/audit-log
+ * Returns recent admin actions. Query: ?action=&targetType=&page=
+ */
+router.get('/audit-log', async (req, res, next) => {
+  try {
+    const { action, targetType, page = 1 } = req.query
+    const limit  = 50
+    const filter = {}
+    if (action)     filter.action     = action
+    if (targetType) filter.targetType = targetType
+
+    const [actions, total] = await Promise.all([
+      AdminAction.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((Number(page) - 1) * limit)
+        .limit(limit)
+        .lean(),
+      AdminAction.countDocuments(filter),
+    ])
+
+    res.json({ actions, total, page: Number(page), pages: Math.ceil(total / limit) })
   } catch (err) {
     next(err)
   }

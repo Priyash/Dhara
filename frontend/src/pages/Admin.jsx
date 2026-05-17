@@ -6,7 +6,7 @@ import {
   UserCheck, UserX, FileCheck, FileX, ListPlus, Trash2, Eye,
   GripVertical, Layers, Plus, UploadIcon, IndianRupee,
   Calculator, Wallet, Clock, ChevronDown, TrendingUp, Users, BarChart2,
-  Activity, Server, AlertCircle, Database,
+  Activity, Server, AlertCircle, Database, Heart, MessageCircle, Play,
 } from 'lucide-react'
 import { uploadToCloudinary } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
@@ -22,6 +22,7 @@ import {
   listAdminShelves, createAdminShelf, updateAdminShelf, deleteAdminShelf, reorderAdminShelves,
   listAdminCreatorEarnings, calculateCreatorEarnings, processCreatorPayout, listAdminCreatorPayouts,
   getAdminRevenue, getAdminMonitor,
+  listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
 } from '../services/api'
 import styles from './Admin.module.css'
 import { isValidDuration } from '../utils/duration'
@@ -522,6 +523,15 @@ export default function Admin() {
   const [showLiveConfirm, setShowLiveConfirm] = useState(false)
   const [liveConfirmText, setLiveConfirmText] = useState('')
 
+  // ── Reels Review ─────────────────────────────────────────────────────────
+  const [adminReels,          setAdminReels]          = useState([])
+  const [reelsFilter,         setReelsFilter]         = useState('pending')
+  const [reelsLoading,        setReelsLoading]        = useState(false)
+  const [reelPreview,         setReelPreview]         = useState(null)   // reel being previewed
+  const [reelRejectModal,     setReelRejectModal]     = useState(null)   // reel being rejected
+  const [reelRejectReason,    setReelRejectReason]    = useState('')
+  const [reelBusy,            setReelBusy]            = useState(false)
+
   // ── Creator Hub ───────────────────────────────────────────────────────────
   const [creatorApplications, setCreatorApplications] = useState([])
   const [submissions, setSubmissions]                 = useState([])
@@ -665,6 +675,7 @@ export default function Admin() {
     if (activeTab === 'creators' && adminAllowed) {
       void loadCreatorApplications()
       void loadSubmissions()
+      void loadAdminReels(reelsFilter)
     }
     if (activeTab === 'shelves' && adminAllowed) {
       void loadShelves()
@@ -930,6 +941,15 @@ export default function Admin() {
       setMonitorLastFetched(new Date())
     } catch { /* non-critical */ }
     finally { setMonitorLoading(false) }
+  }
+
+  const loadAdminReels = async (status = reelsFilter) => {
+    setReelsLoading(true)
+    try {
+      const data = await listAdminReels({ status, limit: 50 })
+      setAdminReels(data.items || [])
+    } catch { setAdminReels([]) }
+    finally { setReelsLoading(false) }
   }
 
   const loadCreatorApplications = async (status = appStatusFilter) => {
@@ -1396,7 +1416,7 @@ export default function Admin() {
             {activeTab === 'content'  && 'Manage the content library'}
             {activeTab === 'uploads'  && 'Upload and map video files'}
             {activeTab === 'payments' && 'Configure payment infrastructure'}
-            {activeTab === 'creators' && 'Review creator applications and content submissions'}
+            {activeTab === 'creators' && 'Review creator applications, content submissions and reels'}
             {activeTab === 'revenue'  && 'Calculate monthly earnings and process creator payouts'}
           </p>
         </div>
@@ -2291,15 +2311,24 @@ export default function Admin() {
           )}
 
           {/* Sub-tab switcher */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
-            {[['applications', 'Creator Applications'], ['submissions', 'Content Submissions']].map(([id, label]) => (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+            {[
+              ['applications', 'Applications',  null],
+              ['submissions',  'Content',       null],
+              ['reels',        'Reels',          adminReels.filter(r => r.submissionStatus === 'pending').length || null],
+            ].map(([id, label, badge]) => (
               <button
                 key={id}
                 className={creatorHubTab === id ? styles.primaryBtn : styles.secondaryBtn}
-                style={{ padding: '8px 18px' }}
+                style={{ padding: '8px 18px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
                 onClick={() => setCreatorHubTab(id)}
               >
                 {label}
+                {badge ? (
+                  <span style={{ background: 'rgba(251,191,36,0.25)', color: '#fbbf24', borderRadius: 99, padding: '0 6px', fontSize: 10, fontWeight: 700 }}>
+                    {badge}
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
@@ -2794,6 +2823,248 @@ export default function Admin() {
         </div>
         )
       })()}
+
+      {/* ── REELS REVIEW TAB ────────────────────────────────────────────── */}
+      {activeTab === 'reels' && (
+        <section className={styles.jobsCard}>
+
+          {/* Status filter */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[
+                { key: 'pending',  label: 'In Review' },
+                { key: 'approved', label: 'Approved' },
+                { key: 'rejected', label: 'Rejected' },
+                { key: 'all',      label: 'All' },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  className={`${styles.filterChip} ${reelsFilter === key ? styles.filterChipActive : ''}`}
+                  onClick={() => { setReelsFilter(key); loadAdminReels(key) }}
+                >
+                  {label}
+                  {key === 'pending' && adminReels.filter(r => r.submissionStatus === 'pending').length > 0 && (
+                    <span className={styles.filterChipBadge}>
+                      {reelsFilter === 'pending' ? adminReels.length : adminReels.filter(r => r.submissionStatus === 'pending').length}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <button className={styles.ghostBtn} onClick={() => loadAdminReels(reelsFilter)}>
+              <RefreshCw size={13} /> Refresh
+            </button>
+          </div>
+
+          {reelsLoading ? (
+            <div className={styles.emptyState} style={{ padding: '48px 0' }}>
+              <Zap size={22} style={{ opacity: 0.4 }} /><p>Loading reels…</p>
+            </div>
+          ) : adminReels.length === 0 ? (
+            <div className={styles.emptyState} style={{ padding: '48px 0' }}>
+              <Zap size={28} style={{ opacity: 0.3 }} />
+              <p style={{ marginTop: 12, color: 'rgba(255,255,255,0.4)' }}>
+                No {reelsFilter !== 'all' ? reelsFilter : ''} reels
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {adminReels.map((reel) => {
+                const creator   = reel.creatorId
+                const name      = creator?.creatorProfile?.studioName || creator?.displayName || '—'
+                const isPending = reel.submissionStatus === 'pending'
+                const bunnyLib  = import.meta.env.VITE_BUNNY_STREAM_LIBRARY_ID
+                const embedUrl  = reel.bunnyVideoId && bunnyLib
+                  ? `https://iframe.mediadelivery.net/embed/${bunnyLib}/${reel.bunnyVideoId}?autoplay=false&loop=false&muted=true`
+                  : null
+
+                return (
+                  <div key={reel._id} className={styles.submissionCard}>
+                    {/* Thumbnail */}
+                    <div
+                      style={{
+                        width: 52, height: 72, borderRadius: 6, flexShrink: 0,
+                        background: reel.thumbnailUrl
+                          ? `url(${reel.thumbnailUrl}) center/cover`
+                          : 'linear-gradient(160deg,#1e1b4b,#7c3aed)',
+                        border: '1px solid rgba(255,255,255,0.07)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      {!reel.thumbnailUrl && <Zap size={14} style={{ color: 'rgba(255,255,255,0.4)' }} />}
+                    </div>
+
+                    {/* Info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 600, color: '#fff', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {reel.title || <em style={{ color: 'rgba(255,255,255,0.3)' }}>No caption</em>}
+                        </span>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99,
+                          color: isPending ? '#fbbf24' : reel.submissionStatus === 'approved' ? '#4ade80' : '#f87171',
+                          background: isPending ? 'rgba(251,191,36,0.1)' : reel.submissionStatus === 'approved' ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)',
+                        }}>
+                          {isPending ? 'In Review' : reel.submissionStatus === 'approved' ? 'Live' : 'Rejected'}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', margin: '0 0 4px' }}>
+                        by <strong style={{ color: 'rgba(255,255,255,0.7)' }}>{name}</strong>
+                        {reel.durationSecs > 0 && ` · ${reel.durationSecs}s`}
+                        {reel.aspectRatio && ` · ${reel.aspectRatio}`}
+                      </p>
+                      {reel.hashtags?.length > 0 && (
+                        <p style={{ fontSize: 11, color: 'rgba(167,139,250,0.7)', margin: 0 }}>
+                          #{reel.hashtags.slice(0, 3).join(' #')}
+                        </p>
+                      )}
+                      {reel.submissionStatus === 'rejected' && reel.rejectionReason && (
+                        <p style={{ fontSize: 11, color: '#f87171', margin: '4px 0 0', fontStyle: 'italic' }}>
+                          Reason: {reel.rejectionReason}
+                        </p>
+                      )}
+                      <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
+                        <span><Eye size={11} /> {reel.viewCount || 0}</span>
+                        <span><Heart size={11} /> {reel.likeCount || 0}</span>
+                        <span><MessageCircle size={11} /> {reel.commentCount || 0}</span>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+                      {/* Preview — only if video is ready */}
+                      {embedUrl && (
+                        <button
+                          className={styles.ghostBtn}
+                          onClick={() => setReelPreview(reel)}
+                          title="Preview video"
+                        >
+                          <Play size={13} /> Preview
+                        </button>
+                      )}
+                      {isPending && (
+                        <>
+                          <button
+                            className={styles.primaryBtn}
+                            disabled={reelBusy}
+                            onClick={async () => {
+                              setReelBusy(true)
+                              try {
+                                await approveAdminReel(reel._id)
+                                loadAdminReels(reelsFilter)
+                              } catch (e) { alert(e?.message || 'Failed') }
+                              setReelBusy(false)
+                            }}
+                          >
+                            <CheckCircle2 size={13} /> Approve
+                          </button>
+                          <button
+                            className={styles.dangerBtn}
+                            disabled={reelBusy}
+                            onClick={() => { setReelRejectModal(reel); setReelRejectReason('') }}
+                          >
+                            <XCircle size={13} /> Reject
+                          </button>
+                        </>
+                      )}
+                      {!isPending && (
+                        <button
+                          className={styles.dangerBtn}
+                          disabled={reelBusy}
+                          onClick={async () => {
+                            if (!window.confirm('Delete this reel?')) return
+                            setReelBusy(true)
+                            try { await deleteAdminReel(reel._id); loadAdminReels(reelsFilter) }
+                            catch (e) { alert(e?.message || 'Failed') }
+                            setReelBusy(false)
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ── Reel video preview modal ── */}
+      {reelPreview && (() => {
+        const bunnyLib = import.meta.env.VITE_BUNNY_STREAM_LIBRARY_ID
+        const embedUrl = `https://iframe.mediadelivery.net/embed/${bunnyLib}/${reelPreview.bunnyVideoId}?autoplay=true&muted=false`
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+            onClick={() => setReelPreview(null)}
+          >
+            <div style={{ position: 'relative', width: '100%', maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+              <button
+                onClick={() => setReelPreview(null)}
+                style={{ position: 'absolute', top: -40, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                <X size={16} /> Close preview
+              </button>
+              <div style={{ background: '#000', borderRadius: 12, overflow: 'hidden', aspectRatio: reelPreview.aspectRatio === '16:9' ? '16/9' : reelPreview.aspectRatio === '1:1' ? '1/1' : '9/16' }}>
+                <iframe
+                  src={embedUrl}
+                  style={{ width: '100%', height: '100%', border: 'none' }}
+                  allow="autoplay; fullscreen"
+                  allowFullScreen
+                  title={reelPreview.title || 'Reel preview'}
+                />
+              </div>
+              <div style={{ marginTop: 12, color: '#fff' }}>
+                <p style={{ fontWeight: 600, margin: 0 }}>{reelPreview.title || 'No caption'}</p>
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', margin: '4px 0 0' }}>
+                  by {reelPreview.creatorId?.creatorProfile?.studioName || reelPreview.creatorId?.displayName || '—'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Reel reject modal ── */}
+      {reelRejectModal && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => setReelRejectModal(null)}
+        >
+          <div style={{ background: '#111118', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ color: '#fff', margin: '0 0 8px', fontSize: 15 }}>Reject reel</h3>
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, margin: '0 0 16px' }}>
+              "{reelRejectModal.title || 'No caption'}" — this reason will be shown to the creator.
+            </p>
+            <textarea
+              style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '10px 12px', color: '#fff', fontSize: 13, resize: 'vertical', minHeight: 80, fontFamily: 'inherit', outline: 'none' }}
+              placeholder="Reason for rejection…"
+              value={reelRejectReason}
+              onChange={e => setReelRejectReason(e.target.value)}
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+              <button className={styles.ghostBtn} onClick={() => setReelRejectModal(null)}>Cancel</button>
+              <button
+                className={styles.dangerBtn}
+                disabled={!reelRejectReason.trim() || reelBusy}
+                onClick={async () => {
+                  setReelBusy(true)
+                  try {
+                    await rejectAdminReel(reelRejectModal._id, reelRejectReason.trim())
+                    setReelRejectModal(null)
+                    loadAdminReels(reelsFilter)
+                  } catch (e) { alert(e?.message || 'Failed') }
+                  setReelBusy(false)
+                }}
+              >
+                <XCircle size={13} /> Confirm Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── REVENUE TAB ─────────────────────────────────────────────────── */}
       {activeTab === 'revenue' && (() => {

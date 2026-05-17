@@ -42,6 +42,10 @@ const userSchema = new mongoose.Schema(
     },
     creatorRejectionReason: { type: String, default: '' },
     creatorRejectedAt:      { type: Date,   default: null },
+    creatorRejectionCount:  { type: Number, default: 0 },
+    creatorReapplyAfter:    { type: Date,   default: null },  // set after 3+ rejections
+    renewalReminderSentAt:  { type: Date,   default: null },  // track last renewal email
+    creatorTier:            { type: String, default: 'Newcomer' },  // last known tier; used to detect advancement
   },
   { timestamps: true }
 )

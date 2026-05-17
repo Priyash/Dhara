@@ -6,6 +6,8 @@ import { CreatorPayout } from '../models/CreatorPayout.js'
 import { ViewEvent } from '../models/ViewEvent.js'
 import { ContentRankSnapshot } from '../models/ContentRankSnapshot.js'
 import { requireAuth } from '../middleware/auth.js'
+import { emailTierAdvancement } from '../config/email.js'
+import { Reel, REEL_MAX_DURATION_SECS } from '../models/Reel.js'
 
 // Returns 'YYYY-MM-DD' in IST for a given UTC Date (default: now)
 function istDate(d = new Date()) {
@@ -26,6 +28,8 @@ function requireCreator(req, res, next) {
  * POST /api/creator/apply
  * Any authenticated user can submit a creator application.
  */
+const MAX_REVISIONS = 5
+
 router.post('/apply', requireAuth, async (req, res, next) => {
   try {
     if (req.user.creatorStatus === 'approved') {
@@ -33,6 +37,15 @@ router.post('/apply', requireAuth, async (req, res, next) => {
     }
     if (req.user.creatorStatus === 'applied') {
       return res.status(400).json({ error: 'Your application is already under review' })
+    }
+
+    // Enforce reapply cooldown after three-strikes
+    if (req.user.creatorReapplyAfter && new Date() < req.user.creatorReapplyAfter) {
+      const daysLeft = Math.ceil((req.user.creatorReapplyAfter - new Date()) / 86_400_000)
+      return res.status(429).json({
+        error: `You can reapply in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}. Please review our creator guidelines before reapplying.`,
+        reapplyAfter: req.user.creatorReapplyAfter,
+      })
     }
 
     const { studioName, bio, portfolioUrl, sampleWorkUrl, contentTypes } = req.body
@@ -86,7 +99,9 @@ router.get('/status', requireAuth, async (req, res) => {
     isCreator:              req.user.isCreator,
     creatorProfile:         req.user.creatorProfile,
     creatorRejectionReason: req.user.creatorRejectionReason,
-    creatorRejectedAt:      req.user.creatorRejectedAt ?? null,
+    creatorRejectedAt:      req.user.creatorRejectedAt  ?? null,
+    creatorReapplyAfter:    req.user.creatorReapplyAfter ?? null,
+    creatorRejectionCount:  req.user.creatorRejectionCount ?? 0,
   })
 })
 
@@ -294,16 +309,25 @@ router.get('/analytics', requireAuth, requireCreator, async (req, res, next) => 
  */
 router.get('/content', requireAuth, requireCreator, async (req, res, next) => {
   try {
-    const { status } = req.query
+    const { status, page, limit: rawLimit } = req.query
     const filter = { creatorId: req.user._id }
     if (status) filter.submissionStatus = status
 
-    const items = await Content.find(filter)
-      .sort({ updatedAt: -1 })
-      .select('title type genre rating isPremium isFeatured submissionStatus rejectionReason revisionCount viewCount likeCount posterUrl backdropUrl bunnyVideoId releaseYear createdAt updatedAt')
-      .lean()
+    const pageNum  = Math.max(1, parseInt(page, 10) || 1)
+    const limitNum = Math.min(50, Math.max(1, parseInt(rawLimit, 10) || 20))
+    const skip     = (pageNum - 1) * limitNum
 
-    res.json(items)
+    const [items, total] = await Promise.all([
+      Content.find(filter)
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .select('title type genre rating isPremium isFeatured submissionStatus rejectionReason revisionCount viewCount likeCount posterUrl backdropUrl bunnyVideoId releaseYear createdAt updatedAt')
+        .lean(),
+      Content.countDocuments(filter),
+    ])
+
+    res.json({ items, total, page: pageNum, pages: Math.ceil(total / limitNum), limit: limitNum })
   } catch (err) {
     next(err)
   }
@@ -394,16 +418,46 @@ router.patch('/content/:id', requireAuth, requireCreator, async (req, res, next)
       return res.status(400).json({ error: 'Approved content cannot be edited' })
     }
 
+    // Creators may only update human-readable metadata.
+    // Excluded intentionally:
+    //   bunnyVideoId  — assigned exclusively by upload-job / admin
+    //   badge         — editorial label ('NEW', 'LIVE') set only by admins
+    //   rating        — computed from community votes, not creator-declared
+    //   isFeatured    — admin editorial control
+    //   isPublished   — admin publish gate
+    //   submissionStatus / revisionCount — state machine managed by server
     const ALLOWED = [
       'title', 'subtitle', 'desc', 'type', 'genre', 'cast', 'director',
-      'releaseYear', 'rating', 'posterUrl', 'backdropUrl', 'palette',
+      'releaseYear', 'posterUrl', 'backdropUrl', 'palette',
       'contentLanguage', 'certification', 'contentWarnings', 'moodTags', 'duration',
-      'badge', 'isPremium', 'bunnyVideoId', 'episodes',
+      'isPremium', 'episodes',
     ]
 
     const updates = {}
     for (const key of ALLOWED) {
       if (key in req.body) updates[key] = req.body[key]
+    }
+
+    if (Array.isArray(updates.episodes)) {
+      // Build a lookup of existing episodes so we can preserve server-assigned fields
+      // (bunnyVideoId, viewCount) that the creator must never be able to overwrite.
+      const existingByNumber = new Map(
+        (content.episodes || []).map((ep) => [ep.number, ep])
+      )
+      updates.episodes = updates.episodes
+        .filter((ep) => ep.number && ep.title)
+        .map((ep) => {
+          const num  = Number(ep.number)
+          const prev = existingByNumber.get(num)
+          return {
+            number:       num,
+            title:        String(ep.title).trim(),
+            duration:     String(ep.duration || '').trim(),
+            // Preserve admin-assigned video ID and accumulated analytics
+            bunnyVideoId: prev?.bunnyVideoId || '',
+            viewCount:    prev?.viewCount    || 0,
+          }
+        })
     }
 
     const updated = await Content.findByIdAndUpdate(
@@ -428,6 +482,11 @@ router.post('/content/:id/resubmit', requireAuth, requireCreator, async (req, re
     if (!content) return res.status(404).json({ error: 'Content not found' })
     if (content.submissionStatus !== 'rejected') {
       return res.status(400).json({ error: 'Only rejected content can be resubmitted' })
+    }
+    if ((content.revisionCount || 0) >= MAX_REVISIONS) {
+      return res.status(429).json({
+        error: `This submission has reached the maximum of ${MAX_REVISIONS} revisions. Please contact support if you believe this is in error.`,
+      })
     }
 
     const updated = await Content.findByIdAndUpdate(
@@ -468,6 +527,19 @@ router.get('/revenue', requireAuth, requireCreator, async (req, res, next) => {
     const progress = tier.nextMin
       ? Math.min(Math.round(((totalViews - tier.minViews) / (tier.nextMin - tier.minViews)) * 100), 100)
       : 100
+
+    // Notify creator when they advance to a new tier
+    const prevTier = req.user.creatorTier || 'Newcomer'
+    if (tier.name !== prevTier) {
+      User.findByIdAndUpdate(creatorId, { $set: { creatorTier: tier.name } }).catch(() => {})
+      emailTierAdvancement(
+        req.user.creatorProfile?.studioName || req.user.displayName,
+        req.user.email,
+        prevTier,
+        tier.name,
+        tier.share
+      ).catch((err) => console.error('[email] tier-advancement failed:', err.message))
+    }
 
     // ── All earnings for this creator ─────────────────────────────────────────
     const earnings = await CreatorEarning.find({ creatorId })
@@ -570,6 +642,292 @@ router.delete('/content/:id', requireAuth, requireCreator, async (req, res, next
       return res.status(400).json({ error: 'Approved content cannot be deleted' })
     }
     await content.deleteOne()
+    res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ── Creator Reels ─────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/creator/reels
+ * Any authenticated user — list their own reels.
+ */
+router.get('/reels', requireAuth, async (req, res, next) => {
+  try {
+    const { status, page, limit: rawLimit } = req.query
+    const filter  = { creatorId: req.user._id, isDeleted: { $ne: true } }
+    if (status) filter.submissionStatus = status
+
+    const pageNum  = Math.max(1, parseInt(page,     10) || 1)
+    const limitNum = Math.min(50, Math.max(1, parseInt(rawLimit, 10) || 20))
+
+    const [items, total] = await Promise.all([
+      Reel.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum)
+        .lean(),
+      Reel.countDocuments(filter),
+    ])
+
+    res.json({ items, total, page: pageNum, pages: Math.ceil(total / limitNum), limit: limitNum })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/creator/reels
+ * Approved creators only — upload access requires a creator account.
+ * Regular users can watch/like/comment but cannot upload reels.
+ */
+router.post('/reels', requireAuth, requireCreator, async (req, res, next) => {
+  try {
+
+    const {
+      title = '', description = '', hashtags = [],
+      aspectRatio = '9:16', thumbnailUrl = '', durationSecs,
+    } = req.body
+
+    if (durationSecs != null && Number(durationSecs) > REEL_MAX_DURATION_SECS) {
+      return res.status(400).json({
+        error: `Reels must be ${REEL_MAX_DURATION_SECS} seconds or shorter`,
+      })
+    }
+
+    const VALID_RATIOS = ['9:16', '16:9', '1:1']
+    if (aspectRatio && !VALID_RATIOS.includes(aspectRatio)) {
+      return res.status(400).json({ error: `aspectRatio must be one of: ${VALID_RATIOS.join(', ')}` })
+    }
+
+    // Normalise hashtags: lowercase, strip leading '#', deduplicate
+    const normalizedTags = [...new Set(
+      (Array.isArray(hashtags) ? hashtags : [])
+        .map((t) => String(t).toLowerCase().replace(/^#/, '').trim())
+        .filter(Boolean)
+    )]
+
+    const reel = await Reel.create({
+      creatorId:    req.user._id,
+      title:        String(title).trim(),
+      description:  String(description).trim(),
+      hashtags:     normalizedTags,
+      aspectRatio,
+      thumbnailUrl: String(thumbnailUrl).trim(),
+      durationSecs: durationSecs != null ? Number(durationSecs) : 0,
+      submissionStatus: 'pending',
+    })
+
+    res.status(201).json(reel)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/creator/reels/analytics
+ * Reel analytics: overview stats + 7-day view chart.
+ * Must be declared before /reels/:id to avoid Express treating "analytics" as an ID.
+ */
+router.get('/reels/analytics', requireAuth, async (req, res, next) => {
+  try {
+    const creatorId    = req.user._id
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000)
+
+    const reels = await Reel.find({ creatorId, isDeleted: { $ne: true } })
+      .select('submissionStatus viewCount likeCount commentCount title createdAt')
+      .lean()
+
+    const approved = reels.filter((r) => r.submissionStatus === 'approved')
+    const rejected = reels.filter((r) => r.submissionStatus === 'rejected')
+
+    const totalViews    = reels.reduce((s, r) => s + (r.viewCount    || 0), 0)
+    const totalLikes    = reels.reduce((s, r) => s + (r.likeCount    || 0), 0)
+    const totalComments = reels.reduce((s, r) => s + (r.commentCount || 0), 0)
+    const approvalRate  = (approved.length + rejected.length) > 0
+      ? Math.round((approved.length / (approved.length + rejected.length)) * 100) : null
+    const topReel = approved.length
+      ? [...approved].sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0))[0] : null
+
+    // 7-day view chart from ViewEvent (reelId is stored as contentId)
+    const reelIds = reels.map((r) => r._id)
+
+    const [dailyAgg, hourlyAgg, stateAgg, dowAgg] = reelIds.length
+      ? await Promise.all([
+          // 7-day daily views
+          ViewEvent.aggregate([
+            { $match: { contentId: { $in: reelIds }, viewedAt: { $gte: sevenDaysAgo } } },
+            { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$viewedAt', timezone: 'Asia/Kolkata' } }, views: { $sum: 1 } } },
+            { $sort: { _id: 1 } },
+          ]),
+          // Hour-of-day breakdown (all time)
+          ViewEvent.aggregate([
+            { $match: { contentId: { $in: reelIds } } },
+            { $group: { _id: '$hour', views: { $sum: 1 } } },
+            { $sort: { _id: 1 } },
+          ]),
+          // Top 8 states
+          ViewEvent.aggregate([
+            { $match: { contentId: { $in: reelIds } } },
+            { $group: { _id: '$state', views: { $sum: 1 } } },
+            { $sort: { views: -1 } },
+            { $limit: 8 },
+          ]),
+          // Day-of-week breakdown
+          ViewEvent.aggregate([
+            { $match: { contentId: { $in: reelIds } } },
+            { $group: { _id: '$dayOfWeek', views: { $sum: 1 } } },
+            { $sort: { _id: 1 } },
+          ]),
+        ])
+      : [[], [], [], []]
+
+    const viewsByDay = Array.from({ length: 7 }, (_, i) => {
+      const d       = new Date(Date.now() - (6 - i) * 86_400_000)
+      const dateStr = new Date(d.getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10)
+      return { date: dateStr, views: dailyAgg.find((a) => a._id === dateStr)?.views || 0 }
+    })
+
+    const viewsByHour = Array.from({ length: 24 }, (_, h) => ({
+      hour:  h,
+      views: hourlyAgg.find((a) => a._id === h)?.views || 0,
+    }))
+
+    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const viewsByDow = Array.from({ length: 7 }, (_, d) => ({
+      day:   DAYS[d],
+      views: dowAgg.find((a) => a._id === d)?.views || 0,
+    }))
+
+    const peakHour = viewsByHour.reduce((best, h) => h.views > best.views ? h : best, { hour: 0, views: 0 })
+    const peakDay  = viewsByDow.reduce((best, d)  => d.views  > best.views ? d  : best, { day: 'Mon', views: 0 })
+
+    res.json({
+      overview: {
+        total:          reels.length,
+        approved:       approved.length,
+        pending:        reels.filter((r) => r.submissionStatus === 'pending').length,
+        rejected:       rejected.length,
+        totalViews,
+        totalLikes,
+        totalComments,
+        approvalRate,
+        engagementRate: totalViews > 0 ? Number(((totalLikes / totalViews) * 100).toFixed(1)) : 0,
+        topReel:   topReel   ? { _id: topReel._id,   title: topReel.title,   viewCount: topReel.viewCount   || 0 } : null,
+        peakHour:  peakHour.views > 0 ? peakHour.hour : null,
+        peakDay:   peakDay.views  > 0 ? peakDay.day   : null,
+      },
+      viewsByDay,
+      viewsByHour,
+      viewsByState: stateAgg.map((s) => ({ state: s._id || 'Unknown', views: s.views })),
+      viewsByDow,
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/creator/reels/:id
+ * Any authenticated user — get one of their own reels.
+ */
+router.get('/reels/:id', requireAuth, async (req, res, next) => {
+  try {
+    const reel = await Reel.findOne({ _id: req.params.id, creatorId: req.user._id }).lean()
+    if (!reel) return res.status(404).json({ error: 'Reel not found' })
+    res.json(reel)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/creator/reels/:id
+ * Any authenticated user — update metadata on their own pending or rejected reel.
+ * bunnyVideoId is excluded — only upload-job/admin may write it.
+ */
+router.patch('/reels/:id', requireAuth, async (req, res, next) => {
+  try {
+    const reel = await Reel.findOne({ _id: req.params.id, creatorId: req.user._id })
+    if (!reel) return res.status(404).json({ error: 'Reel not found' })
+    if (reel.submissionStatus === 'approved') {
+      return res.status(400).json({ error: 'Approved reels cannot be edited' })
+    }
+
+    const ALLOWED = ['title', 'description', 'hashtags', 'aspectRatio', 'thumbnailUrl', 'durationSecs']
+    const updates = {}
+    for (const key of ALLOWED) {
+      if (key in req.body) updates[key] = req.body[key]
+    }
+
+    if (updates.durationSecs != null && Number(updates.durationSecs) > REEL_MAX_DURATION_SECS) {
+      return res.status(400).json({ error: `Reels must be ${REEL_MAX_DURATION_SECS} seconds or shorter` })
+    }
+
+    if (updates.hashtags != null) {
+      updates.hashtags = [...new Set(
+        (Array.isArray(updates.hashtags) ? updates.hashtags : [])
+          .map((t) => String(t).toLowerCase().replace(/^#/, '').trim())
+          .filter(Boolean)
+      )]
+    }
+
+    const updated = await Reel.findByIdAndUpdate(
+      req.params.id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    ).lean()
+
+    res.json(updated)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/creator/reels/:id/resubmit
+ * Any authenticated user can resubmit their own rejected reel.
+ */
+router.post('/reels/:id/resubmit', requireAuth, async (req, res, next) => {
+  try {
+    const reel = await Reel.findOne({ _id: req.params.id, creatorId: req.user._id })
+    if (!reel) return res.status(404).json({ error: 'Reel not found' })
+    if (reel.submissionStatus !== 'rejected') {
+      return res.status(400).json({ error: 'Only rejected reels can be resubmitted' })
+    }
+    if ((reel.revisionCount || 0) >= MAX_REVISIONS) {
+      return res.status(429).json({
+        error: `This reel has reached the maximum of ${MAX_REVISIONS} revisions.`,
+      })
+    }
+
+    const updated = await Reel.findByIdAndUpdate(
+      req.params.id,
+      { $set: { submissionStatus: 'pending', rejectionReason: '' }, $inc: { revisionCount: 1 } },
+      { new: true }
+    ).lean()
+
+    res.json(updated)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * DELETE /api/creator/reels/:id
+ * Any authenticated user can soft-delete their own pending or rejected reels.
+ * Approved reels require admin action to remove.
+ */
+router.delete('/reels/:id', requireAuth, async (req, res, next) => {
+  try {
+    const reel = await Reel.findOne({ _id: req.params.id, creatorId: req.user._id })
+    if (!reel) return res.status(404).json({ error: 'Reel not found' })
+    if (reel.submissionStatus === 'approved') {
+      return res.status(400).json({ error: 'Approved reels cannot be deleted. Contact support.' })
+    }
+    await Reel.findByIdAndUpdate(req.params.id, { $set: { isDeleted: true } })
     res.json({ success: true })
   } catch (err) {
     next(err)

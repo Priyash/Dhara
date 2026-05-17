@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   X, AlertTriangle, Film, CheckCircle2, XCircle,
@@ -7,6 +8,7 @@ import {
   BarChart2, ThumbsUp, ChevronDown, ChevronRight, Award,
   IndianRupee, Wallet, Banknote, Trophy, CalendarDays, Sparkles,
   MapPin, Clock3, Activity, Flame, Minus, TrendingDown, Zap,
+  Heart, MessageCircle, Search,
 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { uploadToCloudinary } from '../services/cloudinary'
@@ -17,9 +19,14 @@ import {
   resubmitCreatorContent,
   getCreatorAnalytics,
   getCreatorRevenue,
+  listCreatorReels,
+  deleteCreatorReel,
+  resubmitCreatorReel,
+  fetchReelAnalytics,
 } from '../services/api'
 import styles from './CreatorStudio.module.css'
 import { isValidDuration } from '../utils/duration'
+import ReelUploadModal from '../components/ReelUploadModal'
 
 // ── Smooth Catmull-Rom area chart ─────────────────────────────────────────────
 function AreaChart({ data }) {
@@ -663,10 +670,17 @@ export default function CreatorStudio() {
   const [listLoading, setListLoading]   = useState(false)
   const [activeTab, setActiveTab]       = useState('submissions')
   const [analytics, setAnalytics]       = useState(null)
-  const [analyticsLoading, setAnalyticsLoading] = useState(false)
+  const [analyticsLoading,   setAnalyticsLoading]   = useState(false)
+  const [analyticsSubTab,    setAnalyticsSubTab]    = useState('content')  // 'content' | 'reels'
   const [revenue, setRevenue]           = useState(null)
   const [revenueLoading, setRevenueLoading] = useState(false)
   const [expandedSeries, setExpandedSeries]     = useState(new Set())
+  const [reels,           setReels]           = useState([])
+  const [reelsLoading,    setReelsLoading]    = useState(false)
+  const [reelAnalytics,   setReelAnalytics]   = useState(null)
+  const [showReelModal,   setShowReelModal]   = useState(false)
+  const [reelSearch,      setReelSearch]      = useState('')
+  const [reelStatusFilter,setReelStatusFilter]= useState('all')
   const [showModal, setShowModal]       = useState(false)
   const [step, setStep]                 = useState(0)
   const [form, setForm]                 = useState(EMPTY_FORM)
@@ -698,7 +712,8 @@ export default function CreatorStudio() {
     try {
       const params = status !== 'all' ? { status } : {}
       const data = await listCreatorContent(params)
-      setSubmissions(data)
+      // API returns a paginated shape { items, total, ... } — extract the array
+      setSubmissions(Array.isArray(data) ? data : (data.items ?? []))
     } catch {
       setSubmissions([])
     } finally {
@@ -738,10 +753,30 @@ export default function CreatorStudio() {
     }
   }, [])
 
+  const loadReels = useCallback(async () => {
+    setReelsLoading(true)
+    try {
+      const [reelData, analyticsData] = await Promise.all([
+        listCreatorReels(),
+        fetchReelAnalytics().catch(() => null),
+      ])
+      setReels(Array.isArray(reelData) ? reelData : (reelData.items ?? []))
+      if (analyticsData) setReelAnalytics(analyticsData)
+    } catch {
+      setReels([])
+    } finally {
+      setReelsLoading(false)
+    }
+  }, [])
+
   const handleTabSwitch = (tab) => {
     setActiveTab(tab)
-    if (tab === 'analytics' && !analytics) loadAnalyticsData()
-    if (tab === 'revenue'   && !revenue)   loadRevenueData()
+    if (tab === 'analytics') {
+      if (!analytics)      loadAnalyticsData()
+      if (!reelAnalytics)  loadReels()   // loads reels list + reel analytics together
+    }
+    if (tab === 'revenue' && !revenue)       loadRevenueData()
+    if (tab === 'reels'   && !reels.length)  loadReels()
   }
 
   const toggleSeriesExpand = (id) => {
@@ -887,9 +922,16 @@ export default function CreatorStudio() {
               )}
             </div>
           </div>
-          <button className={styles.newBtn} onClick={openModal}>
-            <Plus size={15} /> New Submission
-          </button>
+          {activeTab === 'submissions' && (
+            <button className={styles.newBtn} onClick={openModal}>
+              <Plus size={15} /> New Submission
+            </button>
+          )}
+          {activeTab === 'reels' && (
+            <button className={styles.newBtn} onClick={() => setShowReelModal(true)}>
+              <Plus size={15} /> New Reel
+            </button>
+          )}
         </div>
       </header>
 
@@ -926,6 +968,13 @@ export default function CreatorStudio() {
             {stats.total > 0 && <span className={styles.tabCount}>{stats.total}</span>}
           </button>
           <button
+            className={`${styles.tab} ${activeTab === 'reels' ? styles.tabActive : ''}`}
+            onClick={() => handleTabSwitch('reels')}
+          >
+            <Zap size={13} /> Reels
+            {reels.length > 0 && <span className={styles.tabCount}>{reels.length}</span>}
+          </button>
+          <button
             className={`${styles.tab} ${activeTab === 'analytics' ? styles.tabActive : ''}`}
             onClick={() => handleTabSwitch('analytics')}
           >
@@ -954,9 +1003,34 @@ export default function CreatorStudio() {
         })
         const viewsByHour  = analytics?.viewsByHour  ?? Array.from({ length: 24 }, (_, h) => ({ hour: h, views: 0 }))
         const viewsByState = analytics?.viewsByState ?? []
+        const reelOv    = reelAnalytics?.overview    || {}
+        const reelVd    = reelAnalytics?.viewsByDay  || []
+        const reelVh    = reelAnalytics?.viewsByHour || []
+        const reelVs    = reelAnalytics?.viewsByState || []
+        const reelVdow  = reelAnalytics?.viewsByDow  || []
+        const fmtReel = (n) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(n ?? 0)
+
         return (
           <section className={styles.analytics}>
-            {analyticsLoading ? (
+
+            {/* ── Sub-tab switcher ── */}
+            <div className={styles.analyticsSubTabs}>
+              <button
+                className={`${styles.analyticsSubTab} ${analyticsSubTab === 'content' ? styles.analyticsSubTabActive : ''}`}
+                onClick={() => setAnalyticsSubTab('content')}
+              >
+                <Film size={13} /> Content
+              </button>
+              <button
+                className={`${styles.analyticsSubTab} ${analyticsSubTab === 'reels' ? styles.analyticsSubTabActive : ''}`}
+                onClick={() => setAnalyticsSubTab('reels')}
+              >
+                <Zap size={13} /> Reels
+              </button>
+            </div>
+
+            {/* ══════ CONTENT sub-tab ══════ */}
+            {analyticsSubTab === 'content' && (analyticsLoading ? (
               <div className={styles.loadingState} style={{ padding: '48px 0' }}>
                 <BarChart2 size={22} className={styles.loadingIcon} />
                 <p>Loading analytics…</p>
@@ -964,7 +1038,7 @@ export default function CreatorStudio() {
             ) : !analytics ? (
               <div className={styles.emptyState}>
                 <div className={styles.emptyIcon}><BarChart2 size={32} /></div>
-                <h3 className={styles.emptyTitle}>No data yet</h3>
+                <h3 className={styles.emptyTitle}>No content data yet</h3>
                 <p className={styles.emptyDesc}>Analytics will appear once you have approved content with views.</p>
               </div>
             ) : (
@@ -1195,8 +1269,275 @@ export default function CreatorStudio() {
                     </div>
                   </>
                 )}
+
+                {/* Footer guidance when creator has no approved content with views yet */}
+                {analytics && ov.totalViews === 0 && (
+                  <div className={styles.analyticsFooterNote}>
+                    <BarChart2 size={16} />
+                    <div>
+                      <p className={styles.analyticsFooterTitle}>No view data yet</p>
+                      <p className={styles.analyticsFooterSub}>
+                        Analytics appear once your approved content gets its first views.
+                        {stats.approved === 0 && ' Publish your first film or series to get started.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </>
-            )}
+            ))}
+
+            {/* ══════ REELS sub-tab ══════ */}
+            {analyticsSubTab === 'reels' && (reelsLoading ? (
+              <div className={styles.loadingState} style={{ padding: '48px 0' }}>
+                <Zap size={22} className={styles.loadingIcon} />
+                <p>Loading reel analytics…</p>
+              </div>
+            ) : (
+              <>
+                {/* ── 4 focused stat cards — matches Content analytics layout ── */}
+                <div className={styles.analyticsStatRow}>
+                  {/* Total Views */}
+                  <div className={styles.analyticsStatCard}>
+                    <div className={styles.analyticsStatIcon} style={{ color: '#a78bfa', background: 'rgba(167,139,250,0.1)' }}>
+                      <Eye size={16} />
+                    </div>
+                    <p className={styles.analyticsStatValue}>{fmtReel(reelOv.totalViews)}</p>
+                    <p className={styles.analyticsStatLabel}>Total Views</p>
+                  </div>
+
+                  {/* Total Likes */}
+                  <div className={styles.analyticsStatCard}>
+                    <div className={styles.analyticsStatIcon} style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.1)' }}>
+                      <Heart size={16} />
+                    </div>
+                    <p className={styles.analyticsStatValue}>{fmtReel(reelOv.totalLikes)}</p>
+                    <p className={styles.analyticsStatLabel}>Total Likes</p>
+                  </div>
+
+                  {/* Approval Rate with arc */}
+                  <div className={`${styles.analyticsStatCard} ${styles.analyticsStatCardArc}`}>
+                    <ApprovalArc rate={reelOv.approvalRate ?? 0} />
+                    <p className={styles.analyticsStatLabel}>Approval Rate</p>
+                    <p className={styles.analyticsStatSub}>excl. pending</p>
+                  </div>
+
+                  {/* Engagement Rate */}
+                  <div className={styles.analyticsStatCard}>
+                    <div className={styles.analyticsStatIcon} style={{ color: '#4ade80', background: 'rgba(74,222,128,0.1)' }}>
+                      <TrendingUp size={16} />
+                    </div>
+                    <p className={styles.analyticsStatValue}>
+                      {reelOv.totalViews > 0
+                        ? `${((reelOv.totalLikes / reelOv.totalViews) * 100).toFixed(1)}%`
+                        : '0%'}
+                    </p>
+                    <p className={styles.analyticsStatLabel}>Engagement Rate</p>
+                    <p className={styles.analyticsStatSub}>likes ÷ views</p>
+                  </div>
+                </div>
+
+                {/* ── Full-width 7-day trend ── */}
+                <div className={styles.reelChartFull}>
+                  <div className={styles.reelChartFullHeader}>
+                    <div>
+                      <p className={styles.analyticsChartTitle}><Activity size={12} /> 7-DAY VIEW TREND</p>
+                      <p className={styles.reelChartSubtext}>Daily views over the last 7 days · IST</p>
+                    </div>
+                  </div>
+                  <DailyViewsChart data={reelVd} />
+                </div>
+
+                {/* ── Auto-generated reel insights ── */}
+                {(() => {
+                  const cards = []
+                  const { totalViews, totalLikes, engagementRate, approvalRate, topReel, peakHour, peakDay } = reelOv
+
+                  if (topReel && (totalViews || 0) > 0) {
+                    const avgV = (totalViews || 0) / Math.max(reels.filter(r => r.submissionStatus === 'approved').length, 1)
+                    const mult = (topReel.viewCount / avgV).toFixed(1)
+                    if (Number(mult) >= 1.5)
+                      cards.push({ color: '#f59e0b', text: `"${topReel.title || 'Your top reel'}" gets ${mult}× more views than your average reel` })
+                  }
+                  if (peakHour != null) {
+                    const amPm = peakHour === 0 ? '12 AM' : peakHour < 12 ? `${peakHour} AM` : peakHour === 12 ? '12 PM' : `${peakHour - 12} PM`
+                    cards.push({ color: '#a78bfa', text: `Peak hour is around ${amPm} IST — schedule uploads to go live before then` })
+                  }
+                  if (peakDay)
+                    cards.push({ color: '#38bdf8', text: `${peakDay}s get the most views — your best day to release new reels` })
+                  if ((engagementRate || 0) >= 10)
+                    cards.push({ color: '#4ade80', text: `${engagementRate}% engagement rate — your audience is highly active on reels` })
+                  if ((approvalRate || 0) > 0 && (approvalRate || 0) < 50)
+                    cards.push({ color: '#f87171', text: `${approvalRate}% approval rate — review Dhara's content guidelines before re-submitting` })
+
+                  // Hashtag insight: which hashtag has the most total views
+                  const hashViews = {}
+                  reels.filter(r => r.submissionStatus === 'approved' && r.viewCount > 0).forEach(r => {
+                    ;(r.hashtags || []).forEach(t => { hashViews[t] = (hashViews[t] || 0) + r.viewCount })
+                  })
+                  const topHash = Object.entries(hashViews).sort((a, b) => b[1] - a[1])[0]
+                  if (topHash)
+                    cards.push({ color: '#c084fc', text: `#${topHash[0]} is your best-performing hashtag with ${fmtReel(topHash[1])} combined views` })
+
+                  if (!cards.length) return null
+                  return (
+                    <div className={styles.insightsRow} style={{ marginBottom: 16 }}>
+                      {cards.slice(0, 3).map((c, i) => (
+                        <div key={i} className={styles.insightCard} style={{ borderColor: `${c.color}22`, background: `${c.color}08` }}>
+                          <Zap size={13} style={{ color: c.color, flexShrink: 0 }} />
+                          <p className={styles.insightText}>{c.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
+
+                {/* ── Hour histogram + Geography side by side ── */}
+                {(reelVh.some(h => h.views > 0) || reelVs.length > 0) && (
+                  <div className={styles.reelChartsRow} style={{ marginBottom: 12 }}>
+                    {reelVh.length > 0 && (
+                      <div className={styles.reelChartFull} style={{ marginBottom: 0 }}>
+                        <p className={styles.analyticsChartTitle} style={{ marginBottom: 10 }}><Clock3 size={12} /> VIEWS BY HOUR</p>
+                        <HourHistogram data={reelVh} />
+                      </div>
+                    )}
+                    {reelVs.length > 0 && (
+                      <div className={styles.reelChartFull} style={{ marginBottom: 0 }}>
+                        <p className={styles.analyticsChartTitle} style={{ marginBottom: 10 }}><MapPin size={12} /> TOP STATES</p>
+                        <GeographyBars data={reelVs} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Reel health grid ── */}
+                {(() => {
+                  const approved = reels.filter(r => r.submissionStatus === 'approved' && r.viewCount > 0)
+                  if (approved.length < 2) return null
+                  const avgViews = approved.reduce((s, r) => s + r.viewCount, 0) / approved.length
+                  return (
+                    <div className={styles.reelChartFull} style={{ marginBottom: 12 }}>
+                      <p className={styles.analyticsChartTitle} style={{ marginBottom: 14 }}><Flame size={12} /> REEL HEALTH</p>
+                      <div className={styles.reelHealthGrid}>
+                        {approved.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0)).map((reel) => {
+                          const eng   = reel.viewCount > 0 ? (reel.likeCount / reel.viewCount) * 100 : 0
+                          const vRat  = Math.min(reel.viewCount / Math.max(avgViews, 1), 2) / 2
+                          const score = vRat * 60 + Math.min(eng / 0.15, 1) * 40
+                          const health = score >= 70
+                            ? { label: 'Hot',     color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  Icon: Flame }
+                            : score >= 45
+                            ? { label: 'Rising',  color: '#4ade80', bg: 'rgba(74,222,128,0.1)', Icon: TrendingUp }
+                            : score >= 25
+                            ? { label: 'Steady',  color: '#a78bfa', bg: 'rgba(167,139,250,0.1)',Icon: Minus }
+                            : { label: 'Cooling', color: '#94a3b8', bg: 'rgba(148,163,184,0.1)',Icon: TrendingDown }
+                          const HIcon = health.Icon
+                          return (
+                            <div key={reel._id} className={styles.reelHealthTile} style={{ borderColor: `${health.color}30`, background: health.bg }}>
+                              <div className={styles.reelHealthBadge} style={{ color: health.color }}>
+                                <HIcon size={11} /> {health.label}
+                              </div>
+                              <p className={styles.reelHealthTitle}>{reel.title || 'Untitled'}</p>
+                              <div className={styles.reelHealthStats}>
+                                <span><Eye size={10} /> {fmtReel(reel.viewCount)}</span>
+                                <span><Heart size={10} /> {eng.toFixed(1)}%</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* ── Top reels bar chart (only when data exists) ── */}
+                {(() => {
+                  const top = [...reels]
+                    .filter((r) => r.submissionStatus === 'approved' && (r.viewCount || 0) > 0)
+                    .sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0))
+                    .slice(0, 5)
+                  if (!top.length) return null
+                  const maxV = Math.max(...top.map((r) => r.viewCount || 0), 1)
+                  const GRAD = ['#7c3aed','#a78bfa','#c4b5fd','#6366f1','#818cf8']
+                  return (
+                    <div className={styles.reelChartFull} style={{ marginTop: 12 }}>
+                      <p className={styles.analyticsChartTitle}><TrendingUp size={12} /> TOP REELS BY VIEWS</p>
+                      <div className={styles.reelBarChart} style={{ marginTop: 16 }}>
+                        {top.map((r, i) => (
+                          <div key={r._id} className={styles.reelBarRow}>
+                            <span className={styles.reelBarLabel}>{r.title || 'Untitled'}</span>
+                            <div className={styles.reelBarTrack}>
+                              <div className={styles.reelBarFill}
+                                style={{ width: `${Math.max(((r.viewCount||0)/maxV)*100,2)}%`, background: GRAD[i] }} />
+                            </div>
+                            <span className={styles.reelBarCount}>{fmtReel(r.viewCount||0)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* ── Per-reel table — only shown when there are reels ── */}
+                {reels.length > 0 && (
+                  <div className={styles.reelAnalyticsTable}>
+                    <div className={styles.reelAnalyticsHead}>
+                      <span>Reel</span>
+                      <span>Status</span>
+                      <span className={styles.reelAnalyticsStat}><Eye size={11} /> Views</span>
+                      <span className={styles.reelAnalyticsStat}><Heart size={11} /> Likes</span>
+                      <span className={styles.reelAnalyticsStat}><MessageCircle size={11} /> Comments</span>
+                      <span className={styles.reelAnalyticsStat}><TrendingUp size={11} /> Eng.</span>
+                    </div>
+                    {[...reels].sort((a, b) => (b.viewCount||0) - (a.viewCount||0)).map((reel) => {
+                      const views = reel.viewCount||0, likes = reel.likeCount||0, comments = reel.commentCount||0
+                      const eng = views > 0 ? `${((likes/views)*100).toFixed(1)}%` : '—'
+                      return (
+                        <div key={reel._id} className={styles.reelAnalyticsRow}>
+                          <div className={styles.reelAnalyticsInfo}>
+                            <div className={styles.reelAnalyticsThumb}
+                              style={reel.thumbnailUrl
+                                ? { backgroundImage: `url(${reel.thumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                                : { background: 'linear-gradient(160deg,#1e1b4b,#7c3aed)' }}
+                            />
+                            <div>
+                              <p className={styles.reelAnalyticsTitle}>{reel.title || <em style={{ color: 'rgba(255,255,255,0.3)', fontStyle: 'italic' }}>No caption</em>}</p>
+                              {reel.hashtags?.length > 0 && <p className={styles.reelAnalyticsTags}>#{reel.hashtags.slice(0,2).join(' #')}</p>}
+                            </div>
+                          </div>
+                          <div><StatusChip status={reel.submissionStatus} /></div>
+                          <span className={styles.reelAnalyticsStat} style={{ color: '#a78bfa' }}>{fmtReel(views)}</span>
+                          <span className={styles.reelAnalyticsStat} style={{ color: '#f59e0b' }}>{fmtReel(likes)}</span>
+                          <span className={styles.reelAnalyticsStat} style={{ color: '#c084fc' }}>{fmtReel(comments)}</span>
+                          <span className={styles.reelAnalyticsStat} style={{ color: eng !== '—' ? '#4ade80' : 'rgba(255,255,255,0.2)' }}>{eng}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* ── Info card — always shown at the bottom ── */}
+                <div className={styles.analyticsFooterNote}>
+                  <BarChart2 size={16} />
+                  <div>
+                    <p className={styles.analyticsFooterTitle}>
+                      {(reelOv.totalViews ?? 0) === 0
+                        ? 'No view data yet'
+                        : 'Analytics update in real-time'}
+                    </p>
+                    <p className={styles.analyticsFooterSub}>
+                      {reels.length === 0
+                        ? 'Upload your first reel and submit it for review to start seeing analytics here.'
+                        : (reelOv.approved ?? 0) === 0
+                        ? 'Your reels are under review. Analytics will appear once a reel is approved and gets its first views.'
+                        : (reelOv.totalViews ?? 0) === 0
+                        ? 'Analytics appear once your approved reels get their first views. Share your reels to drive traffic.'
+                        : 'View counts, likes and comments update as viewers interact with your reels on the Reels feed.'
+                      }
+                    </p>
+                  </div>
+                </div>
+              </>
+            ))}
+
           </section>
         )
       })()}
@@ -1563,11 +1904,190 @@ export default function CreatorStudio() {
         )}
       </section>}
 
-      {/* ── New Submission Modal ── */}
+      {/* ── Reels tab ── */}
+      {activeTab === 'reels' && (() => {
+        const fmtN = (n) => n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n/1000).toFixed(1)}k` : String(n ?? 0)
+        const ov   = reelAnalytics?.overview || {}
+        const vd   = reelAnalytics?.viewsByDay || []
+
+        // Client-side filter — instant, no extra API call
+        const query = reelSearch.trim().toLowerCase()
+        const filtered = reels.filter((r) => {
+          const matchStatus = reelStatusFilter === 'all' || r.submissionStatus === reelStatusFilter
+          const matchSearch = !query
+            || r.title?.toLowerCase().includes(query)
+            || r.description?.toLowerCase().includes(query)
+            || (r.hashtags || []).some((t) => t.includes(query))
+          return matchStatus && matchSearch
+        })
+
+        // Status counts for filter tabs
+        const counts = {
+          all:      reels.length,
+          approved: reels.filter((r) => r.submissionStatus === 'approved').length,
+          pending:  reels.filter((r) => r.submissionStatus === 'pending').length,
+          rejected: reels.filter((r) => r.submissionStatus === 'rejected').length,
+        }
+
+        return (
+          <section className={styles.reelSection}>
+
+            {/* ── Header ── */}
+            <div className={styles.reelHeader}>
+              <div>
+                <h2 className={styles.reelTitle}>My Reels</h2>
+                <p className={styles.reelSubtitle}>{reels.length} reel{reels.length !== 1 ? 's' : ''} total</p>
+              </div>
+            </div>
+
+            {/* Stats and charts moved to Analytics → Reels sub-tab */}
+            {reelsLoading ? (
+              <div className={styles.loadingState} style={{ padding: '40px 0' }}>
+                <Zap size={20} className={styles.loadingIcon} /><p>Loading reels…</p>
+              </div>
+            ) : reels.length === 0 ? (
+              <div className={styles.emptyState}>
+                <div className={styles.emptyIcon}><Zap size={28} /></div>
+                <h3 className={styles.emptyTitle}>No reels yet</h3>
+                <p className={styles.emptyDesc}>Upload a short clip (up to 30 s) and reach viewers in the Reels feed.</p>
+                <button className={styles.newBtn} style={{ marginTop: 8 }} onClick={() => setShowReelModal(true)}>
+                  <Plus size={14} /> Upload your first reel
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* ── Toolbar: search + status filter ── */}
+                <div className={styles.reelToolbar}>
+                  <div className={styles.reelSearchWrap}>
+                    <Search size={14} className={styles.reelSearchIcon} />
+                    <input
+                      className={styles.reelSearchInput}
+                      value={reelSearch}
+                      onChange={(e) => setReelSearch(e.target.value)}
+                      placeholder="Search by title or hashtag…"
+                    />
+                    {reelSearch && (
+                      <button className={styles.reelSearchClear} onClick={() => setReelSearch('')} aria-label="Clear">
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                  <div className={styles.reelStatusTabs}>
+                    {[
+                      { key: 'all',      label: 'All' },
+                      { key: 'approved', label: 'Live' },
+                      { key: 'pending',  label: 'In Review' },
+                      { key: 'rejected', label: 'Rejected' },
+                    ].map(({ key, label }) => (
+                      <button
+                        key={key}
+                        className={`${styles.reelStatusTab} ${reelStatusFilter === key ? styles.reelStatusTabActive : ''}`}
+                        onClick={() => setReelStatusFilter(key)}
+                      >
+                        {label}
+                        {counts[key] > 0 && <span className={styles.reelStatusCount}>{counts[key]}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {filtered.length === 0 ? (
+                  <div className={styles.reelNoResults}>
+                    <Search size={20} style={{ opacity: 0.3 }} />
+                    <p>No reels match "{reelSearch}"</p>
+                    <button onClick={() => { setReelSearch(''); setReelStatusFilter('all') }}>Clear filters</button>
+                  </div>
+                ) : (
+                  <div className={styles.reelList}>
+                    {filtered.map((reel) => (
+                      <div key={reel._id} className={styles.reelCard}>
+
+                        {/* 9:16 thumbnail */}
+                        <div
+                          className={styles.reelCardPoster}
+                          style={reel.thumbnailUrl
+                            ? { backgroundImage: `url(${reel.thumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                            : { background: 'linear-gradient(160deg,#1e1b4b 0%,#4c1d95 50%,#7c3aed 100%)' }
+                          }
+                        >
+                          {!reel.thumbnailUrl && <Zap size={14} style={{ color: 'rgba(255,255,255,0.4)' }} />}
+                          {reel.durationSecs > 0 && (
+                            <span className={styles.reelCardDuration}>{reel.durationSecs}s</span>
+                          )}
+                        </div>
+
+                        {/* Info */}
+                        <div className={styles.reelCardBody}>
+                          <div className={styles.reelCardTop}>
+                            <h3 className={styles.reelCardTitle}>
+                              {reel.title || <em className={styles.reelCardNoCaption}>No caption</em>}
+                            </h3>
+                            <StatusChip status={reel.submissionStatus} />
+                          </div>
+
+                          <div className={styles.reelCardMeta}>
+                            {reel.aspectRatio && <span>{reel.aspectRatio}</span>}
+                            {reel.hashtags?.length > 0 && (
+                              <span className={styles.reelCardTags}>
+                                #{reel.hashtags.slice(0, 3).join(' #')}
+                              </span>
+                            )}
+                          </div>
+
+                          {reel.submissionStatus === 'rejected' && reel.rejectionReason && (
+                            <p className={styles.reelCardReject}>
+                              <AlertTriangle size={11} /> {reel.rejectionReason}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className={styles.reelCardActions}>
+                          {reel.submissionStatus === 'rejected' && (
+                            <button className={styles.resubmitBtn}
+                              onClick={async () => {
+                                try { await resubmitCreatorReel(reel._id); showToast({ type: 'success', message: 'Reel resubmitted.' }); loadReels() }
+                                catch (err) { showToast({ type: 'error', message: err?.message || 'Could not resubmit.' }) }
+                              }}>
+                              <RotateCcw size={13} /> Resubmit
+                            </button>
+                          )}
+                          {reel.submissionStatus !== 'approved' && (
+                            <button className={styles.deleteBtn}
+                              onClick={async () => {
+                                try { await deleteCreatorReel(reel._id); showToast({ type: 'success', message: 'Reel deleted.' }); loadReels() }
+                                catch (err) { showToast({ type: 'error', message: err?.message || 'Could not delete.' }) }
+                              }}>
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+          </section>
+        )
+      })()}
+
+      {/* ── Reel Upload Modal ── */}
+      {showReelModal && (
+        <ReelUploadModal
+          onClose={() => setShowReelModal(false)}
+          onCreated={() => { loadReels(); showToast({ type: 'success', message: 'Reel submitted for review!' }) }}
+        />
+      )}
+
+      {/* ── New Submission Modal ── rendered via portal so CSS transforms on
+           the animated routePane don't break position:fixed ── */}
       {showModal && (() => {
         const activeSteps = form.type === 'Series' ? STEPS_SERIES : STEPS_BASE
         const currentStepId = activeSteps[step]?.id ?? 'basics'
-        return (
+        return createPortal(
         <div className={styles.modalBackdrop} onClick={(e) => e.target === e.currentTarget && closeModal()}>
           <div className={styles.modalPanel} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
 
@@ -1667,10 +2187,6 @@ export default function CreatorStudio() {
                       <input className={styles.input} value={form[field]} onChange={ff(field)} placeholder="Or paste URL…" />
                     </div>
                   ))}
-                  <label className={`${styles.label} ${styles.spanFull}`}>
-                    Bunny Video ID <span className={styles.labelHint}>(optional — admin can link it via Upload tab)</span>
-                    <input className={styles.input} value={form.bunnyVideoId} onChange={ff('bunnyVideoId')} placeholder="Paste GUID from Bunny Stream" />
-                  </label>
                 </div>
               )}
 
@@ -1837,7 +2353,6 @@ export default function CreatorStudio() {
                     <dl className={styles.reviewDl}>
                       <dt>Poster</dt>    <dd style={{ color: form.posterUrl   ? '#4ade80' : '#888' }}>{form.posterUrl   ? '✓ Set' : 'Not set'}</dd>
                       <dt>Backdrop</dt>  <dd style={{ color: form.backdropUrl ? '#4ade80' : '#888' }}>{form.backdropUrl ? '✓ Set' : 'Not set'}</dd>
-                      <dt>Video ID</dt>  <dd style={{ color: form.bunnyVideoId ? '#4ade80' : '#888' }}>{form.bunnyVideoId || 'Not set'}</dd>
                     </dl>
                   </div>
                   <div className={styles.reviewSection}>
@@ -1899,7 +2414,8 @@ export default function CreatorStudio() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
         )
       })()}
     </main>
