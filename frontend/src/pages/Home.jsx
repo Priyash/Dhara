@@ -4,7 +4,7 @@ import Hero from '../components/Hero'
 import ContentRow from '../components/ContentRow'
 import CuratedShelfRow from '../components/CuratedShelfRow'
 import { useStore } from '../store/useStore'
-import { fetchContent, fetchShelves, fetchContinueWatching } from '../services/api'
+import { fetchContent, fetchShelves, fetchContinueWatching, fetchRecommendations } from '../services/api'
 import styles from './Home.module.css'
 
 export default function Home() {
@@ -13,6 +13,7 @@ export default function Home() {
   const [content,          setContent]          = useState([])
   const [shelves,          setShelves]          = useState([])
   const [continueWatching, setContinueWatching] = useState([])
+  const [recommended,      setRecommended]      = useState([])
   const [contentLoading,   setContentLoading]   = useState(true)
 
   useEffect(() => {
@@ -22,6 +23,7 @@ export default function Home() {
       .catch(() => {})
       .finally(() => setContentLoading(false))
     fetchShelves().then(setShelves).catch(() => {})
+    fetchRecommendations({ limit: 12 }).then((res) => setRecommended(res.items || [])).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -63,6 +65,16 @@ export default function Home() {
               }
               navigate(`/watch/${item.id || item._id}`)
             }}
+          />
+        )}
+
+        {recommended.length > 0 && (
+          <ContentRow
+            title="Recommended For You"
+            items={recommended}
+            onSeeAll={() => navigate('/browse')}
+            eventSource="recommendations"
+            {...rowProps}
           />
         )}
 

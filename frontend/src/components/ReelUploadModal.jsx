@@ -1,0 +1,384 @@
+import { useState, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import {
+  X, Upload, Video, Hash, CheckCircle2, AlertTriangle,
+  Loader2, Info, Play, Clock, AlignLeft,
+} from 'lucide-react'
+import { createCreatorReel, createReelUploadJob, uploadReelFile } from '../services/api'
+import styles from './ReelUploadModal.module.css'
+
+const MAX_DURATION_SECS = 30
+const MAX_FILE_MB       = 200
+const ALLOWED_EXT       = ['.mp4', '.mov', '.m4v', '.webm']
+const ASPECT_RATIOS     = ['9:16', '16:9', '1:1']
+
+const uid = () => Math.random().toString(36).slice(2)
+
+function cleanName(filename) {
+  return filename.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ').trim()
+}
+
+function fmtSize(b) {
+  return b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function validateFile(file) {
+  if (!file.type.startsWith('video/')) return 'Not a video file.'
+  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+  if (!ALLOWED_EXT.includes(ext)) return `Unsupported format. Use: ${ALLOWED_EXT.join(', ')}`
+  if (file.size > MAX_FILE_MB * 1024 * 1024) return `Exceeds ${MAX_FILE_MB} MB limit.`
+  return null
+}
+
+// Analyse video: duration, dimensions, aspect ratio + capture thumbnail frame
+function analyseVideo(file) {
+  return new Promise((resolve) => {
+    const video  = document.createElement('video')
+    const canvas = document.createElement('canvas')
+    const url    = URL.createObjectURL(file)
+
+    const finish = () => {
+      const { duration, videoWidth: w, videoHeight: h } = video
+      const r = w > 0 && h > 0 ? w / h : 0
+      const aspectRatio = r >= 1.5 ? '16:9' : r >= 0.85 && r <= 1.15 ? '1:1' : '9:16'
+
+      let thumb = null
+      try {
+        canvas.width = 64; canvas.height = 90
+        canvas.getContext('2d').drawImage(video, 0, 0, 64, 90)
+        thumb = canvas.toDataURL('image/jpeg', 0.6)
+      } catch {}
+
+      URL.revokeObjectURL(url)
+      resolve({ duration, width: w, height: h, aspectRatio, thumb })
+    }
+
+    video.onloadedmetadata = () => {
+      video.currentTime = Math.min(0.5, video.duration * 0.1)
+    }
+    video.onseeked   = finish
+    video.onerror    = () => { URL.revokeObjectURL(url); resolve({ duration: 0, width: 0, height: 0, aspectRatio: '9:16', thumb: null }) }
+    video.preload    = 'metadata'
+    video.src        = url
+  })
+}
+
+export default function ReelUploadModal({ onClose, onCreated }) {
+  // queue item: { id, file, title, duration, aspectRatio, thumb, validError, status, progress, error }
+  // status: 'pending' | 'uploading' | 'done' | 'error'
+  const [queue,               setQueue]               = useState([])
+  const [sharedDescription,   setSharedDescription]   = useState('')
+  const [sharedHashtags,      setSharedHashtags]       = useState('')
+  const [sharedAspectRatio,   setSharedAspectRatio]   = useState('')   // '' = auto-detect per file
+  const [phase,               setPhase]               = useState('configure')
+  const [summary,             setSummary]             = useState(null)
+  const [dragging,            setDragging]            = useState(false)
+
+  const inputRef = useRef(null)
+
+  // ── Add files to queue ────────────────────────────────────────────────────
+
+  const addFiles = useCallback(async (files) => {
+    const incoming = Array.from(files)
+    const items = incoming.map((file) => ({
+      id: uid(), file,
+      title:       cleanName(file.name),
+      duration:    0,
+      aspectRatio: '9:16',
+      thumb:       null,
+      validError:  validateFile(file),
+      status:      'pending',
+      progress:    0,
+      error:       null,
+    }))
+    setQueue((prev) => [...prev, ...items])
+
+    // Analyse valid files in background (fills duration, aspectRatio, thumb)
+    for (const item of items) {
+      if (item.validError) continue
+      analyseVideo(item.file).then((meta) => {
+        if (meta.duration > MAX_DURATION_SECS) {
+          setQueue((prev) => prev.map((q) => q.id === item.id
+            ? { ...q, validError: `${Math.round(meta.duration)}s — max ${MAX_DURATION_SECS}s` }
+            : q))
+          return
+        }
+        setQueue((prev) => prev.map((q) => q.id === item.id
+          ? { ...q, duration: Math.round(meta.duration), aspectRatio: meta.aspectRatio, thumb: meta.thumb }
+          : q))
+      })
+    }
+  }, [])
+
+  const onDrop = (e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files) }
+  const removeItem = (id) => setQueue((prev) => prev.filter((q) => q.id !== id))
+  const updateTitle = (id, title) => setQueue((prev) => prev.map((q) => q.id === id ? { ...q, title } : q))
+
+  // ── Upload queue sequentially ─────────────────────────────────────────────
+
+  const startUpload = async () => {
+    const valid = queue.filter((q) => !q.validError)
+    if (!valid.length) return
+    setPhase('uploading')
+
+    let done = 0, failed = 0
+    const tags = sharedHashtags.split(',').map((t) => t.trim().toLowerCase().replace(/^#/, '')).filter(Boolean)
+
+    for (const item of valid) {
+      setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'uploading', progress: 0 } : q))
+      try {
+        const reel = await createCreatorReel({
+          title:        item.title.trim() || cleanName(item.file.name),
+          description:  sharedDescription.trim(),
+          hashtags:     tags,
+          aspectRatio:  sharedAspectRatio || item.aspectRatio,
+          durationSecs: item.duration,
+        })
+        await createReelUploadJob(reel._id)
+        await uploadReelFile(reel._id, item.file, {
+          onProgress: (p) => setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, progress: p } : q)),
+        })
+        setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'done', progress: 100 } : q))
+        done++
+      } catch (err) {
+        setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'error', error: err?.message || 'Upload failed' } : q))
+        failed++
+      }
+    }
+
+    setSummary({ done, failed })
+    setPhase('complete')
+    if (done > 0) onCreated?.()
+  }
+
+  const validCount   = queue.filter((q) => !q.validError).length
+  const invalidCount = queue.filter((q) =>  q.validError).length
+  const isUploading  = phase === 'uploading'
+  const isComplete   = phase === 'complete'
+
+  // Portal renders outside the route pane so CSS transforms on animated
+  // parent elements can't break position:fixed on the backdrop.
+  return createPortal(
+    <div className={styles.backdrop} onClick={(e) => { if (e.target === e.currentTarget && !isUploading) onClose() }}>
+      <div className={styles.modal}>
+
+        {/* ── Header ── */}
+        <div className={styles.header}>
+          <div className={styles.headerLeft}>
+            <Video size={16} className={styles.headerIcon} />
+            <h2 className={styles.heading}>Upload Reels</h2>
+            {queue.length > 0 && (
+              <span className={styles.queueBadge}>{queue.length} file{queue.length !== 1 ? 's' : ''}</span>
+            )}
+          </div>
+          <button className={styles.closeBtn} onClick={onClose} disabled={isUploading} aria-label="Close">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className={styles.body}>
+
+          {/* ── Rules notice (only in configure phase) ── */}
+          {phase === 'configure' && (
+            <div className={styles.notice}>
+              <Info size={13} />
+              <span>Max <strong>30 s</strong> · <strong>{MAX_FILE_MB} MB</strong> · MP4, MOV, WebM · All reels go through admin review.</span>
+            </div>
+          )}
+
+          {/* ── Complete summary ── */}
+          {isComplete && summary && (
+            <div className={styles.summaryCard}>
+              <CheckCircle2 size={28} className={styles.summaryIcon} />
+              <h3 className={styles.summaryTitle}>
+                {summary.done} reel{summary.done !== 1 ? 's' : ''} submitted for review
+              </h3>
+              {summary.failed > 0 && (
+                <p className={styles.summaryFailed}>{summary.failed} failed — see details below</p>
+              )}
+              <p className={styles.summarySub}>You'll be notified once they're reviewed.</p>
+            </div>
+          )}
+
+          {/* ── Drop zone ── */}
+          {phase === 'configure' && (
+            <div
+              className={`${styles.dropZone} ${dragging ? styles.dropZoneDrag : ''} ${queue.length > 0 ? styles.dropZoneCompact : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+              onClick={() => inputRef.current?.click()}
+              role="button" tabIndex={0}
+              onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
+            >
+              <input
+                ref={inputRef}
+                type="file"
+                accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                multiple
+                className={styles.hiddenInput}
+                onChange={(e) => addFiles(e.target.files)}
+              />
+              <Upload size={queue.length > 0 ? 16 : 22} className={styles.dropIcon} />
+              <p className={styles.dropTitle}>
+                {queue.length > 0 ? 'Add more videos' : 'Drop videos here'}
+              </p>
+              <p className={styles.dropSub}>MP4, MOV · max {MAX_DURATION_SECS}s · {MAX_FILE_MB} MB · select multiple</p>
+            </div>
+          )}
+
+          {/* ── Queue ── */}
+          {queue.length > 0 && (
+            <div className={styles.queueList}>
+              {queue.map((item) => (
+                <div
+                  key={item.id}
+                  className={`${styles.queueItem}
+                    ${item.status === 'done'      ? styles.queueItemDone    : ''}
+                    ${item.status === 'error'     ? styles.queueItemError   : ''}
+                    ${item.status === 'uploading' ? styles.queueItemActive  : ''}
+                    ${item.validError             ? styles.queueItemInvalid : ''}
+                  `}
+                >
+                  {/* Thumbnail */}
+                  <div
+                    className={styles.queueThumb}
+                    style={item.thumb ? { backgroundImage: `url(${item.thumb})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
+                  >
+                    {!item.thumb && <Video size={14} style={{ color: 'rgba(255,255,255,0.3)' }} />}
+                    {item.duration > 0 && <span className={styles.queueDur}>{item.duration}s</span>}
+                  </div>
+
+                  {/* Info */}
+                  <div className={styles.queueInfo}>
+                    {phase === 'configure' && !item.validError ? (
+                      <input
+                        className={styles.queueTitleInput}
+                        value={item.title}
+                        onChange={(e) => updateTitle(item.id, e.target.value)}
+                        placeholder="Reel caption…"
+                        maxLength={120}
+                      />
+                    ) : (
+                      <p className={styles.queueTitleStatic}>{item.title || cleanName(item.file.name)}</p>
+                    )}
+                    <div className={styles.queueMeta}>
+                      <span>{fmtSize(item.file.size)}</span>
+                      {item.duration > 0 && <span>{item.duration}s</span>}
+                      <span>{item.aspectRatio}</span>
+                      {item.validError && <span className={styles.queueValidError}><AlertTriangle size={11} /> {item.validError}</span>}
+                      {item.error      && <span className={styles.queueValidError}><AlertTriangle size={11} /> {item.error}</span>}
+                    </div>
+
+                    {/* Progress bar for active item */}
+                    {item.status === 'uploading' && (
+                      <div className={styles.queueProgress}>
+                        <div className={styles.queueProgressFill} style={{ width: `${item.progress}%` }} />
+                        <span className={styles.queueProgressLabel}>{item.progress < 100 ? `${item.progress}%` : 'Processing…'}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Status indicator */}
+                  <div className={styles.queueStatus}>
+                    {item.status === 'done'      && <CheckCircle2 size={18} className={styles.statusDone} />}
+                    {item.status === 'uploading' && <Loader2      size={18} className={styles.statusLoading} />}
+                    {item.status === 'error'     && <AlertTriangle size={18} className={styles.statusError} />}
+                    {item.validError             && <AlertTriangle size={18} className={styles.statusError} />}
+                    {item.status === 'pending' && !item.validError && phase === 'uploading' && (
+                      <Clock size={16} className={styles.statusWaiting} />
+                    )}
+                    {phase === 'configure' && !item.validError && (
+                      <button className={styles.queueRemove} onClick={() => removeItem(item.id)} aria-label="Remove">
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Shared metadata — always visible in configure ── */}
+          {phase === 'configure' && (
+            <div className={styles.fields}>
+              <div className={styles.field}>
+                <label className={styles.label}>
+                  <AlignLeft size={12} /> Description
+                  <span className={styles.optional}>(shared across all reels in this upload)</span>
+                </label>
+                <textarea
+                  className={styles.textarea}
+                  value={sharedDescription}
+                  onChange={(e) => setSharedDescription(e.target.value)}
+                  placeholder="Add context, story, or notes about this batch…"
+                  rows={2}
+                  maxLength={500}
+                />
+              </div>
+
+              <div className={styles.field}>
+                <label className={styles.label}>
+                  <Hash size={12} /> Hashtags
+                  <span className={styles.optional}>(comma-separated, applied to all reels)</span>
+                </label>
+                <input
+                  className={styles.input}
+                  value={sharedHashtags}
+                  onChange={(e) => setSharedHashtags(e.target.value)}
+                  placeholder="bengali, drama, comedy"
+                />
+              </div>
+
+              <div className={styles.field}>
+                <label className={styles.label}>
+                  Aspect Ratio
+                  <span className={styles.optional}>(leave on Auto to detect per file)</span>
+                </label>
+                <div className={styles.ratioGroup}>
+                  {['Auto', ...ASPECT_RATIOS].map((r) => {
+                    const val = r === 'Auto' ? '' : r
+                    return (
+                      <button key={r} type="button"
+                        className={`${styles.ratioBtn} ${sharedAspectRatio === val ? styles.ratioBtnActive : ''}`}
+                        onClick={() => setSharedAspectRatio(val)}>
+                        {r}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className={styles.ratioHint}>
+                  {sharedAspectRatio
+                    ? `All reels will use ${sharedAspectRatio}.`
+                    : '9:16 is recommended for vertical mobile reels. Each file\'s ratio will be auto-detected.'}
+                </p>
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* ── Footer ── */}
+        <div className={styles.footer}>
+          <button className={styles.cancelBtn} onClick={onClose} disabled={isUploading}>
+            {isComplete ? 'Close' : 'Cancel'}
+          </button>
+
+          {phase === 'configure' && validCount > 0 && (
+            <button className={styles.submitBtn} onClick={startUpload}>
+              <Play size={14} fill="currentColor" />
+              Upload {validCount} reel{validCount !== 1 ? 's' : ''}
+              {invalidCount > 0 && ` (${invalidCount} skipped)`}
+            </button>
+          )}
+
+          {phase === 'configure' && queue.length > 0 && validCount === 0 && (
+            <span className={styles.footerNote}>Fix the errors above before uploading.</span>
+          )}
+        </div>
+
+      </div>
+    </div>,
+    document.body
+  )
+}

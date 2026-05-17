@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowUpDown, Film, Tv2, BookOpen, Radio, LayoutGrid, ChevronDown, Check, Tag, Loader2 } from 'lucide-react'
+import { ArrowUpDown, Film, Tv2, BookOpen, Radio, LayoutGrid, ChevronDown, Check, Tag, Loader2, X } from 'lucide-react'
 import PosterCard from '../components/PosterCard'
 import { fetchContent, fetchContentGenres } from '../services/api'
 import { useStore } from '../store/useStore'
@@ -144,14 +144,26 @@ export default function Browse() {
                   </span>
                 )}
                 {activeGenre !== 'All' && (
-                  <span className={styles.heroBadge} style={{ background: `${accent}18`, color: accent }}>
+                  <button
+                    className={styles.heroBadge}
+                    style={{ background: `${accent}18`, color: accent, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', border: 'none' }}
+                    onClick={() => setActiveGenre('All')}
+                    aria-label={`Remove genre filter: ${activeGenre}`}
+                  >
                     {activeGenre}
-                  </span>
+                    <X size={11} />
+                  </button>
                 )}
                 {activeFilter !== 'All' && (
-                  <span className={styles.heroBadge} style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.55)' }}>
+                  <button
+                    className={styles.heroBadge}
+                    style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.55)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', border: 'none' }}
+                    onClick={() => setActiveFilter('All')}
+                    aria-label={`Remove access filter: ${activeFilter}`}
+                  >
                     {activeFilter}
-                  </span>
+                    <X size={11} />
+                  </button>
                 )}
               </div>
             </div>
@@ -264,14 +276,24 @@ export default function Browse() {
           <p className={styles.emptyTitle}>No titles found</p>
           <p className={styles.emptySub}>
             {hasActiveFilters
-              ? 'Try removing a genre or access filter to see more titles.'
+              ? 'Try removing a filter to see more titles.'
               : 'No content is available in this section yet.'}
           </p>
-          {hasActiveFilters && (
-            <button className={styles.emptyClear} onClick={() => { setActiveGenre('All'); setActiveFilter('All') }}>
-              Clear filters
+          <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
+            {hasActiveFilters && (
+              <button className={styles.emptyClear} onClick={() => { setActiveGenre('All'); setActiveFilter('All') }}>
+                Clear all filters
+              </button>
+            )}
+            {activeType !== 'All' && (
+              <button className={styles.emptyClear} onClick={() => navigate('/browse')}>
+                Browse all content
+              </button>
+            )}
+            <button className={styles.emptyClear} onClick={() => navigate('/')}>
+              Back to Home
             </button>
-          )}
+          </div>
         </div>
       ) : (
         <>
@@ -283,6 +305,7 @@ export default function Browse() {
                   item={item}
                   size="large"
                   isSubscribed={isSubscribed}
+                  source="browse"
                   onClick={(clicked) => {
                     if (clicked.isPremium && !isSubscribed) openItem(clicked)
                     else navigate(`/watch/${clicked._id || clicked.id}`)

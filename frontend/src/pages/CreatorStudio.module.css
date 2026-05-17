@@ -232,6 +232,164 @@
   flex-wrap: wrap;
 }
 
+/* ── Reels tab header ─────────────────────────────────────────────────────── */
+.submissionsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.submissionsTitle {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+/* ── Reel card list ───────────────────────────────────────────────────────── */
+.subList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.subCard {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.subCard:hover {
+  border-color: rgba(167, 139, 250, 0.25);
+  background: rgba(167, 139, 250, 0.03);
+}
+
+.subPoster {
+  width: 52px;
+  height: 72px;
+  border-radius: 5px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.subInfo {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.subRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.subTitle {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
+}
+
+.subMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  flex-wrap: wrap;
+}
+
+.subMeta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.subActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.resubmitBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  background: var(--creator-accent-dim);
+  color: var(--creator-accent);
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.resubmitBtn:hover {
+  background: rgba(167, 139, 250, 0.16);
+  border-color: var(--creator-accent);
+}
+
+.deleteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+
+.deleteBtn:hover {
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.07);
+}
+
+.rejectReason {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #f87171;
+  font-style: italic;
+  max-width: 380px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+}
 
 /* ── Filter tabs ──────────────────────────────────────────────────────────── */
 .filterTabs {
@@ -524,6 +682,518 @@
   margin: 0;
 }
 
+/* ══════════════════════════════════════════════════════
+   REELS SECTION — Creator Studio
+══════════════════════════════════════════════════════ */
+
+.reelSection {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 48px 64px;
+}
+
+/* Header */
+.reelHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.reelTitle {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 3px;
+}
+.reelSubtitle {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+/* Stats grid */
+.reelStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+@media (max-width: 1024px) { .reelStatsGrid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 640px)  { .reelStatsGrid { grid-template-columns: repeat(2, 1fr); } }
+
+.reelStatCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s;
+}
+.reelStatCard:hover { border-color: rgba(167,139,250,0.25); }
+
+.reelStatIcon {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.reelStatBody { min-width: 0; }
+.reelStatValue {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+  line-height: 1.2;
+}
+.reelStatLabel {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reelStatSub {
+  font-size: 10px;
+  color: var(--creator-accent);
+  margin: 2px 0 0;
+}
+
+/* ── Reel health grid ─────────────────────────────────────────────────── */
+.reelHealthGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+.reelHealthTile {
+  border-radius: var(--radius-md);
+  border: 1px solid;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.reelHealthBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.reelHealthTitle {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reelHealthStats {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.reelHealthStats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Full-width chart card (used in Reels analytics) */
+.reelChartFull {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 20px 24px 16px;
+  margin-bottom: 12px;
+}
+.reelChartFullHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.reelChartSubtext {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 3px 0 0;
+}
+
+/* Charts row: 2 cards side by side */
+.reelChartsRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+@media (max-width: 768px) { .reelChartsRow { grid-template-columns: 1fr; } }
+
+/* Chart card */
+.reelChartCard {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px 14px;
+}
+.reelChartTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 12px;
+}
+
+/* Horizontal bar chart */
+.reelBarChart {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.reelBarRow {
+  display: grid;
+  grid-template-columns: 100px 1fr 36px;
+  align-items: center;
+  gap: 8px;
+}
+.reelBarLabel {
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reelBarTrack {
+  height: 7px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.reelBarFill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.6s ease;
+  opacity: 0.85;
+}
+.reelBarCount {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.45);
+  text-align: right;
+}
+
+/* Toolbar */
+.reelToolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.reelSearchWrap {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+  max-width: 340px;
+}
+.reelSearchIcon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+.reelSearchInput {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 8px 32px 8px 32px;
+  font-size: 13px;
+  color: var(--color-text);
+  outline: none;
+  transition: border-color 0.15s;
+  font-family: var(--font-body);
+}
+.reelSearchInput::placeholder { color: var(--color-text-muted); }
+.reelSearchInput:focus { border-color: rgba(167,139,250,0.5); }
+.reelSearchClear {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+.reelSearchClear:hover { color: var(--color-text); }
+
+.reelStatusTabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.reelStatusTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font-body);
+}
+.reelStatusTab:hover { color: var(--color-text); border-color: rgba(255,255,255,0.2); }
+.reelStatusTabActive {
+  background: var(--creator-accent-dim);
+  border-color: var(--creator-accent);
+  color: var(--creator-accent);
+  font-weight: 600;
+}
+.reelStatusCount {
+  background: rgba(255,255,255,0.1);
+  border-radius: 999px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* No results */
+.reelNoResults {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+.reelNoResults button {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  padding: 6px 16px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.reelNoResults button:hover { color: var(--color-text); border-color: rgba(255,255,255,0.25); }
+
+/* Reel list */
+.reelList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Reel card */
+.reelCard {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s, background 0.15s;
+}
+.reelCard:hover {
+  border-color: rgba(167,139,250,0.3);
+  background: rgba(167,139,250,0.03);
+}
+
+.reelCardPoster {
+  position: relative;
+  width: 52px;
+  height: 72px;         /* 9:16 ratio */
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,0.07);
+}
+.reelCardDuration {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0,0,0,0.65);
+  border-radius: 3px;
+  padding: 1px 4px;
+  backdrop-filter: blur(4px);
+}
+
+.reelCardBody { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+
+.reelCardTop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.reelCardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
+}
+.reelCardNoCaption { color: rgba(255,255,255,0.3); font-style: italic; font-weight: 400; }
+
+.reelCardMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.reelCardTags { color: rgba(167,139,250,0.7); }
+
+/* Thin divider above stats row */
+.reelCardStatsDivider {
+  height: 1px;
+  background: rgba(255,255,255,0.06);
+  margin: 6px 0 4px;
+}
+
+/* Engagement stats row */
+.reelCardStats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Individual stat block: icon + number + label stacked */
+.reelStatBlock {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.reelStatNum {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1;
+}
+.reelStatLabel2 {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+/* Dot separator between stats */
+.reelStatDot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  flex-shrink: 0;
+}
+
+/* Legacy pill — kept for backward compat */
+.reelStatPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.reelStatPill em {
+  font-style: normal;
+  font-weight: 400;
+  font-size: 10.5px;
+  opacity: 0.7;
+}
+
+.reelCardReject {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #f87171;
+  margin: 0;
+  font-style: italic;
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reelCardActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Analytics footer guidance note ─────────────────────────────────────── */
+.analyticsFooterNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 32px;
+  padding: 16px 20px;
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.07);
+  color: var(--color-text-muted);
+}
+.analyticsFooterNote > svg { flex-shrink: 0; margin-top: 2px; opacity: 0.5; }
+.analyticsFooterTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0 0 3px;
+}
+.analyticsFooterSub {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
 /* ── Toast ────────────────────────────────────────────────────────────────── */
 .toast {
   position: fixed;
@@ -569,10 +1239,11 @@
   background: rgba(0, 0, 0, 0.78);
   backdrop-filter: blur(6px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  z-index: 9000;
-  padding: 24px;
+  z-index: 9999;             /* above navbar (800) */
+  padding: 80px 24px 32px;  /* 80px top clears the navbar */
+  overflow-y: auto;
 }
 
 .modalPanel {
@@ -581,11 +1252,12 @@
   border-radius: 12px;
   width: 100%;
   max-width: 620px;
-  max-height: 90vh;
+  max-height: calc(100dvh - 120px);  /* 80px top + 32px bottom padding */
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 32px 80px rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
 }
 
 .modalHeader {
@@ -1207,6 +1879,109 @@
   padding: 32px 48px 64px;
 }
 
+/* ── Analytics sub-tab switcher (Content / Reels) ─────────────────────── */
+.analyticsSubTabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding-bottom: 0;
+}
+.analyticsSubTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.45);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
+  font-family: var(--font-body);
+}
+.analyticsSubTab:hover { color: rgba(255,255,255,0.75); }
+.analyticsSubTabActive { color: var(--creator-accent); border-bottom-color: var(--creator-accent); }
+
+/* ── Per-reel analytics table ─────────────────────────────────────────── */
+.reelAnalyticsTable {
+  margin-top: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.reelAnalyticsHead {
+  display: grid;
+  grid-template-columns: 1fr 100px repeat(4, 80px);
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  gap: 8px;
+}
+@media (max-width: 768px) {
+  .reelAnalyticsHead { grid-template-columns: 1fr 80px repeat(2, 60px); }
+}
+
+.reelAnalyticsRow {
+  display: grid;
+  grid-template-columns: 1fr 100px repeat(4, 80px);
+  align-items: center;
+  padding: 12px 16px;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.12s;
+}
+.reelAnalyticsRow:last-child { border-bottom: none; }
+.reelAnalyticsRow:hover { background: rgba(167,139,250,0.04); }
+@media (max-width: 768px) {
+  .reelAnalyticsRow { grid-template-columns: 1fr 80px repeat(2, 60px); }
+}
+
+.reelAnalyticsInfo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.reelAnalyticsThumb {
+  width: 36px;
+  height: 50px;
+  border-radius: 5px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.07);
+}
+.reelAnalyticsTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reelAnalyticsTags {
+  font-size: 11px;
+  color: rgba(167,139,250,0.7);
+  margin: 2px 0 0;
+}
+.reelAnalyticsStat {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    Analytics — new visualisations
    ══════════════════════════════════════════════════════════════════════════ */
@@ -1214,10 +1989,17 @@
 /* Stat cards row */
 .analyticsStatRow {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 14px;
   margin-bottom: 20px;
 }
+
+/* 6-card variant — used by Reels analytics */
+.analyticsStatRow6 {
+  grid-template-columns: repeat(6, 1fr);
+}
+@media (max-width: 1024px) { .analyticsStatRow6 { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 640px)  { .analyticsStatRow6 { grid-template-columns: repeat(2, 1fr); } }
 
 .analyticsStatCard {
   background: rgba(255, 255, 255, 0.025);

@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { X, Play, Plus, Check, ThumbsUp, ThumbsDown, Crown, Globe, Star, Clapperboard } from 'lucide-react'
+import { X, Play, Plus, Check, ThumbsUp, ThumbsDown, Crown, Globe, Star, Clapperboard, Share2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
-import { addToWatchlist, removeFromWatchlist, likeContent, dislikeContent, fetchTrailerUrl } from '../services/api'
+import { addToWatchlist, removeFromWatchlist, likeContent, dislikeContent, fetchTrailerUrl, recordInteractionEvent } from '../services/api'
 import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './ContentDetailModal.module.css'
 
@@ -68,7 +68,7 @@ export default function ContentDetailModal() {
   }
 
   const handleWatch = (episodeBunnyId = null) => {
-    if (!isLoggedIn) { openAuth('signin'); return }
+    if (!isLoggedIn) { openAuth('signin', `/watch/${item.id}`); return }
     if (item.isPremium && !isSubscribed) { openPaywall(); return }
     setSelectedItem(null)
     // If a specific episode is clicked pass it via state; page handles it
@@ -116,6 +116,18 @@ export default function ContentDetailModal() {
       setDislikeCount((c) => prevDisliked ? c + 1 : c - 1)
       if (prevLiked) setLikeCount((c) => c + 1)
     }
+  }
+
+  const handleShare = async () => {
+    const url = `${window.location.origin}/watch/${item.id}`
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: cleanTitle, url })
+      } else {
+        await navigator.clipboard?.writeText(url)
+      }
+      recordInteractionEvent({ itemId: item.id, eventType: 'share', source: 'content_detail' }).catch(() => {})
+    } catch { /* share cancelled or clipboard unavailable */ }
   }
 
   return (
@@ -221,6 +233,15 @@ export default function ContentDetailModal() {
                 title="Not for me"
               >
                 <ThumbsDown size={16} />
+              </button>
+
+              <button
+                className={styles.circleBtn}
+                onClick={handleShare}
+                aria-label="Share"
+                title="Share"
+              >
+                <Share2 size={16} />
               </button>
             </div>
           </div>

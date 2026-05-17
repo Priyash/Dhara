@@ -64,6 +64,7 @@ export default function CuratedShelfRow({ shelf, onCardClick, isSubscribed = fal
               item={item}
               onClick={onCardClick}
               isSubscribed={isSubscribed}
+              source={`shelf:${shelf.name}`}
             />
           ))}
         </div>

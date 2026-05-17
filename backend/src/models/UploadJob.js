@@ -7,8 +7,10 @@ const uploadJobSchema = new mongoose.Schema(
     collectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'StreamCollection', required: true },
     collectionName: { type: String, default: '' },
     bunnyCollectionId: { type: String, required: true, trim: true },
+    // Exactly one of contentId or reelId must be set — enforced at the route layer.
     contentId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Content', default: null },
-    episodeNumber:   { type: Number,  default: null },  // null = main content video
+    reelId:          { type: mongoose.Schema.Types.ObjectId, ref: 'Reel',    default: null },
+    episodeNumber:   { type: Number,  default: null },  // null = main content video; ignored for reels
     episodeTitle:    { type: String,  default: '' },
     episodeDuration: { type: String,  default: '' },    // e.g. "42m"
     bunnyVideoId: { type: String, default: '' },

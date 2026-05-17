@@ -77,6 +77,7 @@ router.get('/', withCache(60), async (req, res, next) => {
 
     const query = {
       isPublished:      true,
+      isDeleted:        { $ne: true },
       submissionStatus: { $nin: ['pending', 'rejected'] },
     }
 
@@ -147,9 +148,12 @@ router.get('/:id/trailer', withCache(3600), async (req, res, next) => {
   }
 })
 
+const RATING_MIN_WATCH_SECS = 300  // 5 minutes
+
 /**
  * POST /api/content/:id/rate
  * Auth required. Body: { score: 1–5 }
+ * Requires the user to have watched at least 5 minutes before rating.
  * Upserts the user's rating and recomputes the community average on Content.
  */
 router.post('/:id/rate', requireAuth, async (req, res, next) => {
@@ -160,6 +164,18 @@ router.post('/:id/rate', requireAuth, async (req, res, next) => {
     }
 
     const contentId = req.params.id
+
+    // Verify the user has watched enough before rating
+    const userProgress = await User.findById(req.user._id).select('watchProgress').lean()
+    const hasWatched = (userProgress?.watchProgress || []).some(
+      (p) => String(p.contentId) === contentId && p.positionSecs >= RATING_MIN_WATCH_SECS
+    )
+    if (!hasWatched) {
+      return res.status(403).json({
+        error: 'Watch at least 5 minutes before rating.',
+        code:  'INSUFFICIENT_WATCH_TIME',
+      })
+    }
 
     // Upsert this user's rating
     await UserRating.findOneAndUpdate(
@@ -221,9 +237,14 @@ router.get('/genres', withCache(300), async (req, res, next) => {
  */
 router.get('/featured', withCache(60), async (req, res, next) => {
   try {
-    const items = await Content.find({ isFeatured: true, isPublished: true, submissionStatus: { $nin: ['pending', 'rejected'] } })
+    const items = await Content.find({
+      isFeatured: true,
+      isPublished: true,
+      isDeleted: { $ne: true },
+      submissionStatus: { $nin: ['pending', 'rejected'] },
+    })
       .select(PUBLIC_FIELDS)
-      .sort({ updatedAt: -1 })
+      .sort({ featuredOrder: 1, updatedAt: -1 })
       .limit(8)
       .lean()
     if (!items.length) return res.status(404).json({ error: 'No featured content set' })
@@ -265,7 +286,7 @@ router.get('/shelves', withCache(60), async (req, res, next) => {
  */
 router.get('/:id', async (req, res, next) => {
   try {
-    const item = await Content.findOne({ _id: req.params.id, isPublished: true, submissionStatus: { $nin: ['pending', 'rejected'] } }).select(PUBLIC_FIELDS).lean()
+    const item = await Content.findOne({ _id: req.params.id, isPublished: true, isDeleted: { $ne: true }, submissionStatus: { $nin: ['pending', 'rejected'] } }).select(PUBLIC_FIELDS).lean()
     if (!item) return res.status(404).json({ error: 'Content not found' })
     res.json(item)
   } catch (err) {
@@ -283,23 +304,30 @@ router.get('/:id', async (req, res, next) => {
 router.get('/:id/stream', requireAuth, async (req, res, next) => {
   try {
     const item = await Content.findById(req.params.id)
-      .select('isPremium bunnyVideoId submissionStatus isPublished creatorId episodes')
+      .select('isPremium bunnyVideoId submissionStatus isPublished isDeleted creatorId episodes')
       .lean()
 
     if (!item) return res.status(404).json({ error: 'Content not found' })
 
     const isOwnContent = item?.creatorId && req.user?._id?.toString() === item.creatorId.toString()
-    const isHidden = ['pending', 'rejected'].includes(item?.submissionStatus) || !item.isPublished
+    const isHidden = ['pending', 'rejected'].includes(item?.submissionStatus) || !item.isPublished || item.isDeleted
     if (isHidden && !isOwnContent) {
       return res.status(404).json({ error: 'Content not found' })
+    }
+    if (!req.user?.emailVerified) {
+      return res.status(403).json({ error: 'Verified email required', code: 'EMAIL_VERIFICATION_REQUIRED' })
     }
 
     // For Series, resolve the per-episode bunnyVideoId when ?episode=N is supplied
     let videoId = item.bunnyVideoId
     const epNum = req.query.episode != null ? Number(req.query.episode) : null
+    if (epNum != null && !Number.isInteger(epNum)) {
+      return res.status(400).json({ error: 'episode must be an integer' })
+    }
     if (epNum != null && item.episodes?.length) {
       const ep = item.episodes.find((e) => e.number === epNum)
-      if (ep?.bunnyVideoId) videoId = ep.bunnyVideoId
+      if (!ep) return res.status(404).json({ error: 'Episode not found' })
+      if (ep.bunnyVideoId) videoId = ep.bunnyVideoId
     }
 
     if (!videoId) return res.status(404).json({ error: 'No video attached to this title' })
@@ -316,54 +344,112 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
   }
 })
 
+const VIEW_MIN_POSITION_SECS = 30   // client must have watched at least 30 s
+const VIEW_DEDUP_WINDOW_MS   = 24 * 60 * 60 * 1000  // one counted view per user per content per day
+
 /**
  * POST /api/content/:id/view
- * No auth required. Increments viewCount atomically and logs a ViewEvent for analytics.
- * Optionally increments episode viewCount when episodeNumber is provided.
+ * Auth required. Records a view when the user has genuinely watched content:
+ *   - content must be published and not deleted
+ *   - premium content requires an active subscription
+ *   - client must send positionSecs >= 30 (confirmed playback threshold)
+ *   - deduplicated per user+content+episode within a 24-hour window
+ *
+ * Returns { ok: true, counted: boolean } — counted=false means the view was
+ * a duplicate and was not written; the client should treat both as success.
  */
-router.post('/:id/view', async (req, res, next) => {
+router.post('/:id/view', requireAuth, async (req, res, next) => {
   try {
-    const { episodeNumber } = req.body
-    const id = req.params.id
-    let doc
+    const id             = req.params.id
+    const episodeNumber  = req.body.episodeNumber != null ? Number(req.body.episodeNumber) : null
+    const positionSecs   = Number(req.body.positionSecs ?? 0)
 
+    if (!req.user?.emailVerified) {
+      return res.status(403).json({ error: 'Verified email required', code: 'EMAIL_VERIFICATION_REQUIRED' })
+    }
+
+    // Require proof of real playback before counting
+    if (positionSecs < VIEW_MIN_POSITION_SECS) {
+      return res.status(400).json({
+        error: `positionSecs must be at least ${VIEW_MIN_POSITION_SECS}`,
+        code:  'INSUFFICIENT_PLAYBACK',
+      })
+    }
+    if (episodeNumber != null && !Number.isInteger(episodeNumber)) {
+      return res.status(400).json({ error: 'episodeNumber must be an integer' })
+    }
+
+    // Validate the content exists, is published, and is not deleted
+    const item = await Content.findOne({
+      _id:              id,
+      isPublished:      true,
+      isDeleted:        { $ne: true },
+      submissionStatus: { $nin: ['pending', 'rejected'] },
+    }).select('isPremium creatorId episodes').lean()
+
+    if (!item) return res.status(404).json({ error: 'Content not found' })
+
+    // Entitlement check for premium content
+    // Creators can view their own content without a subscription
+    const isOwnContent = item.creatorId && req.user._id.toString() === item.creatorId.toString()
+    if (item.isPremium && !isOwnContent && !req.user.isSubscriptionActive) {
+      return res.status(403).json({ error: 'Active subscription required', code: 'SUBSCRIPTION_REQUIRED' })
+    }
+
+    // 24-hour deduplication — one view per user per content per episode per day
+    const dedupSince = new Date(Date.now() - VIEW_DEDUP_WINDOW_MS)
+    const recentView = await ViewEvent.exists({
+      userId:        req.user._id,
+      contentId:     id,
+      episodeNumber: episodeNumber,
+      viewedAt:      { $gte: dedupSince },
+    })
+
+    if (recentView) {
+      return res.json({ ok: true, counted: false })
+    }
+
+    // Increment view count atomically
+    let doc
     if (episodeNumber != null) {
+      if (item.episodes?.length && !item.episodes.some((ep) => ep.number === episodeNumber)) {
+        return res.status(404).json({ error: 'Episode not found' })
+      }
       doc = await Content.findByIdAndUpdate(
         id,
         { $inc: { viewCount: 1, 'episodes.$[ep].viewCount': 1 } },
-        { arrayFilters: [{ 'ep.number': Number(episodeNumber) }], select: 'creatorId' }
+        { arrayFilters: [{ 'ep.number': episodeNumber }], select: 'creatorId' }
       )
     } else {
       doc = await Content.findByIdAndUpdate(id, { $inc: { viewCount: 1 } }, { select: 'creatorId' })
     }
 
-    res.json({ ok: true })
+    res.json({ ok: true, counted: true })
 
-    // Fire-and-forget: log view event for creator analytics
-    if (doc?.creatorId) {
-      const now   = new Date()
-      const rawIp = (req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() || req.socket?.remoteAddress || ''
-      const geo   = geoip.lookup(rawIp) || {}
-      const ua    = req.headers['user-agent'] || ''
-      const device = /smart-tv|webos|tizen|roku|firetv|tv/i.test(ua) ? 'tv'
-        : /mobile|android|iphone|ipad|ipod/i.test(ua) ? 'mobile' : 'desktop'
-      const state = geo.country === 'IN' && geo.region
-        ? (IN_STATES[geo.region] || geo.region)
-        : (geo.country || 'Unknown')
+    // Fire-and-forget: write ViewEvent for deduplication and creator analytics.
+    const now    = new Date()
+    const rawIp  = (req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() || req.socket?.remoteAddress || ''
+    const geo    = geoip.lookup(rawIp) || {}
+    const ua     = req.headers['user-agent'] || ''
+    const device = /smart-tv|webos|tizen|roku|firetv|tv/i.test(ua) ? 'tv'
+      : /mobile|android|iphone|ipad|ipod/i.test(ua) ? 'mobile' : 'desktop'
+    const state  = geo.country === 'IN' && geo.region
+      ? (IN_STATES[geo.region] || geo.region)
+      : (geo.country || 'Unknown')
 
-      ViewEvent.create({
-        contentId:     id,
-        episodeNumber: episodeNumber ?? null,
-        creatorId:     doc.creatorId,
-        viewedAt:      now,
-        hour:          now.getHours(),
-        dayOfWeek:     now.getDay(),
-        state,
-        city:          geo.city    || 'Unknown',
-        country:       geo.country || 'Unknown',
-        device,
-      }).catch(() => {})
-    }
+    ViewEvent.create({
+      contentId:     id,
+      episodeNumber: episodeNumber ?? null,
+      creatorId:     doc?.creatorId ?? null,
+      userId:        req.user._id,
+      viewedAt:      now,
+      hour:          now.getHours(),
+      dayOfWeek:     now.getDay(),
+      state,
+      city:          geo.city    || 'Unknown',
+      country:       geo.country || 'Unknown',
+      device,
+    }).catch((err) => console.error('[view-event] write failed:', err.message))
   } catch (err) {
     next(err)
   }

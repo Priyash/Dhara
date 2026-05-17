@@ -123,3 +123,51 @@ export function emailSubmissionRejected(studioName, email, contentTitle, reason)
     `,
   })
 }
+
+export function emailTierAdvancement(studioName, email, prevTier, newTier, revenueSharePct) {
+  return sendEmail({
+    to:      email,
+    subject: `You've reached ${newTier} tier — ধারা`,
+    html: `
+      <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+        <h2 style="color:#7c3aed">ধারা Creator Studio</h2>
+        <p>Hi <strong>${studioName}</strong>,</p>
+        <p>🎉 Congratulations! You've advanced from <strong>${prevTier}</strong> to the
+           <strong>${newTier}</strong> tier.</p>
+        <p>Your revenue share has increased to <strong>${revenueSharePct}%</strong> on all future earnings.</p>
+        <p>Keep creating great content to continue growing on ধারা!</p>
+        <p>
+          <a href="https://dhara.stream/creator-studio" style="color:#7c3aed">View your Creator Studio →</a>
+        </p>
+        <p style="margin-top:32px;font-size:13px;color:#888">
+          — The ধারা team
+        </p>
+      </div>
+    `,
+  })
+}
+
+export function emailSubscriptionRenewalReminder(displayName, email, expiresAt, plan) {
+  const expiryStr = new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+  return sendEmail({
+    to:      email,
+    subject: 'Your ধারা subscription expires in 3 days',
+    html: `
+      <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+        <h2 style="color:#7c3aed">ধারা</h2>
+        <p>Hi <strong>${displayName}</strong>,</p>
+        <p>Your <strong>${plan}</strong> subscription expires on <strong>${expiryStr}</strong>.</p>
+        <p>To continue enjoying unlimited Bengali cinema, series &amp; documentaries without interruption,
+           please renew before it lapses.</p>
+        <p>
+          <a href="https://dhara.stream/profile" style="display:inline-block;background:#7c3aed;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600">
+            Renew Subscription
+          </a>
+        </p>
+        <p style="margin-top:32px;font-size:13px;color:#888">
+          — The ধারা team
+        </p>
+      </div>
+    `,
+  })
+}

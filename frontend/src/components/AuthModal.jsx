@@ -22,7 +22,7 @@ function friendlyError(code) {
 }
 
 export default function AuthModal() {
-  const { authMode, closeAuth, signIn, signUp, setAuthMode, runScreenTransition } = useStore()
+  const { authMode, authRedirectPath, closeAuth, signIn, signUp, setAuthMode, runScreenTransition } = useStore()
   const navigate = useNavigate()
 
   const [email,    setEmail]    = useState('')
@@ -47,8 +47,12 @@ export default function AuthModal() {
       await runScreenTransition(
         isSignUp ? 'Setting up your profile...' : 'Signing you in...',
         async () => {
+          const destination = authRedirectPath || null
           closeAuth()
-          navigate('/', { replace: true })
+          // If the user was trying to do something specific (e.g. watch a film),
+          // send them there. Otherwise stay on the current page — navigating to '/'
+          // would be disorienting if they signed in from Browse or a watch gate.
+          if (destination) navigate(destination, { replace: true })
         }
       )
     } catch (err) {

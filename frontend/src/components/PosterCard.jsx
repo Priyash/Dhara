@@ -1,20 +1,38 @@
-import { useState, useRef, memo } from 'react'
+import { useEffect, useState, useRef, memo } from 'react'
 import Hls from 'hls.js'
 import { Crown, Star } from 'lucide-react'
 import { cloudinaryTransform } from '../services/cloudinary'
-import { fetchTrailerUrl } from '../services/api'
+import { fetchTrailerUrl, recordInteractionEvent } from '../services/api'
 import styles from './PosterCard.module.css'
 
 function stripExtension(name = '') {
   return name.replace(/\.(mp4|mkv|mov|avi|webm|m4v|flv|wmv|ts|mts|3gp)$/i, '').trim()
 }
 
-function PosterCard({ item, onClick, size = 'normal', isSubscribed = false }) {
+function PosterCard({ item, onClick, size = 'normal', isSubscribed = false, source = 'row' }) {
   const [imgError,    setImgError]    = useState(false)
   const [trailerSrc,  setTrailerSrc]  = useState(null)
   const hoverTimer = useRef(null)
   const videoRef   = useRef(null)
   const hlsRef     = useRef(null)
+  const cardRef    = useRef(null)
+  const impressionSentRef = useRef(false)
+
+  useEffect(() => {
+    const id = item?._id || item?.id
+    const el = cardRef.current
+    if (!id || !el || impressionSentRef.current || typeof IntersectionObserver === 'undefined') return
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting || entry.intersectionRatio < 0.5 || impressionSentRef.current) return
+      impressionSentRef.current = true
+      recordInteractionEvent({ itemId: id, eventType: 'impression', source }).catch(() => {})
+      observer.disconnect()
+    }, { threshold: [0.5] })
+
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [item, source])
 
   const startTrailer = async () => {
     if (!item.trailerVideoId) return
@@ -66,6 +84,7 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false }) {
 
   return (
     <article
+      ref={cardRef}
       className={`${styles.card} ${styles[size]} ${item.isPremium && !isSubscribed ? styles.premiumCard : ''}`}
       onClick={() => onClick?.(item)}
       role="button"

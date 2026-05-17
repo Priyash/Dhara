@@ -10,7 +10,7 @@ export const PALETTES = [
   'linear-gradient(135deg,#2d0a1a 0%,#8b004a 100%)',
 ]
 
-export const NAV_LINKS = ['Home', 'Movies', 'Series', 'Originals', 'Live']
+export const NAV_LINKS = ['Home', 'Movies', 'Series', 'Originals', 'Live', 'Reels']
 
 export const PLANS = [
   { id: 'monthly', label: 'Monthly',  price: '₹99',  sub: 'per month',              badge: null },

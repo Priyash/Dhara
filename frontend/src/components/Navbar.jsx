@@ -11,9 +11,11 @@ const NAV_ROUTES = {
   Series:    '/browse?type=Series',
   Originals: '/browse?type=Documentary',
   Live:      '/browse?type=Live',
+  Reels:     '/reels',
 }
 
 function getActiveLink(location) {
+  if (location.pathname === '/reels') return 'Reels'
   if (location.pathname !== '/browse') return location.pathname === '/' ? 'Home' : null
   const type = new URLSearchParams(location.search).get('type')
   if (type === 'Film')         return 'Movies'

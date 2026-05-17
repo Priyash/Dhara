@@ -1256,6 +1256,38 @@
 
 .ghostBtn:hover { background: rgba(255,255,255,0.09); color: #fff; }
 
+/* Reel review card */
+.submissionCard {
+  display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+  background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 10px; transition: border-color 0.15s;
+}
+.submissionCard:hover { border-color: rgba(167,139,250,0.2); }
+
+/* Danger button */
+.dangerBtn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 14px; font-size: 12px; font-weight: 600; border-radius: 7px;
+  border: 1px solid rgba(248,113,113,0.35); background: rgba(248,113,113,0.1);
+  color: #f87171; cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.dangerBtn:hover:not(:disabled) { background: rgba(248,113,113,0.2); border-color: #f87171; }
+.dangerBtn:disabled { opacity: 0.4; cursor: default; }
+
+/* Filter chips for reel status */
+.filterChip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 99px; font-size: 12px; font-weight: 500;
+  border: 1px solid rgba(255,255,255,0.1); background: transparent;
+  color: rgba(255,255,255,0.5); cursor: pointer; transition: all 0.15s;
+}
+.filterChip:hover { color: #fff; border-color: rgba(255,255,255,0.25); }
+.filterChipActive { border-color: #7c3aed; background: rgba(124,58,237,0.15); color: #fff; }
+.filterChipBadge {
+  background: rgba(251,191,36,0.2); color: #fbbf24; border-radius: 99px;
+  padding: 0 5px; font-size: 10px; font-weight: 700;
+}
+
 .modalFooter {
   display: flex;
   justify-content: flex-end;

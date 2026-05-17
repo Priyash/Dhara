@@ -18,6 +18,13 @@ function planExpiresAt(plan) {
   return new Date(Date.now() + PLANS[plan].days * 86_400_000)
 }
 
+function extendPlanFrom(plan, currentExpiresAt = null) {
+  const current = currentExpiresAt ? new Date(currentExpiresAt).getTime() : 0
+  const now = Date.now()
+  const base = Number.isFinite(current) && current > now ? current : now
+  return new Date(base + PLANS[plan].days * 86_400_000)
+}
+
 /**
  * POST /api/payments/create-order
  */
@@ -117,7 +124,22 @@ router.post('/verify', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'Order does not belong to this account' })
     }
 
-    const expiresAt = planExpiresAt(plan)
+    const existingTx = await Transaction.findOne({ orderId: razorpay_order_id })
+      .select('status paymentId')
+      .lean()
+    if (existingTx?.status === 'paid') {
+      return res.json({
+        success:               true,
+        alreadyProcessed:      true,
+        isSubscribed:          req.user.isSubscriptionActive,
+        subscriptionStatus:    req.user.subscriptionStatus,
+        subscriptionPlan:      req.user.subscriptionPlan,
+        subscriptionExpiresAt: req.user.subscriptionExpiresAt,
+      })
+    }
+
+    const currentUser = await User.findById(req.user._id).select('subscriptionExpiresAt').lean()
+    const expiresAt = extendPlanFrom(plan, currentUser?.subscriptionExpiresAt)
 
     // Mark transaction as paid
     await Transaction.findOneAndUpdate(
@@ -217,6 +239,10 @@ router.post('/webhook', async (req, res, next) => {
         const user = await User.findById(userId)
         if (!user) break
 
+        const existingTx = await Transaction.findOne({ orderId: entity.order_id })
+          .select('status')
+          .lean()
+
         // Upsert transaction from webhook (in case /verify wasn't called)
         await Transaction.findOneAndUpdate(
           { orderId: entity.order_id },
@@ -243,13 +269,13 @@ router.post('/webhook', async (req, res, next) => {
           { upsert: true }
         )
 
-        if (user.subscriptionStatus !== 'active') {
+        if (existingTx?.status !== 'paid') {
           await User.findByIdAndUpdate(userId, {
             $set: {
               subscriptionStatus:    'active',
               subscriptionPlan:      plan,
               subscriptionStartedAt: new Date(),
-              subscriptionExpiresAt: planExpiresAt(plan),
+              subscriptionExpiresAt: extendPlanFrom(plan, user.subscriptionExpiresAt),
               graceEndsAt:           null,
             },
           })
@@ -269,7 +295,7 @@ router.post('/webhook', async (req, res, next) => {
         const user = await User.findById(userId)
         if (!user) break
 
-        const expiresAt = planExpiresAt(plan)
+        const expiresAt = extendPlanFrom(plan, user.subscriptionExpiresAt)
 
         await Transaction.create({
           userId:    user._id,
