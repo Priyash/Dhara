@@ -974,7 +974,7 @@
   }
 
   .statsBand {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .upsell {
@@ -998,5 +998,24 @@
 
   .sectionHead {
     flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: calc(var(--nav-height, 64px) + 16px) 12px 40px;
+  }
+
+  .name {
+    font-size: 26px;
+  }
+
+  .statsBand {
+    grid-template-columns: 1fr;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
   }
 }

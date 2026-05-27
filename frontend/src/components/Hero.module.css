@@ -203,21 +203,22 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
   border-radius: var(--radius-md);
   padding: 14px 24px;
   font-family: var(--font-body);
   font-size: 15px;
-  font-weight: 500;
-  color: var(--color-text);
+  font-weight: 600;
+  color: #f59e0b;
   cursor: pointer;
   backdrop-filter: blur(10px);
-  transition: background var(--transition);
+  transition: background var(--transition), border-color var(--transition);
 }
 
 .infoBtn:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.55);
 }
 
 .muteBtn {
@@ -321,4 +322,66 @@
 @keyframes progressFill {
   from { transform: scaleX(0); }
   to   { transform: scaleX(1); }
+}
+
+@media (max-width: 768px) {
+  .hero {
+    height: 72vh;
+    min-height: 400px;
+  }
+
+  .content {
+    padding: 0 20px;
+    padding-top: var(--nav-height);
+    max-width: 100%;
+  }
+
+  .heading {
+    transform: scale(1) !important;
+    font-size: clamp(26px, 7vw, 48px);
+  }
+
+  .desc {
+    -webkit-line-clamp: 2;
+    font-size: 14px;
+    margin-bottom: 20px;
+  }
+
+  .indicators {
+    left: 20px;
+    bottom: 16px;
+  }
+
+  .ring1, .ring2, .dot {
+    display: none;
+  }
+
+  .watchBtn {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+
+  .infoBtn {
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .content {
+    padding: 0 16px;
+    padding-top: var(--nav-height);
+  }
+
+  .actions {
+    gap: 8px;
+  }
+
+  .muteBtn {
+    display: none;
+  }
+
+  .navBtn {
+    display: none;
+  }
 }

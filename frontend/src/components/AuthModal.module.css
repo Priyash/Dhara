@@ -247,3 +247,22 @@
 .switchLink:hover {
   opacity: 0.8;
 }
+
+@media (max-width: 480px) {
+  .header {
+    padding: 28px 20px 20px;
+  }
+
+  .body {
+    padding: 20px;
+    gap: 14px;
+  }
+
+  .logo {
+    font-size: 26px;
+  }
+
+  .heading {
+    font-size: 18px;
+  }
+}
