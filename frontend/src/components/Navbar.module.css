@@ -262,13 +262,64 @@
 }
 
 @media (max-width: 900px) {
-  .links {
-    display: none;
-  }
-
+  /* Two-row layout: logo + actions on row 1, links strip on row 2 */
   .nav {
     padding: 0 16px;
-    gap: 12px;
+    gap: 0;
+    height: auto;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .logo {
+    order: 1;
+    height: 64px;
+    display: flex;
+    align-items: center;
+  }
+
+  .actions {
+    order: 2;
+    height: 64px;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+  }
+
+  /* Links wrap onto a full-width second row, horizontally scrollable */
+  .links {
+    display: flex;
+    order: 3;
+    flex: 0 0 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    gap: 0;
+    height: 40px;
+    padding: 0;
+    align-items: center;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .links::-webkit-scrollbar { display: none; }
+
+  .link {
+    flex-shrink: 0;
+    padding: 0 16px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  /* Active indicator sits at the bottom edge of the strip */
+  .link::after {
+    bottom: 0;
+    left: 16px;
+    right: 16px;
+    height: 2px;
+    border-radius: 1px 1px 0 0;
   }
 
   .profileBtn { width: 38px; }

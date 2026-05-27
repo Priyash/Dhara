@@ -331,6 +331,13 @@ export default function Watch() {
         <div className={styles.gateCentered}>
           {/* Movie context — teases what they're about to watch */}
           <div className={styles.gateMovieInfo}>
+            {content.posterUrl && (
+              <img
+                src={cloudinaryTransform(content.posterUrl, 'w_90,h_135,c_fill,f_auto,q_auto')}
+                alt={cleanTitle}
+                className={styles.gatePosterThumb}
+              />
+            )}
             {hasGenre && (
               <div className={styles.gateGenres}>
                 {content.genre.slice(0, 3).map((g) => (
@@ -355,9 +362,14 @@ export default function Watch() {
                 <p className={styles.gatePanelDesc}>
                   Join Dhara and enjoy unlimited Bengali cinema, series & documentaries.
                 </p>
-                <button className={styles.gatePanelBtn} onClick={() => openAuth('signin', `/watch/${id}`)}>
-                  <Play size={14} fill="currentColor" /> Sign In to Continue
-                </button>
+                <div className={styles.gatePanelActions}>
+                  <button className={styles.gatePanelBtn} onClick={() => openAuth('signin', `/watch/${id}`)}>
+                    <Play size={14} fill="currentColor" /> Sign In
+                  </button>
+                  <button className={styles.gatePanelBtnGhost} onClick={() => openAuth('signup', `/watch/${id}`)}>
+                    Create Free Account
+                  </button>
+                </div>
                 <p className={styles.gatePanelFine}>Free trial available · No credit card required</p>
               </>
             )}
