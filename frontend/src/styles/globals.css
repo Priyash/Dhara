@@ -89,3 +89,10 @@ img {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* Mobile: navbar grows to two rows (top bar 64px + links strip 40px) */
+@media (max-width: 900px) {
+  :root {
+    --nav-height: 104px;
+  }
+}

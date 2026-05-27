@@ -225,8 +225,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  /* background-attachment must NOT be fixed on a position:fixed element */
-  background-color: #0a0a0c;
+  /* Rich gradient fallback for when no backdrop image is available */
+  background: linear-gradient(135deg, #0d0d1f 0%, #1a0d2e 25%, #0d1520 55%, #0a0a0c 100%);
 }
 
 /* Backdrop rendered as an absolutely-positioned pseudo-layer so we can
@@ -238,21 +238,21 @@
   background-image: var(--backdrop, none);
   background-size: cover;
   background-position: center center;
-  opacity: 0.55;
+  opacity: 0.65;
   z-index: 0;
 }
 
-/* Gradient overlay on top of the backdrop */
+/* Gradient overlay on top of the backdrop — lighter at top so backdrop shows */
 .cinematicGate::after {
   content: '';
   position: absolute;
   inset: 0;
   background: linear-gradient(
     to bottom,
-    rgba(0,0,0,0.1)  0%,
-    rgba(0,0,0,0.3)  30%,
-    rgba(0,0,0,0.65) 60%,
-    rgba(0,0,0,0.88) 80%,
+    rgba(0,0,0,0.05) 0%,
+    rgba(0,0,0,0.18) 25%,
+    rgba(0,0,0,0.55) 55%,
+    rgba(0,0,0,0.82) 78%,
     #0a0a0c 100%
   );
   z-index: 1;
@@ -307,6 +307,17 @@
   flex-direction: column;
   align-items: center;
   gap: 10px;
+}
+
+/* Small poster thumbnail floated above the genre chips */
+.gatePosterThumb {
+  width: 80px;
+  aspect-ratio: 2/3;
+  border-radius: 10px;
+  object-fit: cover;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.7);
+  border: 1px solid rgba(255,255,255,0.14);
+  margin-bottom: 2px;
 }
 
 .gateGenres {
@@ -886,4 +897,60 @@
 @media (max-width: 600px) {
   .related { padding: 24px 16px 48px; }
   .relatedGrid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ── Gate mobile ──────────────────────────────────────────────────────────── */
+@media (max-width: 540px) {
+  .gateCentered {
+    gap: 20px;
+    padding: 0 16px;
+  }
+
+  .gateMovieTitle {
+    font-size: clamp(18px, 6vw, 28px);
+  }
+
+  .gatePosterThumb {
+    width: 64px;
+  }
+
+  .gatePanel {
+    padding: 24px 20px;
+    border-radius: 14px;
+  }
+
+  .gatePanelTitle {
+    font-size: 18px;
+  }
+
+  .gatePanelDesc {
+    font-size: 13px;
+  }
+
+  .gatePanelBtn {
+    padding: 12px 22px;
+    font-size: 14px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .gatePanelBtnGhost {
+    padding: 11px 18px;
+    font-size: 13px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .gatePanelActions {
+    width: 100%;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .gateBackBtn {
+    top: calc(var(--nav-height, 64px) + 8px);
+    left: 16px;
+    padding: 7px 14px 7px 10px;
+    font-size: 12px;
+  }
 }
