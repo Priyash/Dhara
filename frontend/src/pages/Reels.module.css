@@ -75,8 +75,13 @@
   gap: 8px;
   flex-wrap: nowrap;
   margin-bottom: 20px;
-  overflow: visible;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-bottom: 4px;
 }
+
+.topicBar::-webkit-scrollbar { display: none; }
 
 .chip {
   display: inline-flex;

@@ -367,6 +367,7 @@
   padding: 4px 0;
 }
 @media (max-width: 540px) { .reelResultGrid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 380px) { .reelResultGrid { grid-template-columns: repeat(2, 1fr); } }
 
 .reelResultCard {
   display: flex;

@@ -273,3 +273,26 @@
 
   .profileBtn { width: 38px; }
 }
+
+@media (max-width: 480px) {
+  .nav {
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  .subscribeBtn {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .adminBtn,
+  .creatorBtn {
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  .signInBtn {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+}
