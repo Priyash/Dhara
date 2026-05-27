@@ -68,13 +68,12 @@ function utcDay() {
 }
 
 function computeDedupKey(eventType, itemId, userId, sessionId) {
-  // No identity means we can't deduplicate — write freely
   const identity = userId ? `u:${userId}` : (sessionId ? `s:${sessionId}` : '')
-  if (!identity) return ''
+  if (!identity) return null
 
   if (LIFETIME_DEDUP_EVENTS.has(eventType)) return `${identity}:${itemId}:${eventType}`
   if (DAILY_DEDUP_EVENTS.has(eventType))    return `${identity}:${itemId}:${eventType}:${utcDay()}`
-  return ''  // impression and anything else — no dedup
+  return null  // impression and anything else — no dedup, sparse index skips null
 }
 
 function normalizeEventPayload(body = {}) {

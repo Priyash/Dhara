@@ -45,9 +45,11 @@ function analyseVideo(file) {
 
       let thumb = null
       try {
-        canvas.width = 64; canvas.height = 90
-        canvas.getContext('2d').drawImage(video, 0, 0, 64, 90)
-        thumb = canvas.toDataURL('image/jpeg', 0.6)
+        const scale = w > 0 ? Math.min(1, 360 / w) : 1
+        canvas.width  = Math.round(w * scale) || 360
+        canvas.height = Math.round(h * scale) || 640
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+        thumb = canvas.toDataURL('image/jpeg', 0.8)
       } catch {}
 
       URL.revokeObjectURL(url)
@@ -62,6 +64,16 @@ function analyseVideo(file) {
     video.preload    = 'metadata'
     video.src        = url
   })
+}
+
+// Convert a base64 data URL to a File object for Cloudinary upload
+function dataUrlToFile(dataUrl, filename) {
+  const [header, data] = dataUrl.split(',')
+  const mime = header.match(/:(.*?);/)[1]
+  const bytes = atob(data)
+  const arr   = new Uint8Array(bytes.length)
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+  return new File([arr], filename, { type: mime })
 }
 
 export default function ReelUploadModal({ onClose, onCreated }) {
@@ -87,21 +99,23 @@ export default function ReelUploadModal({ onClose, onCreated }) {
     const incoming = Array.from(files)
     const items = incoming.map((file) => ({
       id: uid(), file,
-      title:       cleanName(file.name),
-      duration:    0,
-      aspectRatio: '9:16',
-      thumb:       null,
-      validError:  validateFile(file),
-      status:      'pending',
-      progress:    0,
-      error:       null,
+      title:             cleanName(file.name),
+      duration:          0,
+      aspectRatio:       '9:16',
+      thumb:             null,
+      autoThumbUrl:      null,
+      autoThumbUploading: false,
+      validError:        validateFile(file),
+      status:            'pending',
+      progress:          0,
+      error:             null,
     }))
     setQueue((prev) => [...prev, ...items])
 
     // Analyse valid files in background (fills duration, aspectRatio, thumb)
     for (const item of items) {
       if (item.validError) continue
-      analyseVideo(item.file).then((meta) => {
+      analyseVideo(item.file).then(async (meta) => {
         if (meta.duration > MAX_DURATION_SECS) {
           setQueue((prev) => prev.map((q) => q.id === item.id
             ? { ...q, validError: `${Math.round(meta.duration)}s — max ${MAX_DURATION_SECS}s` }
@@ -109,8 +123,23 @@ export default function ReelUploadModal({ onClose, onCreated }) {
           return
         }
         setQueue((prev) => prev.map((q) => q.id === item.id
-          ? { ...q, duration: Math.round(meta.duration), aspectRatio: meta.aspectRatio, thumb: meta.thumb }
+          ? { ...q, duration: Math.round(meta.duration), aspectRatio: meta.aspectRatio, thumb: meta.thumb, autoThumbUploading: !!meta.thumb }
           : q))
+
+        // Auto-upload the captured frame so every reel has a thumbnail
+        if (meta.thumb) {
+          try {
+            const thumbFile = dataUrlToFile(meta.thumb, 'thumb.jpg')
+            const url = await uploadToCloudinary(thumbFile, { folder: 'dhara/reels/thumbnails' })
+            setQueue((prev) => prev.map((q) => q.id === item.id
+              ? { ...q, autoThumbUrl: url, autoThumbUploading: false }
+              : q))
+          } catch {
+            setQueue((prev) => prev.map((q) => q.id === item.id
+              ? { ...q, autoThumbUploading: false }
+              : q))
+          }
+        }
       })
     }
   }, [])
@@ -138,7 +167,7 @@ export default function ReelUploadModal({ onClose, onCreated }) {
           hashtags:     tags,
           aspectRatio:  sharedAspectRatio || item.aspectRatio,
           durationSecs: item.duration,
-          thumbnailUrl: thumbnailUrl.trim(),
+          thumbnailUrl: thumbnailUrl.trim() || item.autoThumbUrl || '',
         }).catch((err) => {
           // Surface the daily limit error with a clear message
           if (err?.message?.includes('Daily upload limit')) {
@@ -258,6 +287,11 @@ export default function ReelUploadModal({ onClose, onCreated }) {
                     style={item.thumb ? { backgroundImage: `url(${item.thumb})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
                   >
                     {!item.thumb && <Video size={14} style={{ color: 'rgba(255,255,255,0.3)' }} />}
+                    {item.autoThumbUploading && (
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)', borderRadius: 'inherit' }}>
+                        <Loader2 size={14} className={styles.spin} />
+                      </div>
+                    )}
                     {item.duration > 0 && <span className={styles.queueDur}>{item.duration}s</span>}
                   </div>
 

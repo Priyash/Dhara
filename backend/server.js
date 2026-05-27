@@ -5,12 +5,14 @@ import compression from 'compression'
 import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
+import { randomUUID } from 'crypto'
 import mongoose from 'mongoose'
 
-import './src/config/firebase.js'          // initialise Firebase Admin on startup
+import './src/config/firebase.js'
 import { connectMongoDB, dbStatus } from './src/config/mongodb.js'
 import { syncAdminClaims } from './src/config/adminSync.js'
 import { startSubscriptionExpiryJob } from './src/config/subscriptionExpiry.js'
+import { startEarningsJob } from './src/config/earningsJob.js'
 
 import authRoutes           from './src/routes/auth.js'
 import contentRoutes        from './src/routes/content.js'
@@ -23,39 +25,81 @@ import reelRoutes           from './src/routes/reels.js'
 import recommendationRoutes from './src/routes/recommendations.js'
 import { errorHandler } from './src/middleware/errorHandler.js'
 
+// ── Startup env validation ────────────────────────────────────────────────────
+const isProd = process.env.NODE_ENV === 'production'
+
+if (isProd) {
+  const required = [
+    'MONGODB_URI', 'FIREBASE_SERVICE_ACCOUNT_BASE64',
+    'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET',
+  ]
+  const missing = required.filter((k) => !process.env[k])
+  if (missing.length) {
+    console.error('[startup] FATAL — missing required env vars:', missing.join(', '))
+    process.exit(1)
+  }
+  if (!process.env.FRONTEND_URL) {
+    console.error('[startup] FATAL — FRONTEND_URL must be set in production (CORS will block all frontend requests)')
+    process.exit(1)
+  }
+  if (!process.env.BUNNY_CDN_TOKEN_AUTH_KEY) {
+    console.error('[startup] FATAL — BUNNY_CDN_TOKEN_AUTH_KEY must be set in production (premium content would be served unsigned)')
+    process.exit(1)
+  }
+}
+
+// ── App setup ─────────────────────────────────────────────────────────────────
 const app  = express()
 const PORT = process.env.PORT || 4000
+
+// Attach a unique ID to every request — surfaced in error logs and X-Request-Id header.
+app.use((req, res, next) => {
+  req.id = randomUUID()
+  res.setHeader('X-Request-Id', req.id)
+  next()
+})
 
 app.use(compression())
 app.use(helmet())
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin:      process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
 }))
 
 // Razorpay webhooks need the raw body for HMAC signature verification
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }))
-app.use(express.json())
+app.use(express.json({ limit: '1mb' }))
 
-// Admin routes get a much higher limit — they poll frequently and are trusted users
+// ── Rate limiters ─────────────────────────────────────────────────────────────
+// Auth: tighter per-IP limit. Firebase blocks credential brute-force at source;
+// this protects against token-replay abuse and hammering our login endpoint.
+app.use('/api/auth', rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             100,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Too many requests. Please wait and try again.', code: 'RATE_LIMITED' },
+}))
+
+// Admin routes: higher limit — dashboard polls frequently, users are trusted
 app.use('/api/admin', rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 2000,
+  windowMs:        15 * 60 * 1000,
+  max:             2000,
   standardHeaders: true,
-  legacyHeaders: false,
+  legacyHeaders:   false,
 }))
 
+// General API limit
 app.use('/api', rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 1000,
+  windowMs:        15 * 60 * 1000,
+  max:             1000,
   standardHeaders: true,
-  legacyHeaders: false,
+  legacyHeaders:   false,
+  message:         { error: 'Too many requests. Please wait and try again.', code: 'RATE_LIMITED' },
 }))
 
-// ── DB guard — must come before route mounts ──────────────────────────────────
-// Returns 503 immediately for any /api request while MongoDB is not connected.
-// This prevents cryptic Mongoose timeout errors from reaching the client and
-// tells callers explicitly that the error is transient and retryable.
+// ── DB guard ──────────────────────────────────────────────────────────────────
+// Returns 503 immediately while MongoDB is not connected so clients know to retry.
 app.use('/api', (req, res, next) => {
   if (!dbStatus.connected) {
     return res.status(503).json({
@@ -66,6 +110,7 @@ app.use('/api', (req, res, next) => {
   next()
 })
 
+// ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth',            authRoutes)
 app.use('/api/content',         contentRoutes)
 app.use('/api/user',            userRoutes)
@@ -76,13 +121,12 @@ app.use('/api/creator',         creatorRoutes)
 app.use('/api/reels',           reelRoutes)
 app.use('/api/recommendations', recommendationRoutes)
 
-// Health endpoint — always responds, reports real DB status to load balancers/uptime monitors
+// Health endpoint — always responds, even while DB is disconnected
 app.get('/health', (_req, res) => {
-  const db     = dbStatus.connected ? 'connected' : 'disconnected'
-  const status = dbStatus.connected ? 'ok' : 'degraded'
-  res.status(dbStatus.connected ? 200 : 503).json({
-    status,
-    db,
+  const ok = dbStatus.connected
+  res.status(ok ? 200 : 503).json({
+    status: ok ? 'ok' : 'degraded',
+    db:     ok ? 'connected' : 'disconnected',
     ...(dbStatus.lastError ? { dbError: dbStatus.lastError } : {}),
     ts: new Date().toISOString(),
   })
@@ -93,9 +137,9 @@ app.use(errorHandler)
 // ── Startup ───────────────────────────────────────────────────────────────────
 // The HTTP server starts immediately so health checks and 503 responses work
 // even while MongoDB is unreachable. DB-dependent startup tasks run once the
-// first successful connection fires the 'connected' event.
+// first successful connection fires.
 
-app.listen(PORT, () => console.log(`Dhara backend → http://localhost:${PORT}`))
+const server = app.listen(PORT, () => console.log(`Dhara backend → http://localhost:${PORT}`))
 
 let startupTasksDone = false
 mongoose.connection.on('connected', async () => {
@@ -107,7 +151,31 @@ mongoose.connection.on('connected', async () => {
     console.error('[startup] syncAdminClaims failed:', err.message)
   }
   startSubscriptionExpiryJob()
+  startEarningsJob()
 })
 
-// Initiate connection — non-blocking, retries automatically on failure
 connectMongoDB()
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+// Platforms like Render send SIGTERM before replacing the instance.
+// We drain in-flight requests (including payment verifications) before exiting.
+function shutdown(signal) {
+  console.log(`[shutdown] ${signal} — draining connections…`)
+  server.close(async () => {
+    try {
+      await mongoose.connection.close(false)
+      console.log('[shutdown] MongoDB closed cleanly')
+    } catch (err) {
+      console.error('[shutdown] MongoDB close error:', err.message)
+    }
+    process.exit(0)
+  })
+  // Force-exit after 15 s if requests don't drain
+  setTimeout(() => {
+    console.error('[shutdown] timed out — forcing exit')
+    process.exit(1)
+  }, 15_000).unref()
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT',  () => shutdown('SIGINT'))

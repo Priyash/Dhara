@@ -19,6 +19,7 @@ import {
   resubmitCreatorContent,
   getCreatorAnalytics,
   getCreatorRevenue,
+  requestCreatorPayout,
   listCreatorReels,
   deleteCreatorReel,
   resubmitCreatorReel,
@@ -674,6 +675,9 @@ export default function CreatorStudio() {
   const [analyticsSubTab,    setAnalyticsSubTab]    = useState('content')  // 'content' | 'reels'
   const [revenue, setRevenue]           = useState(null)
   const [revenueLoading, setRevenueLoading] = useState(false)
+  const [payoutRequesting, setPayoutRequesting] = useState(false)
+  const [payoutRequestMsg, setPayoutRequestMsg] = useState('')
+  const [tierAdvancedDismissed, setTierAdvancedDismissed] = useState(false)
   const [expandedSeries, setExpandedSeries]     = useState(new Set())
   const [reels,           setReels]           = useState([])
   const [reelsLoading,    setReelsLoading]    = useState(false)
@@ -1591,6 +1595,35 @@ export default function CreatorStudio() {
 
             return (
               <>
+                {/* ── Tier advancement banner ── */}
+                {revenue.tierAdvanced && !tierAdvancedDismissed && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: 12, padding: '14px 18px', marginBottom: 16, borderRadius: 12,
+                    background: 'linear-gradient(135deg,rgba(167,139,250,0.12),rgba(99,102,241,0.08))',
+                    border: '1px solid rgba(167,139,250,0.25)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Trophy size={18} style={{ color: '#a78bfa', flexShrink: 0 }} />
+                      <div>
+                        <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)', margin: 0, fontFamily: 'var(--font-display)' }}>
+                          You've reached {revenue.newTierName}!
+                        </p>
+                        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0, fontFamily: 'var(--font-body)' }}>
+                          Your revenue share has increased. A confirmation email has been sent.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setTierAdvancedDismissed(true)}
+                      style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: 4 }}
+                      aria-label="Dismiss"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+
                 {/* ── Overview stat cards with inline sparklines ── */}
                 <div className={styles.revenueOverview}>
                   {[
@@ -1753,6 +1786,39 @@ export default function CreatorStudio() {
                               ? 'Your balance will be transferred on the 15th.'
                               : `${fmt(THRESHOLD - pending)} more needed to unlock payout.`}
                           </p>
+                          {thresholdMet && (
+                            <>
+                              <button
+                                style={{
+                                  marginTop: 14, width: '100%', padding: '9px 0',
+                                  background: 'linear-gradient(135deg,#7c3aed,#a78bfa)',
+                                  color: '#fff', border: 'none', borderRadius: 8,
+                                  fontSize: 13, fontWeight: 700, cursor: payoutRequesting ? 'not-allowed' : 'pointer',
+                                  opacity: payoutRequesting ? 0.7 : 1, fontFamily: 'var(--font-body)',
+                                }}
+                                disabled={payoutRequesting}
+                                onClick={async () => {
+                                  setPayoutRequesting(true)
+                                  setPayoutRequestMsg('')
+                                  try {
+                                    await requestCreatorPayout()
+                                    setPayoutRequestMsg('✓ Payout request submitted. We\'ll process it within 2–3 business days.')
+                                  } catch (err) {
+                                    setPayoutRequestMsg(err?.message || 'Could not submit payout request.')
+                                  } finally {
+                                    setPayoutRequesting(false)
+                                  }
+                                }}
+                              >
+                                {payoutRequesting ? 'Requesting…' : 'Request Payout'}
+                              </button>
+                              {payoutRequestMsg && (
+                                <p style={{ fontSize: 12, marginTop: 8, color: payoutRequestMsg.startsWith('✓') ? '#4ade80' : '#f87171', fontFamily: 'var(--font-body)', textAlign: 'center' }}>
+                                  {payoutRequestMsg}
+                                </p>
+                              )}
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1861,6 +1927,17 @@ export default function CreatorStudio() {
                   <div className={styles.rowTop}>
                     <span className={styles.rowType}>{item.type}</span>
                     <StatusChip status={item.submissionStatus} />
+                    {item.revisionCount > 0 && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999,
+                        background: item.revisionCount >= 4 ? 'rgba(248,113,113,0.12)' : 'rgba(251,191,36,0.10)',
+                        color:      item.revisionCount >= 4 ? '#f87171' : '#fbbf24',
+                        border:     `1px solid ${item.revisionCount >= 4 ? 'rgba(248,113,113,0.25)' : 'rgba(251,191,36,0.2)'}`,
+                        flexShrink: 0,
+                      }}>
+                        {item.revisionCount}/5 revisions
+                      </span>
+                    )}
                   </div>
                   <p className={styles.rowTitle}>{item.title}</p>
                   {item.genre?.length > 0 && (

@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Clapperboard, Users, Globe, Play, SkipForward, VideoOff, RotateCcw, Eye, ThumbsUp, MessageSquare } from 'lucide-react'
 import VideoPlayer from '../components/VideoPlayer'
 import PosterCard from '../components/PosterCard'
-import { fetchContentById, fetchStreamUrl, saveWatchProgress, recordView, fetchContent, rateContent, recordInteractionEvent } from '../services/api'
+import { fetchContentById, fetchStreamUrl, saveWatchProgress, recordView, fetchContent, rateContent, recordInteractionEvent, sendStreamHeartbeat, endStreamSession } from '../services/api'
 import { useStore } from '../store/useStore'
 import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './Watch.module.css'
@@ -74,12 +74,14 @@ export default function Watch() {
   const { isLoggedIn, isSubscribed, user, openPaywall, openVerifyEmailGate, openAuth, openItem, authLoading } = useStore()
 
   const [content,        setContent]       = useState(null)
-  const [hlsUrl,         setHlsUrl]        = useState(null)
-  const [activeEp,       setActiveEp]      = useState(0)
-  const [showList,       setShowList]      = useState(false)
-  const [loading,        setLoading]       = useState(true)
-  const [contentError,   setContentError]  = useState(null)
-  const [streamError,    setStreamError]   = useState(null)
+  const [hlsUrl,           setHlsUrl]          = useState(null)
+  const [sessionId,        setSessionId]        = useState(null)
+  const [maxQualityHeight, setMaxQualityHeight] = useState(null)
+  const [activeEp,         setActiveEp]         = useState(0)
+  const [showList,         setShowList]         = useState(false)
+  const [loading,          setLoading]          = useState(true)
+  const [contentError,     setContentError]     = useState(null)
+  const [streamError,      setStreamError]      = useState(null)
   const [related,        setRelated]       = useState([])
   const [resumePos,      setResumePos]     = useState(null)
   // Tracks which content+episode sessions have already had their view recorded
@@ -137,11 +139,35 @@ export default function Watch() {
       : null
 
     setHlsUrl(null)
+    setSessionId(null)
     setStreamError(null)
     fetchStreamUrl(id, epNumber)
-      .then(({ hlsUrl }) => { setHlsUrl(hlsUrl) })
-      .catch(() => setStreamError('Video temporarily unavailable · We\'re working on it'))
+      .then(({ hlsUrl, sessionId: sid, maxQualityHeight: mqh }) => {
+        setHlsUrl(hlsUrl)
+        setSessionId(sid ?? null)
+        setMaxQualityHeight(mqh ?? null)
+      })
+      .catch((err) => {
+        if (err.message?.includes('TOO_MANY_STREAMS') || err.message?.includes('concurrent stream')) {
+          setStreamError(err.message)
+        } else {
+          setStreamError('Video temporarily unavailable · We\'re working on it')
+        }
+      })
   }, [content, id, activeEp, isLoggedIn, isSubscribed, user?.emailVerified])
+
+  // Heartbeat: keeps the stream session alive while the player is open.
+  // Cleans up the session immediately when the component unmounts or the stream changes.
+  useEffect(() => {
+    if (!sessionId) return
+    const interval = setInterval(() => {
+      sendStreamHeartbeat(sessionId).catch(() => {})
+    }, 30_000)
+    return () => {
+      clearInterval(interval)
+      endStreamSession(sessionId).catch(() => {})
+    }
+  }, [sessionId])
 
   // Recommendation events: play, 3-second view, 50% view, completion, skip.
   useEffect(() => {
@@ -395,9 +421,20 @@ export default function Watch() {
                 const epNumber = content.episodes?.length > 0
                   ? (content.episodes[activeEp]?.number ?? null) : null
                 setHlsUrl(null)
+                setSessionId(null)
                 fetchStreamUrl(id, epNumber)
-                  .then(({ hlsUrl }) => setHlsUrl(hlsUrl))
-                  .catch(() => setStreamError('Video temporarily unavailable · We\'re working on it'))
+                  .then(({ hlsUrl, sessionId: sid, maxQualityHeight: mqh }) => {
+                    setHlsUrl(hlsUrl)
+                    setSessionId(sid ?? null)
+                    setMaxQualityHeight(mqh ?? null)
+                  })
+                  .catch((err) => {
+                    if (err.message?.includes('TOO_MANY_STREAMS') || err.message?.includes('concurrent stream')) {
+                      setStreamError(err.message)
+                    } else {
+                      setStreamError('Video temporarily unavailable · We\'re working on it')
+                    }
+                  })
               }}
             >
               <RotateCcw size={14} /> Retry
@@ -410,6 +447,7 @@ export default function Watch() {
               title={playerTitle}
               poster={content.posterUrl || null}
               storageKey={id}
+              maxQualityHeight={maxQualityHeight}
             />
             {resumePos && (
               <div className={styles.resumePrompt}>

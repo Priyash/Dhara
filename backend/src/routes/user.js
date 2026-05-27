@@ -124,21 +124,27 @@ router.post('/watch-progress', async (req, res, next) => {
 
     const pos = Number(positionSecs)
     const dur = Number(durationSecs) || 0
+    const now = new Date()
 
-    // Remove existing entry for this contentId+episode, then push fresh one at front
-    await User.findByIdAndUpdate(req.user._id, {
-      $pull: { watchProgress: { contentId, episodeNumber: episodeNumber ?? null } },
-    })
+    // Try to update the existing entry in-place first (single atomic op, no race condition).
+    // Fall back to push only when no entry exists yet.
+    const updated = await User.findOneAndUpdate(
+      { _id: req.user._id, 'watchProgress.contentId': contentId, 'watchProgress.episodeNumber': episodeNumber ?? null },
+      { $set: { 'watchProgress.$.positionSecs': pos, 'watchProgress.$.durationSecs': dur, 'watchProgress.$.updatedAt': now } },
+      { new: false, select: '_id' }
+    )
 
-    await User.findByIdAndUpdate(req.user._id, {
-      $push: {
-        watchProgress: {
-          $each: [{ contentId, episodeNumber, positionSecs: pos, durationSecs: dur, updatedAt: new Date() }],
-          $position: 0,
-          $slice: 30,  // keep only last 30 entries
+    if (!updated) {
+      await User.findByIdAndUpdate(req.user._id, {
+        $push: {
+          watchProgress: {
+            $each: [{ contentId, episodeNumber: episodeNumber ?? null, positionSecs: pos, durationSecs: dur, updatedAt: now }],
+            $position: 0,
+            $slice: 30,
+          },
         },
-      },
-    })
+      })
+    }
 
     res.json({ success: true })
   } catch (err) {

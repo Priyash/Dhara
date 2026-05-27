@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { createRequire } from 'module'
 import { Types } from 'mongoose'
 import { Content } from '../models/Content.js'
@@ -7,8 +7,10 @@ import { CuratedShelf } from '../models/CuratedShelf.js'
 import { User } from '../models/User.js'
 import { ViewEvent } from '../models/ViewEvent.js'
 import { UserRating } from '../models/UserRating.js'
+import { ActiveStream } from '../models/ActiveStream.js'
 import { requireAuth, requireSubscription } from '../middleware/auth.js'
 import { withCache } from '../config/cache.js'
+import { getPlanLimits } from '../config/planLimits.js'
 
 const _require = createRequire(import.meta.url)
 const geoip    = _require('geoip-lite')
@@ -42,15 +44,23 @@ const router = Router()
  * Enable Token Authentication on the pull zone in the Bunny dashboard first.
  */
 function buildHlsUrl(videoId, sign = false) {
-  const pullZone = process.env.BUNNY_CDN_PULL_ZONE   // e.g. vz-abc123.b-cdn.net
+  const pullZone = process.env.BUNNY_CDN_PULL_ZONE
   const path     = `/${videoId}/playlist.m3u8`
   const base     = `https://${pullZone}${path}`
 
   if (!sign) return base
 
-  const expires = Math.floor(Date.now() / 1000) + 3600  // 1-hour window
-  const key     = process.env.BUNNY_CDN_TOKEN_AUTH_KEY || ''
+  const key = process.env.BUNNY_CDN_TOKEN_AUTH_KEY
+  if (!key) {
+    if (process.env.NODE_ENV === 'production') {
+      // Refuse to serve unsigned premium content — throw so the caller returns 503
+      throw Object.assign(new Error('BUNNY_CDN_TOKEN_AUTH_KEY is not configured'), { status: 503 })
+    }
+    console.warn('[CDN] BUNNY_CDN_TOKEN_AUTH_KEY not set — serving premium content unsigned (dev only)')
+    return base
+  }
 
+  const expires = Math.floor(Date.now() / 1000) + 3600  // 1-hour window
   const token = createHash('sha256')
     .update(key + path + expires)
     .digest('base64')
@@ -321,24 +331,83 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
     // For Series, resolve the per-episode bunnyVideoId when ?episode=N is supplied
     let videoId = item.bunnyVideoId
     const epNum = req.query.episode != null ? Number(req.query.episode) : null
-    if (epNum != null && !Number.isInteger(epNum)) {
-      return res.status(400).json({ error: 'episode must be an integer' })
+    if (epNum != null && (!Number.isInteger(epNum) || epNum < 1)) {
+      return res.status(400).json({ error: 'episode must be a positive integer' })
     }
-    if (epNum != null && item.episodes?.length) {
+    if (epNum != null) {
+      if (!item.episodes?.length) return res.status(404).json({ error: 'Episode not found' })
       const ep = item.episodes.find((e) => e.number === epNum)
       if (!ep) return res.status(404).json({ error: 'Episode not found' })
-      if (ep.bunnyVideoId) videoId = ep.bunnyVideoId
+      if (!ep.bunnyVideoId) return res.status(404).json({ error: 'Episode video not yet available' })
+      videoId = ep.bunnyVideoId
     }
 
     if (!videoId) return res.status(404).json({ error: 'No video attached to this title' })
 
     if (item.isPremium) {
-      return requireSubscription(req, res, () => {
-        res.json({ hlsUrl: buildHlsUrl(videoId, true) })
+      if (!req.user.isSubscriptionActive) {
+        return res.status(403).json({ error: 'Active subscription required', code: 'SUBSCRIPTION_REQUIRED' })
+      }
+
+      const limits = getPlanLimits(req.user)
+
+      // Count streams active in the last 90 s (2× heartbeat interval as tolerance)
+      const activeCount = await ActiveStream.countDocuments({
+        userId:          req.user._id,
+        lastHeartbeatAt: { $gt: new Date(Date.now() - 90_000) },
+      })
+
+      if (activeCount >= limits.maxStreams) {
+        const planName = req.user.subscriptionStatus === 'trial' ? 'trial' : (req.user.subscriptionPlan ?? 'current')
+        return res.status(429).json({
+          error:      `Your ${planName} plan allows ${limits.maxStreams} concurrent stream${limits.maxStreams > 1 ? 's' : ''}. Please stop another stream first, or upgrade your plan.`,
+          code:       'TOO_MANY_STREAMS',
+          maxStreams: limits.maxStreams,
+        })
+      }
+
+      const sessionId = randomUUID()
+      await ActiveStream.create({ userId: req.user._id, sessionId, contentId: item._id.toString() })
+
+      return res.json({
+        hlsUrl:          buildHlsUrl(videoId, true),
+        sessionId,
+        maxQualityHeight: limits.maxQualityHeight,
       })
     }
 
     res.json({ hlsUrl: buildHlsUrl(videoId, false) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/content/heartbeat
+ * Called every 30 s by the player to keep the stream session alive.
+ */
+router.post('/heartbeat', requireAuth, async (req, res, next) => {
+  try {
+    const { sessionId } = req.body
+    if (!sessionId) return res.status(400).json({ error: 'sessionId required' })
+    await ActiveStream.findOneAndUpdate(
+      { sessionId, userId: req.user._id },
+      { $set: { lastHeartbeatAt: new Date() } }
+    )
+    res.json({ ok: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * DELETE /api/content/stream-session/:sessionId
+ * Called when the player unmounts so the slot is freed immediately.
+ */
+router.delete('/stream-session/:sessionId', requireAuth, async (req, res, next) => {
+  try {
+    await ActiveStream.deleteOne({ sessionId: req.params.sessionId, userId: req.user._id })
+    res.json({ ok: true })
   } catch (err) {
     next(err)
   }

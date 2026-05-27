@@ -285,6 +285,13 @@
   font-weight: 600;
 }
 
+.upsellSub {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  max-width: 340px;
+}
+
 .watchlistSection {
   margin-top: 24px;
 }
@@ -316,83 +323,88 @@
   text-align: center;
 }
 
+/* ── Button base ─────────────────────────────────────────────────────────── */
+
 .primaryBtn,
 .ghostBtn,
 .linkBtn,
 .secondaryBtn,
+.cancelBtn,
 .signOutBtn {
-  border: none;
+  padding: 10px 14px;
   border-radius: var(--radius-sm);
+  border: 1px solid transparent;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
+  cursor: pointer;
   transition: opacity var(--transition), background var(--transition), border-color var(--transition);
 }
 
+/* Filled accent — primary CTA */
 .primaryBtn {
   background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
+  border-color: transparent;
   color: #141414;
-  padding: 10px 16px;
 }
+.primaryBtn:hover { opacity: 0.92; }
 
-.primaryBtn:hover {
-  opacity: 0.94;
-}
-
+/* Neutral ghost — non-destructive secondary actions (Refresh, Manage Plan) */
 .ghostBtn,
 .linkBtn {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.13);
   color: var(--color-text);
 }
-
-.secondaryBtn {
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.36);
-  color: #fcd38d;
-  padding: 10px 14px;
-}
-
-.signOutBtn {
-  background: rgba(225, 29, 72, 0.14);
-  border: 1px solid rgba(225, 29, 72, 0.38);
-  color: #fda4af;
-  padding: 10px 14px;
-}
-
-.ghostBtn {
-  padding: 10px 13px;
-}
-
-.linkBtn {
-  padding: 9px 12px;
-}
-
 .ghostBtn:hover,
 .linkBtn:hover {
-  background: rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.2);
 }
 
+/* Amber ghost — Reset Password */
+.secondaryBtn {
+  background: rgba(245, 158, 11, 0.10);
+  border-color: rgba(245, 158, 11, 0.30);
+  color: #fbbf24;
+}
 .secondaryBtn:hover {
-  background: rgba(245, 158, 11, 0.19);
-  border-color: rgba(245, 158, 11, 0.48);
+  background: rgba(245, 158, 11, 0.17);
+  border-color: rgba(245, 158, 11, 0.45);
 }
 
+/* Red ghost — Cancel Subscription */
+.cancelBtn {
+  background: rgba(225, 29, 72, 0.10);
+  border-color: rgba(225, 29, 72, 0.30);
+  color: #fda4af;
+}
+.cancelBtn:hover {
+  background: rgba(225, 29, 72, 0.18);
+  border-color: rgba(225, 29, 72, 0.48);
+}
+
+/* Red filled — Sign Out */
+.signOutBtn {
+  background: rgba(225, 29, 72, 0.16);
+  border-color: rgba(225, 29, 72, 0.36);
+  color: #fda4af;
+}
 .signOutBtn:hover {
-  background: rgba(225, 29, 72, 0.22);
+  background: rgba(225, 29, 72, 0.25);
   border-color: rgba(225, 29, 72, 0.55);
 }
 
 .ghostBtn:disabled,
 .secondaryBtn:disabled,
+.cancelBtn:disabled,
 .signOutBtn:disabled,
 .primaryBtn:disabled,
 .linkBtn:disabled {
-  opacity: 0.65;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 

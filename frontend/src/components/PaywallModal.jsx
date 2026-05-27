@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
-import { X, Crown, Check, Loader } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { X, Crown, Check, Loader, Clock, AlertCircle } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { PLANS, PLAN_FEATURES } from '../data/content'
-import { createOrder, verifyPayment } from '../services/api'
+import { PLANS } from '../data/content'
+import { createOrder, verifyPayment, createSubscription, verifySubscription } from '../services/api'
 import styles from './PaywallModal.module.css'
 
 function loadRazorpayScript() {
@@ -26,14 +26,37 @@ const STAGE = {
   ERROR:     'error',
 }
 
+// Monthly plan uses recurring subscription; annual/family use one-time orders.
+const RECURRING_PLANS = new Set(['monthly'])
+
 export default function PaywallModal() {
-  const [selected, setSelected] = useState('annual')
+  const { setShowPaywall, refreshProfile, subscriptionStatus, subscriptionPlan, subscriptionExpiresAt, trialEndsAt, graceEndsAt, user } = useStore()
+
+  const currentPlan   = subscriptionPlan ?? user?.subscriptionPlan ?? null
+  const isSubscribed  = subscriptionStatus === 'active'
+  const isOnTrial     = subscriptionStatus === 'trial'
+  const isOnGrace     = subscriptionStatus === 'grace'
+
+  const defaultPlan = useMemo(() => {
+    if (isSubscribed && currentPlan) return currentPlan
+    return 'annual'
+  }, [isSubscribed, currentPlan])
+
+  const [selected, setSelected] = useState(defaultPlan)
   const [stage, setStage]       = useState(STAGE.IDLE)
   const [errorMsg, setErrorMsg] = useState('')
-  const { setShowPaywall, refreshProfile } = useStore()
 
   // Pre-load Razorpay script the moment the modal mounts
   useEffect(() => { loadRazorpayScript() }, [])
+
+  const trialDaysLeft = useMemo(() => {
+    if (!isOnTrial || !trialEndsAt) return 0
+    const diff = new Date(trialEndsAt).getTime() - Date.now()
+    return Math.max(0, Math.ceil(diff / 86_400_000))
+  }, [isOnTrial, trialEndsAt])
+
+  // Prevent re-purchasing the plan the user is already on
+  const isSamePlan = isSubscribed && selected === currentPlan
 
   const handleSubscribe = useCallback(async () => {
     setStage(STAGE.LOADING)
@@ -43,47 +66,96 @@ export default function PaywallModal() {
       const scriptLoaded = await loadRazorpayScript()
       if (!scriptLoaded) throw new Error('Payment service could not be loaded. Please try again.')
 
-      // Create a Razorpay order on the backend
-      const order = await createOrder(selected)
       setStage(STAGE.CHECKOUT)
 
-      await new Promise((resolve, reject) => {
-        const rzp = new window.Razorpay({
-          key:         order.keyId,
-          amount:      order.amount,
-          currency:    order.currency,
-          order_id:    order.orderId,
-          name:        'ধারা',
-          description: `${selected.charAt(0).toUpperCase() + selected.slice(1)} Plan`,
-          theme:       { color: '#f59e0b' },
-          modal: {
-            ondismiss: () => reject(new Error('dismissed')),
-          },
-          handler: async (response) => {
-            try {
-              setStage(STAGE.VERIFYING)
-              // Backend verifies HMAC + fetches order from Razorpay to confirm
-              // amount, status, and user ownership before activating subscription
-              await verifyPayment({
-                razorpay_order_id:   response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature:  response.razorpay_signature,
-                plan:                selected,
-              })
-              await refreshProfile()
-              setStage(STAGE.SUCCESS)
-              setTimeout(() => setShowPaywall(false), 1800)
-              resolve()
-            } catch (err) {
-              reject(err)
-            }
-          },
+      if (RECURRING_PLANS.has(selected)) {
+        // ── Recurring subscription checkout (monthly) ─────────────────────
+        // Falls back to one-time order if plan ID isn't configured on the backend.
+        let sub = null
+        try {
+          sub = await createSubscription(selected)
+        } catch (err) {
+          if (!err.message?.includes('not configured')) throw err
+          // Recurring billing not set up — fall through to one-time order below
+        }
+
+        if (sub) {
+          await new Promise((resolve, reject) => {
+            const rzp = new window.Razorpay({
+              key:             sub.keyId,
+              subscription_id: sub.subscriptionId,
+              name:            'ধারা',
+              description:     'Monthly Plan — auto-renews every month',
+              theme:           { color: '#f59e0b' },
+              modal: {
+                ondismiss: () => reject(new Error('dismissed')),
+              },
+              handler: async (response) => {
+                try {
+                  setStage(STAGE.VERIFYING)
+                  await verifySubscription({
+                    razorpay_payment_id:      response.razorpay_payment_id,
+                    razorpay_subscription_id: response.razorpay_subscription_id,
+                    razorpay_signature:       response.razorpay_signature,
+                    plan:                     selected,
+                  })
+                  await refreshProfile()
+                  setStage(STAGE.SUCCESS)
+                  setTimeout(() => setShowPaywall(false), 1800)
+                  resolve()
+                } catch (err) {
+                  reject(err)
+                }
+              },
+            })
+            rzp.open()
+          })
+          return  // done — skip the one-time order block below
+        }
+        // Fall through to one-time order when recurring isn't configured
+      }
+
+      {
+        // ── One-time order checkout (annual / family) ─────────────────────
+        const order = await createOrder(selected)
+
+        await new Promise((resolve, reject) => {
+          const rzp = new window.Razorpay({
+            key:         order.keyId,
+            amount:      order.amount,
+            currency:    order.currency,
+            order_id:    order.orderId,
+            name:        'ধারা',
+            description: `${selected.charAt(0).toUpperCase() + selected.slice(1)} Plan`,
+            theme:       { color: '#f59e0b' },
+            modal: {
+              ondismiss: () => reject(new Error('dismissed')),
+            },
+            handler: async (response) => {
+              try {
+                setStage(STAGE.VERIFYING)
+                await verifyPayment({
+                  razorpay_order_id:   response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature:  response.razorpay_signature,
+                  plan:                selected,
+                })
+                await refreshProfile()
+                setStage(STAGE.SUCCESS)
+                setTimeout(() => setShowPaywall(false), 1800)
+                resolve()
+              } catch (err) {
+                reject(err)
+              }
+            },
+          })
+          rzp.open()
         })
-        rzp.open()
-      })
+      }
     } catch (err) {
       if (err.message === 'dismissed') {
         setStage(STAGE.IDLE)
+        setErrorMsg('')
       } else {
         setErrorMsg(err.message || 'Something went wrong. Please try again.')
         setStage(STAGE.ERROR)
@@ -93,8 +165,14 @@ export default function PaywallModal() {
 
   const busy = [STAGE.LOADING, STAGE.CHECKOUT, STAGE.VERIFYING].includes(stage)
 
+  const idleLabel = isSamePlan
+    ? 'Current Plan'
+    : isSubscribed
+      ? 'Switch to This Plan'
+      : 'Start Watching Now'
+
   const ctaLabel = {
-    [STAGE.IDLE]:      'Start Watching Now',
+    [STAGE.IDLE]:      idleLabel,
     [STAGE.LOADING]:   'Preparing…',
     [STAGE.CHECKOUT]:  'Complete Payment',
     [STAGE.VERIFYING]: 'Confirming…',
@@ -125,6 +203,45 @@ export default function PaywallModal() {
               <h2 className={styles.heading}>আপনাকে স্বাগতম</h2>
               <p className={styles.sub}>Your subscription is now active. Enjoy!</p>
             </div>
+          ) : isOnGrace ? (
+            <>
+              <div className={styles.eyebrow}>
+                <AlertCircle size={16} color="#f87171" />
+                <span style={{ color: '#f87171' }}>Payment Issue</span>
+              </div>
+              <h2 className={styles.heading}>Renew Your Access</h2>
+              <p className={styles.sub}>
+                {graceEndsAt
+                  ? `Your last payment failed. Access continues until ${new Date(graceEndsAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} — renew now.`
+                  : 'Your last payment failed. Pick a plan below to restore access.'}
+              </p>
+            </>
+          ) : isSubscribed ? (
+            <>
+              <div className={styles.eyebrow}>
+                <Crown size={16} color="#f59e0b" />
+                <span>Manage Plan</span>
+              </div>
+              <h2 className={styles.heading}>Change Your Plan</h2>
+              <p className={styles.sub}>
+                {subscriptionExpiresAt
+                  ? `Current plan renews on ${new Date(subscriptionExpiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} · Switch anytime`
+                  : 'Select a different plan to switch — your new period starts immediately'}
+              </p>
+            </>
+          ) : isOnTrial ? (
+            <>
+              <div className={styles.eyebrow}>
+                <Clock size={16} color="#f59e0b" />
+                <span>Free Trial Active</span>
+              </div>
+              <h2 className={styles.heading}>
+                {trialDaysLeft > 0
+                  ? `${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} left in your trial`
+                  : 'Your trial has ended'}
+              </h2>
+              <p className={styles.sub}>Subscribe now to keep watching unlimited Bengali content</p>
+            </>
           ) : (
             <>
               <div className={styles.eyebrow}>
@@ -140,7 +257,7 @@ export default function PaywallModal() {
         {/* Body — hidden on success so the celebration header fills the card */}
         {stage !== STAGE.SUCCESS && (
           <div className={styles.body}>
-            {/* Plan cards stagger in via CSS animation-delay on --stagger */}
+            {/* Plan cards */}
             <div className={styles.plans}>
               {PLANS.map((plan, i) => (
                 <button
@@ -156,27 +273,40 @@ export default function PaywallModal() {
                       {selected === plan.id && <div className={styles.radioDot} />}
                     </div>
                     <div>
-                      <p className={styles.planLabel}>{plan.label}</p>
-                      <p className={styles.planSub}>{plan.sub}</p>
+                      <p className={styles.planLabel}>
+                        {plan.label}
+                        {plan.id === 'monthly' && (
+                          <span className={styles.planRecurring}> · auto-renews</span>
+                        )}
+                      </p>
+                      <p className={styles.planSub}>{plan.priceNote}</p>
                     </div>
                   </div>
                   <div className={styles.planRight}>
-                    {plan.badge && <span className={styles.planBadge}>{plan.badge}</span>}
+                    {isSubscribed && plan.id === currentPlan
+                      ? <span className={styles.planCurrent}>Current</span>
+                      : plan.badge && <span className={styles.planBadge}>{plan.badge}</span>
+                    }
                     <span className={styles.planPrice}>{plan.price}</span>
                   </div>
                 </button>
               ))}
             </div>
 
-            {/* Features */}
-            <div className={styles.features}>
-              {PLAN_FEATURES.map((f) => (
-                <div key={f} className={styles.feature}>
-                  <Check size={13} color="var(--color-accent)" />
-                  <span>{f}</span>
+            {/* Per-plan feature list — updates when selection changes */}
+            {(() => {
+              const activePlan = PLANS.find((p) => p.id === selected)
+              return activePlan ? (
+                <div className={styles.features} key={selected}>
+                  {activePlan.features.map((f) => (
+                    <div key={f} className={styles.feature}>
+                      <Check size={13} color="var(--color-accent)" />
+                      <span>{f}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              ) : null
+            })()}
 
             {/* Error message */}
             {stage === STAGE.ERROR && errorMsg && (
@@ -185,9 +315,9 @@ export default function PaywallModal() {
 
             {/* CTA */}
             <button
-              className={`${styles.cta} ${busy ? styles.ctaBusy : ''} ${stage === STAGE.ERROR ? styles.ctaError : ''}`}
+              className={`${styles.cta} ${busy || isSamePlan ? styles.ctaBusy : ''} ${stage === STAGE.ERROR ? styles.ctaError : ''}`}
               onClick={handleSubscribe}
-              disabled={busy}
+              disabled={busy || isSamePlan}
             >
               {busy && <Loader size={15} className={styles.spinner} />}
               {ctaLabel}

@@ -11,7 +11,7 @@ const creatorPayoutSchema = new mongoose.Schema(
     earningIds:   [{ type: mongoose.Schema.Types.ObjectId, ref: 'CreatorEarning' }],
 
     method:       { type: String, default: 'Bank Transfer' },  // 'Bank Transfer', 'UPI', etc.
-    status:       { type: String, enum: ['processing', 'paid'], default: 'processing' },
+    status:       { type: String, enum: ['requested', 'processing', 'paid'], default: 'processing' },
     paidAt:       { type: Date, default: null },
     referenceId:  { type: String, default: '' },   // bank/UPI transaction reference
     notes:        { type: String, default: '' },

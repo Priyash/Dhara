@@ -24,6 +24,8 @@ export const useStore = create((set, get) => ({
   isSubscribed: false,
   isAdmin: false,
   subscriptionStatus: 'free',   // free | trial | active | grace | lapsed
+  subscriptionPlan: null,        // monthly | annual | family | null
+  subscriptionExpiresAt: null,
   trialEndsAt: null,
   graceEndsAt: null,
   creatorStatus:  'none',   // none | applied | approved | rejected
@@ -67,10 +69,12 @@ export const useStore = create((set, get) => ({
         set({
           isLoggedIn:         true,
           isAdmin:            Boolean(user.isAdmin),
-          isSubscribed:       user.isSubscribed,
-          subscriptionStatus: user.subscriptionStatus ?? 'free',
-          trialEndsAt:        user.trialEndsAt ?? null,
-          graceEndsAt:        user.graceEndsAt ?? null,
+          isSubscribed:          user.isSubscribed,
+          subscriptionStatus:    user.subscriptionStatus     ?? 'free',
+          subscriptionPlan:      user.subscriptionPlan       ?? null,
+          subscriptionExpiresAt: user.subscriptionExpiresAt  ?? null,
+          trialEndsAt:           user.trialEndsAt             ?? null,
+          graceEndsAt:           user.graceEndsAt             ?? null,
           creatorStatus:      user.creatorStatus  ?? 'none',
           isCreator:          Boolean(user.isCreator),
           creatorProfile:     user.creatorProfile ?? null,
@@ -79,7 +83,7 @@ export const useStore = create((set, get) => ({
         })
       } catch {
         localStorage.removeItem('dhara:authed')
-        set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, subscriptionStatus: 'free', trialEndsAt: null, graceEndsAt: null, creatorStatus: 'none', isCreator: false, creatorProfile: null, user: null, authLoading: false })
+        set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, subscriptionStatus: 'free', subscriptionPlan: null, subscriptionExpiresAt: null, trialEndsAt: null, graceEndsAt: null, creatorStatus: 'none', isCreator: false, creatorProfile: null, user: null, authLoading: false })
       }
     }
 
@@ -139,15 +143,17 @@ export const useStore = create((set, get) => ({
     const { user }   = await loginWithBackend(idToken)
     localStorage.setItem('dhara:authed', '1')
     set({
-      isLoggedIn:         true,
-      isAdmin:            Boolean(user.isAdmin),
-      isSubscribed:       user.isSubscribed,
-      subscriptionStatus: user.subscriptionStatus ?? 'free',
-      trialEndsAt:        user.trialEndsAt ?? null,
-      graceEndsAt:        user.graceEndsAt ?? null,
-      creatorStatus:      user.creatorStatus  ?? 'none',
-      isCreator:          Boolean(user.isCreator),
-      creatorProfile:     user.creatorProfile ?? null,
+      isLoggedIn:            true,
+      isAdmin:               Boolean(user.isAdmin),
+      isSubscribed:          user.isSubscribed,
+      subscriptionStatus:    user.subscriptionStatus    ?? 'free',
+      subscriptionPlan:      user.subscriptionPlan      ?? null,
+      subscriptionExpiresAt: user.subscriptionExpiresAt ?? null,
+      trialEndsAt:           user.trialEndsAt            ?? null,
+      graceEndsAt:           user.graceEndsAt            ?? null,
+      creatorStatus:         user.creatorStatus          ?? 'none',
+      isCreator:             Boolean(user.isCreator),
+      creatorProfile:        user.creatorProfile         ?? null,
       user,
     })
   },
@@ -166,15 +172,17 @@ export const useStore = create((set, get) => ({
     const { user }   = await loginWithBackend(idToken)
     localStorage.setItem('dhara:authed', '1')
     set({
-      isLoggedIn:         true,
-      isAdmin:            Boolean(user.isAdmin),
-      isSubscribed:       user.isSubscribed,
-      subscriptionStatus: user.subscriptionStatus ?? 'free',
-      trialEndsAt:        user.trialEndsAt ?? null,
-      graceEndsAt:        user.graceEndsAt ?? null,
-      creatorStatus:      user.creatorStatus  ?? 'none',
-      isCreator:          Boolean(user.isCreator),
-      creatorProfile:     user.creatorProfile ?? null,
+      isLoggedIn:            true,
+      isAdmin:               Boolean(user.isAdmin),
+      isSubscribed:          user.isSubscribed,
+      subscriptionStatus:    user.subscriptionStatus    ?? 'free',
+      subscriptionPlan:      user.subscriptionPlan      ?? null,
+      subscriptionExpiresAt: user.subscriptionExpiresAt ?? null,
+      trialEndsAt:           user.trialEndsAt            ?? null,
+      graceEndsAt:           user.graceEndsAt            ?? null,
+      creatorStatus:         user.creatorStatus          ?? 'none',
+      isCreator:             Boolean(user.isCreator),
+      creatorProfile:        user.creatorProfile         ?? null,
       user,
     })
   },
@@ -182,7 +190,7 @@ export const useStore = create((set, get) => ({
   signOut: async () => {
     await firebaseSignOut(auth)
     localStorage.removeItem('dhara:authed')
-    set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, subscriptionStatus: 'free', trialEndsAt: null, graceEndsAt: null, creatorStatus: 'none', isCreator: false, creatorProfile: null, user: null })
+    set({ isLoggedIn: false, isAdmin: false, isSubscribed: false, subscriptionStatus: 'free', subscriptionPlan: null, subscriptionExpiresAt: null, trialEndsAt: null, graceEndsAt: null, creatorStatus: 'none', isCreator: false, creatorProfile: null, user: null, authLoading: false })
   },
 
   refreshProfile: async () => {
@@ -192,10 +200,12 @@ export const useStore = create((set, get) => ({
       try {
         const user = await getMe()
         set({
-          isSubscribed:       user.isSubscribed,
-          subscriptionStatus: user.subscriptionStatus ?? 'free',
-          trialEndsAt:        user.trialEndsAt ?? null,
-          graceEndsAt:        user.graceEndsAt ?? null,
+          isSubscribed:          user.isSubscribed,
+          subscriptionStatus:    user.subscriptionStatus     ?? 'free',
+          subscriptionPlan:      user.subscriptionPlan       ?? null,
+          subscriptionExpiresAt: user.subscriptionExpiresAt  ?? null,
+          trialEndsAt:           user.trialEndsAt             ?? null,
+          graceEndsAt:           user.graceEndsAt             ?? null,
           creatorStatus:      user.creatorStatus  ?? 'none',
           isCreator:          Boolean(user.isCreator),
           creatorProfile:     user.creatorProfile ?? null,
@@ -283,13 +293,15 @@ export const useStore = create((set, get) => ({
     const idToken = await firebaseUser.getIdToken(true)
     const { user } = await loginWithBackend(idToken)
     set({
-      isSubscribed:       user.isSubscribed,
-      subscriptionStatus: user.subscriptionStatus ?? 'free',
-      trialEndsAt:        user.trialEndsAt ?? null,
-      graceEndsAt:        user.graceEndsAt ?? null,
-      creatorStatus:      user.creatorStatus  ?? 'none',
-      isCreator:          Boolean(user.isCreator),
-      creatorProfile:     user.creatorProfile ?? null,
+      isSubscribed:          user.isSubscribed,
+      subscriptionStatus:    user.subscriptionStatus    ?? 'free',
+      subscriptionPlan:      user.subscriptionPlan      ?? null,
+      subscriptionExpiresAt: user.subscriptionExpiresAt ?? null,
+      trialEndsAt:           user.trialEndsAt            ?? null,
+      graceEndsAt:           user.graceEndsAt            ?? null,
+      creatorStatus:         user.creatorStatus          ?? 'none',
+      isCreator:             Boolean(user.isCreator),
+      creatorProfile:        user.creatorProfile         ?? null,
       user,
     })
     return user.emailVerified

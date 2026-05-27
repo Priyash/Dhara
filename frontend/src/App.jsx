@@ -1,4 +1,4 @@
-import { useEffect, lazy, Suspense } from 'react'
+import { Component, useEffect, lazy, Suspense } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { useStore } from './store/useStore'
 import Navbar from './components/Navbar'
@@ -21,6 +21,47 @@ const Profile       = lazy(() => import('./pages/Profile'))
 const Admin         = lazy(() => import('./pages/Admin'))
 const CreatorStudio = lazy(() => import('./pages/CreatorStudio'))
 const Reels         = lazy(() => import('./pages/Reels'))
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary]', error, info.componentStack)
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        minHeight: '100vh', gap: '16px', padding: '24px', textAlign: 'center',
+        background: '#0a0a0a', color: '#e5e5e5', fontFamily: 'sans-serif',
+      }}>
+        <h2 style={{ fontSize: '20px', fontWeight: 600, margin: 0 }}>Something went wrong</h2>
+        <p style={{ fontSize: '14px', color: '#888', margin: 0, maxWidth: '360px' }}>
+          An unexpected error occurred. Try refreshing the page.
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          style={{
+            padding: '10px 24px', borderRadius: '8px', border: 'none',
+            background: '#f59e0b', color: '#0a0a0a', fontWeight: 600,
+            fontSize: '14px', cursor: 'pointer',
+          }}
+        >
+          Refresh page
+        </button>
+      </div>
+    )
+  }
+}
 
 function PageFallback() {
   return <div className={styles.pageFallback} />
@@ -56,15 +97,15 @@ export default function App() {
   }, [initAuth])
 
   return (
-    <>
+    <ErrorBoundary>
       <Navbar />
       <AnimatedRoutes />
-      {showSearch   && <SearchOverlay />}
-      {showPaywall  && <PaywallModal />}
+      {showSearch      && <SearchOverlay />}
+      {showPaywall     && <PaywallModal />}
       {showVerifyEmail && <VerifyEmailModal />}
-      {showAuth     && <AuthModal />}
-      {selectedItem && <ContentDetailModal />}
+      {showAuth        && <AuthModal />}
+      {selectedItem    && <ContentDetailModal />}
       <ScreenTransition />
-    </>
+    </ErrorBoundary>
   )
 }

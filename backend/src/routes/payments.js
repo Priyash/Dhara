@@ -12,7 +12,7 @@ const PLANS = {
   family:  { label: 'Family',   amount: 99900, days: 365 },  // ₹999
 }
 
-const GRACE_DAYS = 3
+const GRACE_DAYS = 7
 
 function planExpiresAt(plan) {
   return new Date(Date.now() + PLANS[plan].days * 86_400_000)
@@ -124,33 +124,29 @@ router.post('/verify', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'Order does not belong to this account' })
     }
 
-    const existingTx = await Transaction.findOne({ orderId: razorpay_order_id })
-      .select('status paymentId')
-      .lean()
-    if (existingTx?.status === 'paid') {
+    // Atomic idempotency guard: only one concurrent request wins this update.
+    // If status is already 'paid', the update matches nothing and returns null.
+    const prevTx = await Transaction.findOneAndUpdate(
+      { orderId: razorpay_order_id, status: { $ne: 'paid' } },
+      { $set: { status: 'paid', paymentId: razorpay_payment_id } },
+      { new: false }
+    )
+
+    if (!prevTx) {
+      // Either already paid, or transaction doesn't exist (webhook may have beaten us)
+      const userFresh = await User.findById(req.user._id)
       return res.json({
         success:               true,
         alreadyProcessed:      true,
-        isSubscribed:          req.user.isSubscriptionActive,
-        subscriptionStatus:    req.user.subscriptionStatus,
-        subscriptionPlan:      req.user.subscriptionPlan,
-        subscriptionExpiresAt: req.user.subscriptionExpiresAt,
+        isSubscribed:          userFresh?.isSubscriptionActive ?? req.user.isSubscriptionActive,
+        subscriptionStatus:    userFresh?.subscriptionStatus    ?? req.user.subscriptionStatus,
+        subscriptionPlan:      userFresh?.subscriptionPlan      ?? req.user.subscriptionPlan,
+        subscriptionExpiresAt: userFresh?.subscriptionExpiresAt ?? req.user.subscriptionExpiresAt,
       })
     }
 
     const currentUser = await User.findById(req.user._id).select('subscriptionExpiresAt').lean()
     const expiresAt = extendPlanFrom(plan, currentUser?.subscriptionExpiresAt)
-
-    // Mark transaction as paid
-    await Transaction.findOneAndUpdate(
-      { orderId: razorpay_order_id },
-      {
-        $set: {
-          status:    'paid',
-          paymentId: razorpay_payment_id,
-        },
-      }
-    )
 
     // Activate subscription
     const user = await User.findByIdAndUpdate(
@@ -162,6 +158,99 @@ router.post('/verify', requireAuth, async (req, res, next) => {
           subscriptionStartedAt: new Date(),
           subscriptionExpiresAt: expiresAt,
           graceEndsAt:           null,
+        },
+      },
+      { new: true }
+    )
+
+    res.json({
+      success:               true,
+      isSubscribed:          user.isSubscriptionActive,
+      subscriptionStatus:    user.subscriptionStatus,
+      subscriptionPlan:      user.subscriptionPlan,
+      subscriptionExpiresAt: user.subscriptionExpiresAt,
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/payments/verify-subscription
+ * Verifies HMAC from Razorpay subscription checkout and activates the user.
+ */
+router.post('/verify-subscription', requireAuth, async (req, res, next) => {
+  try {
+    const { razorpay_payment_id, razorpay_subscription_id, razorpay_signature, plan } = req.body
+    if (!razorpay_payment_id || !razorpay_subscription_id || !razorpay_signature || !plan) {
+      return res.status(400).json({ error: 'Missing required subscription fields' })
+    }
+    if (!PLANS[plan]) return res.status(400).json({ error: 'Invalid plan' })
+
+    const { adapter } = await getActiveProvider()
+
+    const signatureValid = adapter.verifySubscriptionSignature({
+      paymentId:      razorpay_payment_id,
+      subscriptionId: razorpay_subscription_id,
+      signature:      razorpay_signature,
+    })
+    if (!signatureValid) {
+      return res.status(400).json({ error: 'Subscription verification failed' })
+    }
+
+    const expiresAt = extendPlanFrom(plan)
+
+    // Atomic upsert — $setOnInsert ensures only the first concurrent call writes.
+    // If paymentId already exists the unique partial index rejects duplicates, and
+    // the upsert returns the existing doc via {new:false} → we detect alreadyProcessed.
+    const txResult = await Transaction.findOneAndUpdate(
+      { paymentId: razorpay_payment_id },
+      {
+        $setOnInsert: {
+          userId:         req.user._id,
+          userEmail:      req.user.email,
+          plan,
+          amount:         PLANS[plan].amount,
+          currency:       'INR',
+          gateway:        'razorpay',
+          orderId:        `sub_init_${razorpay_subscription_id}`,
+          paymentId:      razorpay_payment_id,
+          subscriptionId: razorpay_subscription_id,
+          status:         'paid',
+          planSnapshot: {
+            label:  PLANS[plan].label,
+            days:   PLANS[plan].days,
+            amount: PLANS[plan].amount,
+          },
+        },
+      },
+      { upsert: true, new: false }
+    )
+
+    if (txResult !== null) {
+      // Document already existed — this is a duplicate call
+      const userFresh = await User.findById(req.user._id)
+      return res.json({
+        success:               true,
+        alreadyProcessed:      true,
+        isSubscribed:          userFresh?.isSubscriptionActive ?? req.user.isSubscriptionActive,
+        subscriptionStatus:    userFresh?.subscriptionStatus    ?? req.user.subscriptionStatus,
+        subscriptionPlan:      userFresh?.subscriptionPlan      ?? req.user.subscriptionPlan,
+        subscriptionExpiresAt: userFresh?.subscriptionExpiresAt ?? req.user.subscriptionExpiresAt,
+      })
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        $set: {
+          subscriptionStatus:     'active',
+          subscriptionPlan:       plan,
+          subscriptionStartedAt:  new Date(),
+          subscriptionExpiresAt:  expiresAt,
+          razorpaySubscriptionId: razorpay_subscription_id,
+          graceEndsAt:            null,
+          trialEndsAt:            null,
         },
       },
       { new: true }
@@ -234,10 +323,15 @@ router.post('/webhook', async (req, res, next) => {
       case 'payment.captured': {
         const entity = event.payload.payment.entity
         const { userId, plan } = entity.notes || {}
-        if (!userId || !PLANS[plan]) break
-
+        if (!userId || !PLANS[plan]) {
+          console.warn('[webhook] payment.captured skipped: missing userId or invalid plan', { userId, plan, orderId: entity.order_id })
+          break
+        }
         const user = await User.findById(userId)
-        if (!user) break
+        if (!user) {
+          console.warn('[webhook] payment.captured skipped: user not found', { userId })
+          break
+        }
 
         const existingTx = await Transaction.findOne({ orderId: entity.order_id })
           .select('status')
@@ -287,13 +381,17 @@ router.post('/webhook', async (req, res, next) => {
         const entity    = event.payload.subscription.entity
         const paymentId = event.payload.payment?.entity?.id
         const { userId, plan } = entity.notes || {}
-        if (!userId || !PLANS[plan]) break
-
-        // Idempotency: skip if this payment was already processed
+        if (!userId || !PLANS[plan]) {
+          console.warn('[webhook] subscription.charged skipped: missing userId or invalid plan', { userId, plan, subscriptionId: entity.id })
+          break
+        }
         if (paymentId && await Transaction.exists({ paymentId })) break
 
         const user = await User.findById(userId)
-        if (!user) break
+        if (!user) {
+          console.warn('[webhook] subscription.charged skipped: user not found', { userId })
+          break
+        }
 
         const expiresAt = extendPlanFrom(plan, user.subscriptionExpiresAt)
 
@@ -305,7 +403,7 @@ router.post('/webhook', async (req, res, next) => {
           currency:  'INR',
           gateway:   'razorpay',
           orderId:   `sub_renewal_${entity.id}_${Date.now()}`,
-          paymentId: event.payload.payment?.entity?.id || '',
+          paymentId: event.payload.payment?.entity?.id || null,
           subscriptionId: entity.id,
           status:    'paid',
           planSnapshot: {
@@ -361,6 +459,45 @@ router.post('/webhook', async (req, res, next) => {
     }
 
     res.json({ received: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/payments/cancel
+ * Cancels the current user's active subscription immediately.
+ * Attempts to cancel the recurring plan at Razorpay if one exists,
+ * then marks the user as lapsed regardless of provider outcome.
+ */
+router.post('/cancel', requireAuth, async (req, res, next) => {
+  try {
+    const { subscriptionStatus, razorpaySubscriptionId } = req.user
+    if (!['trial', 'active', 'grace'].includes(subscriptionStatus)) {
+      return res.status(400).json({ error: 'No active subscription to cancel' })
+    }
+
+    // Best-effort provider cancellation — don't block on failure
+    if (razorpaySubscriptionId) {
+      try {
+        const { adapter } = await getActiveProvider()
+        await adapter.cancelSubscription(razorpaySubscriptionId)
+      } catch (err) {
+        console.error('[cancel] provider cancel failed:', err.message)
+      }
+    }
+
+    await User.findByIdAndUpdate(req.user._id, {
+      $set: {
+        subscriptionStatus:     'lapsed',
+        subscriptionExpiresAt:  null,
+        graceEndsAt:            null,
+        trialEndsAt:            null,
+        razorpaySubscriptionId: null,
+      },
+    })
+
+    res.json({ success: true, subscriptionStatus: 'lapsed' })
   } catch (err) {
     next(err)
   }

@@ -19,7 +19,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { fetchWatchlistItems, applyAsCreator, getPaymentHistory } from '../services/api'
+import { fetchWatchlistItems, applyAsCreator, getPaymentHistory, cancelSubscription } from '../services/api'
 import PosterCard from '../components/PosterCard'
 import styles from './Profile.module.css'
 
@@ -93,6 +93,9 @@ export default function Profile() {
 
   const [paymentHistory, setPaymentHistory]   = useState([])
   const [loadingHistory, setLoadingHistory]   = useState(false)
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [cancelling,       setCancelling]         = useState(false)
+  const [cancelError,      setCancelError]         = useState('')
 
   const avatarLetter = user?.displayName?.[0] || user?.email?.[0] || '?'
   const watchlistIds = user?.watchlist || []
@@ -139,9 +142,32 @@ export default function Profile() {
   }, [isLoggedIn])
 
   const planLabel = useMemo(() => {
+    if (user?.subscriptionStatus === 'trial') return 'Trial'
     if (!user?.subscriptionPlan) return 'Free'
     return user.subscriptionPlan[0].toUpperCase() + user.subscriptionPlan.slice(1)
-  }, [user?.subscriptionPlan])
+  }, [user?.subscriptionPlan, user?.subscriptionStatus])
+
+  const trialDaysLeft = useMemo(() => {
+    if (user?.subscriptionStatus !== 'trial' || !user?.trialEndsAt) return null
+    const days = Math.ceil((new Date(user.trialEndsAt) - Date.now()) / 86_400_000)
+    return days > 0 ? days : 0
+  }, [user?.subscriptionStatus, user?.trialEndsAt])
+
+  const canCancelSubscription = ['trial', 'active', 'grace'].includes(user?.subscriptionStatus)
+
+  const runCancelSubscription = async () => {
+    setCancelling(true)
+    setCancelError('')
+    try {
+      await cancelSubscription()
+      await refreshProfile()
+      setShowCancelConfirm(false)
+    } catch (err) {
+      setCancelError(err?.message || 'Could not cancel subscription. Please try again.')
+    } finally {
+      setCancelling(false)
+    }
+  }
 
   const runRefreshProfile = async () => {
     if (!canRefresh) return
@@ -326,8 +352,21 @@ export default function Profile() {
 
         <article className={styles.statBlock}>
           <p className={styles.statLabel}>Membership</p>
-          <p className={styles.statValue}>{user?.isSubscribed ? 'Active' : 'Inactive'}</p>
-          <p className={styles.statHint}>{planLabel} plan</p>
+          <p className={styles.statValue}>
+            {user?.subscriptionStatus === 'trial' ? 'Trial'
+              : user?.subscriptionStatus === 'active' ? 'Active'
+              : user?.subscriptionStatus === 'grace'  ? 'Grace'
+              : 'Inactive'}
+          </p>
+          <p className={styles.statHint}>
+            {user?.subscriptionStatus === 'trial'
+              ? trialDaysLeft !== null ? `${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} left` : 'Free trial'
+              : user?.subscriptionStatus === 'grace'
+                ? 'Payment issue · access at risk'
+                : user?.subscriptionExpiresAt
+                  ? `Expires ${new Date(user.subscriptionExpiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                  : `${planLabel} plan`}
+          </p>
         </article>
 
         <article className={styles.statBlock}>
@@ -336,6 +375,39 @@ export default function Profile() {
           <p className={styles.statHint}>Ready to stream</p>
         </article>
       </section>
+
+      {user?.subscriptionStatus === 'trial' && trialDaysLeft !== null && (
+        <section className={styles.upsell} style={{ background: 'linear-gradient(135deg,rgba(99,102,241,0.12),rgba(167,139,250,0.10))', borderColor: 'rgba(167,139,250,0.2)' }}>
+          <div>
+            <p className={styles.upsellEyebrow}>Free Trial</p>
+            <h2 className={styles.upsellTitle}>
+              {trialDaysLeft > 0
+                ? `${trialDaysLeft} day${trialDaysLeft !== 1 ? 's' : ''} left in your free trial`
+                : 'Your free trial has ended'}
+            </h2>
+          </div>
+          <button className={styles.primaryBtn} onClick={openPaywall}>
+            Subscribe Now
+          </button>
+        </section>
+      )}
+
+      {user?.subscriptionStatus === 'grace' && (
+        <section className={styles.upsell} style={{ background: 'linear-gradient(135deg,rgba(225,29,72,0.10),rgba(190,18,60,0.08))', borderColor: 'rgba(225,29,72,0.28)' }}>
+          <div>
+            <p className={styles.upsellEyebrow} style={{ color: '#fda4af' }}>Payment Issue</p>
+            <h2 className={styles.upsellTitle}>Your last payment failed</h2>
+            <p className={styles.upsellSub}>
+              {user?.graceEndsAt
+                ? `Access continues until ${new Date(user.graceEndsAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} — renew now to avoid interruption.`
+                : 'Renew now to avoid losing access.'}
+            </p>
+          </div>
+          <button className={styles.primaryBtn} onClick={openPaywall} style={{ background: 'linear-gradient(135deg,#e11d48,#be123c)', color: '#fff' }}>
+            Renew Now
+          </button>
+        </section>
+      )}
 
       <section className={styles.accountActions}>
         <div className={styles.accountHeader}>
@@ -367,6 +439,12 @@ export default function Profile() {
             <Crown size={14} />
             {user?.isSubscribed ? 'Manage Plan' : 'Choose Plan'}
           </button>
+          {canCancelSubscription && (
+            <button className={styles.cancelBtn}
+              onClick={() => { setCancelError(''); setShowCancelConfirm(true) }}>
+              Cancel Subscription
+            </button>
+          )}
           <button className={styles.signOutBtn} onClick={() => setShowSignOutConfirm(true)}>
             <LogOut size={14} />
             Sign Out
@@ -505,12 +583,23 @@ export default function Profile() {
 
               {/* CTA */}
               <div className={styles.rejectionActions}>
-                <button
-                  className={styles.rejectionReapplyBtn}
-                  onClick={openReapplication}
-                >
-                  <Clapperboard size={14} /> Update &amp; Reapply
-                </button>
+                {user?.creatorReapplyAfter && new Date(user.creatorReapplyAfter) > new Date() ? (
+                  <div style={{ textAlign: 'center' }}>
+                    <p style={{ fontSize: 13, color: '#f87171', fontFamily: 'var(--font-body)', margin: '0 0 6px' }}>
+                      Reapply cooldown — {Math.ceil((new Date(user.creatorReapplyAfter) - Date.now()) / 86_400_000)} day{Math.ceil((new Date(user.creatorReapplyAfter) - Date.now()) / 86_400_000) !== 1 ? 's' : ''} remaining
+                    </p>
+                    <p style={{ fontSize: 12, color: 'var(--color-text-muted)', fontFamily: 'var(--font-body)' }}>
+                      You can reapply after {new Date(user.creatorReapplyAfter).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    className={styles.rejectionReapplyBtn}
+                    onClick={openReapplication}
+                  >
+                    <Clapperboard size={14} /> Update &amp; Reapply
+                  </button>
+                )}
               </div>
 
             </div>
@@ -748,6 +837,34 @@ export default function Profile() {
           </div>
         )}
       </section>
+
+      {showCancelConfirm && createPortal(
+        <div className={styles.modalBackdrop} role="dialog" aria-modal="true" aria-label="Confirm cancellation">
+          <div className={styles.modalCard}>
+            <h3 className={styles.modalTitle}>Cancel subscription?</h3>
+            <p className={styles.modalSub}>
+              You'll lose access to premium content immediately. You can re-subscribe anytime.
+            </p>
+            {cancelError && (
+              <p style={{ fontSize: 13, color: '#f87171', margin: '8px 0 0', fontFamily: 'var(--font-body)' }}>{cancelError}</p>
+            )}
+            <div className={styles.modalActions}>
+              <button className={styles.modalCancelBtn} onClick={() => setShowCancelConfirm(false)} disabled={cancelling}>
+                Keep Subscription
+              </button>
+              <button
+                className={styles.modalConfirmBtn}
+                style={{ background: 'rgba(248,113,113,0.15)', color: '#f87171', borderColor: 'rgba(248,113,113,0.3)' }}
+                onClick={runCancelSubscription}
+                disabled={cancelling}
+              >
+                {cancelling ? 'Cancelling…' : 'Yes, Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {showSignOutConfirm && createPortal(
         <div className={styles.modalBackdrop} role="dialog" aria-modal="true" aria-label="Confirm sign out">

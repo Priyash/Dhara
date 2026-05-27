@@ -230,6 +230,12 @@
   color: var(--color-text);
 }
 
+.planRecurring {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
 .planSub {
   font-family: var(--font-body);
   font-size: 12px;
@@ -250,6 +256,18 @@
   font-family: var(--font-body);
   padding: 2px 8px;
   border-radius: 6px;
+}
+
+.planCurrent {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  padding: 2px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
 .planPrice {

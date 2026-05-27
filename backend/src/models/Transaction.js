@@ -14,8 +14,8 @@ const transactionSchema = new mongoose.Schema(
     // Payment gateway details
     gateway:      { type: String, default: 'razorpay' },
     orderId:      { type: String, required: true, index: true },
-    paymentId:    { type: String, default: '' },      // filled on success
-    subscriptionId: { type: String, default: '' },    // for recurring plans
+    paymentId:    { type: String, default: null },     // filled on success; null until paid
+    subscriptionId: { type: String, default: null },  // for recurring plans
 
     // Outcome
     status:       { type: String, enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending', index: true },
@@ -31,7 +31,15 @@ const transactionSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
-// Useful indexes for revenue queries
+// Unique index on paymentId — only for documents that have a real payment ID.
+// Partial filter excludes pending records (paymentId = null) and prevents the
+// /verify-subscription race condition from creating duplicate paid records.
+transactionSchema.index(
+  { paymentId: 1 },
+  { unique: true, partialFilterExpression: { paymentId: { $type: 'string', $gt: '' } } }
+)
+
+// Revenue query indexes
 transactionSchema.index({ status: 1, createdAt: -1 })
 transactionSchema.index({ userId: 1, createdAt: -1 })
 
