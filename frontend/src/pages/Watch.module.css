@@ -900,27 +900,59 @@
 }
 
 /* ── Gate mobile ──────────────────────────────────────────────────────────── */
-@media (max-width: 540px) {
+@media (max-width: 700px) {
+  /* Push gate content below the navbar — works whether gate covers nav or not */
+  .cinematicGate {
+    justify-content: flex-start;
+    overflow-y: auto;
+    padding-top: var(--nav-height, 64px);
+  }
+
+  /* Fill remaining height and center content within it */
   .gateCentered {
-    gap: 20px;
-    padding: 0 16px;
+    flex: 1;
+    justify-content: center;
+    margin-top: 0;
+    padding: 56px 20px 40px; /* 56px clears the back button */
+    gap: 16px;
+    max-width: 480px;
+  }
+
+  .gateBackBtn {
+    top: calc(var(--nav-height, 64px) + 10px);
+    left: 16px;
+    padding: 7px 14px 7px 10px;
+    font-size: 12px;
   }
 
   .gateMovieTitle {
-    font-size: clamp(18px, 6vw, 28px);
+    font-size: clamp(17px, 5.5vw, 26px);
   }
 
   .gatePosterThumb {
-    width: 64px;
+    width: 60px;
+  }
+
+  .gateGenreChip {
+    font-size: 9px;
+    padding: 2px 8px;
+    letter-spacing: 0.5px;
   }
 
   .gatePanel {
-    padding: 24px 20px;
+    padding: 22px 20px;
     border-radius: 14px;
+    gap: 12px;
+  }
+
+  .gatePanelIcon {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 0;
   }
 
   .gatePanelTitle {
-    font-size: 18px;
+    font-size: 17px;
   }
 
   .gatePanelDesc {
@@ -945,12 +977,5 @@
     width: 100%;
     flex-direction: column;
     gap: 8px;
-  }
-
-  .gateBackBtn {
-    top: calc(var(--nav-height, 64px) + 8px);
-    left: 16px;
-    padding: 7px 14px 7px 10px;
-    font-size: 12px;
   }
 }
