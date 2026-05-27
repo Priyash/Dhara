@@ -40,7 +40,11 @@ interactionEventSchema.index({ userId: 1, createdAt: -1 })
 interactionEventSchema.index({ sessionId: 1, createdAt: -1 })
 interactionEventSchema.index({ itemType: 1, itemId: 1, eventType: 1, createdAt: -1 })
 interactionEventSchema.index({ createdAt: 1 }, { expireAfterSeconds: 180 * 24 * 60 * 60 })
-// Sparse unique index: documents with dedupKey '' are excluded from uniqueness checks.
-interactionEventSchema.index({ dedupKey: 1 }, { unique: true, sparse: true })
+// Partial unique index: only enforce uniqueness when dedupKey is a non-empty string.
+// sparse:true would still index null (field exists but is null), causing dup key errors.
+interactionEventSchema.index(
+  { dedupKey: 1 },
+  { unique: true, partialFilterExpression: { dedupKey: { $type: 'string', $gt: '' } } }
+)
 
 export const InteractionEvent = mongoose.model('InteractionEvent', interactionEventSchema)
