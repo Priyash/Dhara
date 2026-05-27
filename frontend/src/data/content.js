@@ -13,16 +13,49 @@ export const PALETTES = [
 export const NAV_LINKS = ['Home', 'Movies', 'Series', 'Originals', 'Live', 'Reels']
 
 export const PLANS = [
-  { id: 'monthly', label: 'Monthly',  price: '₹99',  sub: 'per month',              badge: null },
-  { id: 'annual',  label: 'Annual',   price: '₹599', sub: 'per year',               badge: 'SAVE 50%' },
-  { id: 'family',  label: 'Family',   price: '₹999', sub: 'per year · 4 screens',  badge: 'BEST VALUE' },
-]
-
-export const PLAN_FEATURES = [
-  'Unlimited Bengali content',
-  'HD & 4K streaming',
-  'Download & watch offline',
-  'New releases every week',
-  'Ad-free experience',
-  'Watch on all devices',
+  {
+    id:       'monthly',
+    label:    'Monthly',
+    tagline:  'Try it out',
+    price:    '₹99',
+    priceNote:'₹99 / month',
+    sub:      'per month',
+    badge:    null,
+    features: [
+      '1 screen at a time',
+      'Up to 720p HD',
+      'All Bengali films & series',
+      'Cancel anytime',
+    ],
+  },
+  {
+    id:       'annual',
+    label:    'Annual',
+    tagline:  'Most popular',
+    price:    '₹599',
+    priceNote:'₹49 / month, billed yearly',
+    sub:      'per year',
+    badge:    'SAVE 50%',
+    features: [
+      '2 screens at once',
+      'Full HD 1080p',
+      'All Bengali films & series',
+      'Save ₹589 vs monthly',
+    ],
+  },
+  {
+    id:       'family',
+    label:    'Family',
+    tagline:  'Watch together',
+    price:    '₹999',
+    priceNote:'₹83 / month, billed yearly',
+    sub:      'per year · up to 4 screens',
+    badge:    'BEST VALUE',
+    features: [
+      '4 screens simultaneously',
+      '4K Ultra HD, no limits',
+      'All Bengali films & series',
+      'Best value for families',
+    ],
+  },
 ]

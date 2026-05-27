@@ -26,12 +26,15 @@ function serializeUser(u, { isAdmin = false } = {}) {
     likedContent:          u.likedContent    ?? [],
     dislikedContent:       u.dislikedContent ?? [],
     // Creator Studio
-    isCreator:             Boolean(u.isCreator),
-    creatorStatus:         u.creatorStatus         ?? 'none',
-    creatorProfile:        u.creatorProfile        ?? null,
+    isCreator:              Boolean(u.isCreator),
+    creatorStatus:          u.creatorStatus          ?? 'none',
+    creatorProfile:         u.creatorProfile         ?? null,
     creatorRejectionReason: u.creatorRejectionReason ?? '',
-    createdAt:             u.createdAt,
-    updatedAt:             u.updatedAt,
+    creatorRejectedAt:      u.creatorRejectedAt      ?? null,
+    creatorReapplyAfter:    u.creatorReapplyAfter     ?? null,
+    creatorRejectionCount:  u.creatorRejectionCount  ?? 0,
+    createdAt:              u.createdAt,
+    updatedAt:              u.updatedAt,
   }
 }
 

@@ -528,17 +528,24 @@ router.get('/revenue', requireAuth, requireCreator, async (req, res, next) => {
       ? Math.min(Math.round(((totalViews - tier.minViews) / (tier.nextMin - tier.minViews)) * 100), 100)
       : 100
 
-    // Notify creator when they advance to a new tier
+    // Notify creator when they advance to a new tier.
+    // Atomic: only the request that actually flips the field sends the email.
     const prevTier = req.user.creatorTier || 'Newcomer'
     if (tier.name !== prevTier) {
-      User.findByIdAndUpdate(creatorId, { $set: { creatorTier: tier.name } }).catch(() => {})
-      emailTierAdvancement(
-        req.user.creatorProfile?.studioName || req.user.displayName,
-        req.user.email,
-        prevTier,
-        tier.name,
-        tier.share
-      ).catch((err) => console.error('[email] tier-advancement failed:', err.message))
+      const updated = await User.findOneAndUpdate(
+        { _id: creatorId, creatorTier: prevTier },
+        { $set: { creatorTier: tier.name } },
+        { new: false }
+      )
+      if (updated) {
+        emailTierAdvancement(
+          req.user.creatorProfile?.studioName || req.user.displayName,
+          req.user.email,
+          prevTier,
+          tier.name,
+          tier.share
+        ).catch((err) => console.error('[email] tier-advancement failed:', err.message))
+      }
     }
 
     // ── All earnings for this creator ─────────────────────────────────────────
@@ -624,6 +631,8 @@ router.get('/revenue', requireAuth, requireCreator, async (req, res, next) => {
         nextMinViews: tier.nextMin,
         progress,
       },
+      tierAdvanced,
+      newTierName: tierAdvanced ? tier.name : null,
     })
   } catch (err) {
     next(err)
@@ -934,6 +943,63 @@ router.post('/reels/:id/resubmit', requireAuth, async (req, res, next) => {
     ).lean()
 
     res.json(updated)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/creator/payouts/request
+ * Creator requests a manual payout of their pending balance.
+ * Minimum threshold: ₹1,000. Creates a CreatorPayout record with status 'requested'.
+ * Must be declared before /reels/:id to avoid param collision.
+ */
+const PAYOUT_MIN_RUPEES = 1000
+
+router.post('/payouts/request', requireAuth, requireCreator, async (req, res, next) => {
+  try {
+    const [earningsAgg] = await CreatorEarning.aggregate([
+      { $match: { creatorId: req.user._id, status: 'pending' } },
+      { $group: { _id: null, total: { $sum: '$netAmountPaise' } } },
+    ])
+    const pendingPaise = earningsAgg?.total ?? 0
+    const pendingRupees = Math.round(pendingPaise / 100)
+
+    if (pendingRupees < PAYOUT_MIN_RUPEES) {
+      return res.status(400).json({
+        error:      `Minimum payout is ₹${PAYOUT_MIN_RUPEES}. Your current balance is ₹${pendingRupees}.`,
+        code:       'BELOW_PAYOUT_THRESHOLD',
+        pendingRupees,
+        minimumRupees: PAYOUT_MIN_RUPEES,
+      })
+    }
+
+    // Check there isn't already a pending/requested payout in flight
+    const inFlight = await CreatorPayout.findOne({
+      creatorId: req.user._id,
+      status: { $in: ['requested', 'processing'] },
+    }).lean()
+    if (inFlight) {
+      return res.status(400).json({
+        error: 'You already have a payout request in progress. Please wait for it to be processed.',
+        code:  'PAYOUT_IN_PROGRESS',
+      })
+    }
+
+    const payout = await CreatorPayout.create({
+      creatorId:   req.user._id,
+      amountPaise: pendingPaise,
+      status:      'requested',
+      method:      req.body.method || 'bank_transfer',
+      notes:       req.body.notes  || '',
+    })
+
+    res.status(201).json({
+      _id:    payout._id,
+      amount: pendingRupees,
+      status: payout.status,
+      method: payout.method,
+    })
   } catch (err) {
     next(err)
   }

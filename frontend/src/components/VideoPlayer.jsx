@@ -72,7 +72,7 @@ function qualityLabel(level) {
   return kbps ? `${h} · ${kbps}kbps` : h
 }
 
-export default function VideoPlayer({ src, title, poster, storageKey }) {
+export default function VideoPlayer({ src, title, poster, storageKey, maxQualityHeight = null }) {
   const videoRef    = useRef(null)
   const containerRef= useRef(null)
   const progressRef = useRef(null)
@@ -281,9 +281,22 @@ export default function VideoPlayer({ src, title, poster, storageKey }) {
 
     hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
       const levels = data.levels || []
-      setQualityOptions(levels.map((l, i) => ({ value: String(i), label: qualityLabel(l) })))
+
+      // Apply plan quality cap: find the highest allowed level index
+      if (maxQualityHeight !== null && levels.length > 0) {
+        const capIdx = levels.reduce((best, l, i) => {
+          return (l.height ?? 0) <= maxQualityHeight ? i : best
+        }, -1)
+        hls.autoLevelCapping = capIdx >= 0 ? capIdx : 0
+      }
+
+      // Only expose capped levels in the quality picker
+      const visibleLevels = maxQualityHeight !== null
+        ? levels.filter((l) => (l.height ?? 0) <= maxQualityHeight)
+        : levels
+      setQualityOptions(visibleLevels.map((l, i) => ({ value: String(levels.indexOf(l)), label: qualityLabel(l) })))
       setQualityValue('auto')
-      setActiveQualityLabel(levels.length ? `Auto · ${levels.length} levels` : 'Auto')
+      setActiveQualityLabel(visibleLevels.length ? `Auto · ${visibleLevels.length} levels` : 'Auto')
       autoPlayAndResume()
     })
 

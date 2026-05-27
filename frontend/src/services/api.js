@@ -139,6 +139,17 @@ export async function fetchStreamUrl(contentId, episodeNumber = null) {
   return request(`/api/content/${contentId}/stream${qs}`)
 }
 
+export async function sendStreamHeartbeat(sessionId) {
+  return request('/api/content/heartbeat', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId }),
+  })
+}
+
+export async function endStreamSession(sessionId) {
+  return request(`/api/content/stream-session/${sessionId}`, { method: 'DELETE' })
+}
+
 export async function likeContent(contentId) {
   const result = await request(`/api/content/${contentId}/like`, { method: 'POST' })
   if (result?.liked) {
@@ -213,8 +224,19 @@ export async function createSubscription(plan) {
   })
 }
 
+export async function verifySubscription({ razorpay_payment_id, razorpay_subscription_id, razorpay_signature, plan }) {
+  return request('/api/payments/verify-subscription', {
+    method: 'POST',
+    body: JSON.stringify({ razorpay_payment_id, razorpay_subscription_id, razorpay_signature, plan }),
+  })
+}
+
 export async function getPaymentHistory() {
   return request('/api/payments/history')
+}
+
+export async function cancelSubscription() {
+  return request('/api/payments/cancel', { method: 'POST' })
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
@@ -418,6 +440,10 @@ export async function getCreatorAnalytics() {
 
 export async function getCreatorRevenue() {
   return request('/api/creator/revenue')
+}
+
+export async function requestCreatorPayout(payload = {}) {
+  return request('/api/creator/payouts/request', { method: 'POST', body: JSON.stringify(payload) })
 }
 
 export async function recordView(id, episodeNumber = null, positionSecs = 30) {

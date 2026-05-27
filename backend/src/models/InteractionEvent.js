@@ -29,10 +29,9 @@ const interactionEventSchema = new mongoose.Schema(
     // Used for server-side dedup of high-weight events.
     // Format: `u:{userId}:{itemId}:{eventType}[:{YYYY-MM-DD}]`  (logged-in)
     //         `s:{sessionId}:{itemId}:{eventType}[:{YYYY-MM-DD}]` (anonymous)
-    //         ''  (impression and other non-deduped events)
-    // The sparse unique index excludes empty-string documents so non-deduped events
-    // can still accumulate freely.
-    dedupKey: { type: String, default: '' },
+    //         null (impression and other non-deduped events)
+    // The sparse unique index excludes null so non-deduped events accumulate freely.
+    dedupKey: { type: String, default: null },
   },
   { timestamps: true }
 )

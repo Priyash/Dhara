@@ -62,5 +62,16 @@ export function createRazorpayAdapter() {
         notes,
       })
     },
+
+    async cancelSubscription(subscriptionId) {
+      return client.subscriptions.cancel(subscriptionId, { cancel_at_cycle_end: 0 })
+    },
+
+    verifySubscriptionSignature({ paymentId, subscriptionId, signature }) {
+      const expected = createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+        .update(`${paymentId}|${subscriptionId}`)
+        .digest('hex')
+      return safeCompare(expected, signature || '')
+    },
   }
 }
