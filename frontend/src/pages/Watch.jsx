@@ -285,6 +285,69 @@ export default function Watch() {
     setResumePos(null)
   }, [id])
 
+  // Show auth gate the moment Firebase resolves — don't wait for the content API.
+  // Movie info and backdrop fill in once the fetch completes (state update re-renders).
+  if (!authLoading && !isLoggedIn) {
+    const bdRaw = content?.backdropUrl || content?.posterUrl || null
+    const bdUrl = bdRaw
+      ? cloudinaryTransform(bdRaw, 'w_1920,h_1080,c_fill,g_auto,f_auto,q_auto:low')
+      : null
+    const title = content ? stripExtension(content.title) : null
+    return (
+      <div
+        className={styles.cinematicGate}
+        style={bdUrl ? { '--backdrop': `url(${bdUrl})` } : {}}
+      >
+        <div className={styles.gateScrim} />
+        <button className={styles.gateBackBtn} onClick={() => navigate(-1)}>
+          <ArrowLeft size={15} /> Back
+        </button>
+        <div className={styles.gateCentered}>
+          {title && (
+            <div className={styles.gateMovieInfo}>
+              {content.posterUrl && (
+                <img
+                  src={cloudinaryTransform(content.posterUrl, 'w_90,h_135,c_fill,f_auto,q_auto')}
+                  alt={title}
+                  className={styles.gatePosterThumb}
+                />
+              )}
+              {content.genre?.length > 0 && (
+                <div className={styles.gateGenres}>
+                  {content.genre.slice(0, 3).map((g) => (
+                    <span key={g} className={styles.gateGenreChip}>{g}</span>
+                  ))}
+                </div>
+              )}
+              <h1 className={styles.gateMovieTitle}>{title}</h1>
+              <div className={styles.gateMovieMeta}>
+                {content.releaseYear && <span>{content.releaseYear}</span>}
+                {content.type        && <><span className={styles.gateMetaDot}>·</span><span>{content.type}</span></>}
+                {content.rating > 0  && <><span className={styles.gateMetaDot}>·</span><span className={styles.gateRating}><Star size={11} fill="#f59e0b" color="#f59e0b" /> {content.rating.toFixed(1)}</span></>}
+              </div>
+            </div>
+          )}
+          <div className={styles.gatePanel}>
+            <div className={styles.gatePanelIcon}><Lock size={22} /></div>
+            <h2 className={styles.gatePanelTitle}>Sign in to watch</h2>
+            <p className={styles.gatePanelDesc}>
+              Join Dhara and enjoy unlimited Bengali cinema, series & documentaries.
+            </p>
+            <div className={styles.gatePanelActions}>
+              <button className={styles.gatePanelBtn} onClick={() => openAuth('signin', `/watch/${id}`)}>
+                <Play size={14} fill="currentColor" /> Sign In
+              </button>
+              <button className={styles.gatePanelBtnGhost} onClick={() => openAuth('signup', `/watch/${id}`)}>
+                Create Free Account
+              </button>
+            </div>
+            <p className={styles.gatePanelFine}>Free trial available · No credit card required</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (loading || authLoading) return <div className={styles.state}>Loading…</div>
   if (contentError)           return <div className={styles.state}>{contentError}</div>
 

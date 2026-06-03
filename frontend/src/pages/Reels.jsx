@@ -106,7 +106,11 @@ function ReelGrid() {
         <div className={styles.gateIcon}><Play size={26} strokeWidth={1.5} /></div>
         <h2 className={styles.gateTitle}>Reels</h2>
         <p className={styles.gateSub}>Short clips &amp; moments from Bengali creators</p>
-        <button className={styles.gateBtn} onClick={() => openAuth('signin')}>Sign in to watch</button>
+        <div className={styles.gateActions}>
+          <button className={styles.gateBtn} onClick={() => openAuth('signin')}>Sign in to watch</button>
+          <button className={styles.gateBtnGhost} onClick={() => openAuth('signup')}>Create Free Account</button>
+        </div>
+        <p className={styles.gateFine}>Free trial available · No credit card required</p>
       </div>
     </div>
   )
@@ -481,7 +485,11 @@ function ReelPlayer({ startId }) {
         <div className={styles.gateIcon}><Play size={26} strokeWidth={1.5} /></div>
         <h2 className={styles.gateTitle}>Reels</h2>
         <p className={styles.gateSub}>Short clips &amp; moments from Bengali creators</p>
-        <button className={styles.gateBtn} onClick={() => openAuth('signin', '/reels')}>Sign in to watch</button>
+        <div className={styles.gateActions}>
+          <button className={styles.gateBtn} onClick={() => openAuth('signin', '/reels')}>Sign in to watch</button>
+          <button className={styles.gateBtnGhost} onClick={() => openAuth('signup', '/reels')}>Create Free Account</button>
+        </div>
+        <p className={styles.gateFine}>Free trial available · No credit card required</p>
       </div>
     </div>
   )

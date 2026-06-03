@@ -607,9 +607,13 @@
 .gateIcon { width: 60px; height: 60px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.5); margin-bottom: 4px; }
 .gateTitle{ font-size: 20px; font-weight: 700; color: #fff; margin: 0; }
 .gateSub  { font-size: 13.5px; color: rgba(255,255,255,0.4); margin: 0; line-height: 1.5; }
-.gateBtn  { margin-top: 8px; background: #7c3aed; color: #fff; border: none; border-radius: 10px; padding: 11px 28px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.15s, transform 0.12s; }
-.gateBtn:hover  { background: #6d28d9; }
+.gateActions { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.gateBtn  { background: var(--color-accent); color: #000; border: none; border-radius: 10px; padding: 11px 28px; font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity 0.15s, transform 0.12s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.gateBtn:hover  { opacity: 0.88; }
 .gateBtn:active { transform: scale(0.97); }
+.gateBtnGhost { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.18); border-radius: 10px; padding: 11px 28px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.gateBtnGhost:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.3); }
+.gateFine { font-size: 11px; color: rgba(255,255,255,0.28); margin: 4px 0 0; }
 
 .spin { color: rgba(255,255,255,0.35); animation: rotate 1s linear infinite; }
 @keyframes rotate { to { transform: rotate(360deg); } }
