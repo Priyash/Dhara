@@ -27,7 +27,7 @@ function getHeroImage(item) {
 }
 
 export default function Hero() {
-  const { muted, toggleMuted, openItem } = useStore()
+  const { muted, toggleMuted, openItem, isLoggedIn, openAuth } = useStore()
   const navigate   = useNavigate()
   const [items,     setItems]     = useState([])
   const [active,    setActive]    = useState(0)
@@ -152,7 +152,9 @@ export default function Hero() {
         <div className={styles.actions}>
           <button
             className={styles.watchBtn}
-            onClick={() => navigate(`/watch/${featured._id || featured.id}`)}
+            onClick={() => isLoggedIn
+              ? navigate(`/watch/${featured._id || featured.id}`)
+              : openAuth('signin', `/watch/${featured._id || featured.id}`)}
           >
             <Play size={18} color="#000" fill="#000" />
             Watch Now
