@@ -219,15 +219,15 @@
 /* ── Cinematic gate (unauthenticated / unverified / premium blocked) ──────── */
 /* ── Cinematic gate ───────────────────────────────────────────────────────── */
 .cinematicGate {
-  position: fixed;
-  inset: 0;
-  z-index: 900;
+  position: relative;
+  min-height: 100dvh;
+  width: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  /* Rich gradient fallback for when no backdrop image is available */
-  background: linear-gradient(135deg, #0d0d1f 0%, #1a0d2e 25%, #0d1520 55%, #0a0a0c 100%);
+  background: #0a0a0c;
 }
 
 /* Backdrop rendered as an absolutely-positioned pseudo-layer so we can
@@ -294,12 +294,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 28px;
+  gap: 24px;
   width: 100%;
-  max-width: 520px;
+  max-width: 360px;
   padding: 0 24px;
   text-align: center;
-  margin-top: calc(var(--nav-height, 64px) * 0.5);
 }
 
 /* Movie info — visible through the gate, building desire */
@@ -370,18 +369,12 @@
   font-weight: 600;
 }
 
-/* The gate CTA panel */
+/* The gate CTA panel — transparent, matches Reels gate style */
 .gatePanel {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  background: rgba(14,14,16,0.85);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 16px;
-  padding: 32px 36px;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  gap: 12px;
   width: 100%;
 }
 
@@ -417,15 +410,17 @@
 
 .gatePanelActions {
   display: flex;
+  flex-direction: column;
   gap: 10px;
-  flex-wrap: wrap;
-  justify-content: center;
+  width: 100%;
 }
 
 .gatePanelBtn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
+  width: 100%;
   padding: 13px 28px;
   font-family: var(--font-body);
   font-size: 15px;
@@ -440,9 +435,11 @@
 .gatePanelBtn:hover { opacity: 0.9; transform: translateY(-1px); }
 
 .gatePanelBtnGhost {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
+  width: 100%;
   padding: 13px 24px;
   font-family: var(--font-body);
   font-size: 14px;
@@ -902,21 +899,10 @@
 
 /* ── Gate mobile ──────────────────────────────────────────────────────────── */
 @media (max-width: 700px) {
-  /* Push gate content below the navbar — works whether gate covers nav or not */
-  .cinematicGate {
-    justify-content: flex-start;
-    overflow-y: auto;
-    padding-top: var(--nav-height, 64px);
-  }
-
-  /* Fill remaining height and center content within it */
   .gateCentered {
-    flex: 1;
-    justify-content: center;
-    margin-top: 0;
     padding: 56px 20px 40px; /* 56px clears the back button */
     gap: 16px;
-    max-width: 480px;
+    max-width: 100%;
   }
 
   .gateBackBtn {
@@ -940,12 +926,6 @@
     letter-spacing: 0.5px;
   }
 
-  .gatePanel {
-    padding: 22px 20px;
-    border-radius: 14px;
-    gap: 12px;
-  }
-
   .gatePanelIcon {
     width: 44px;
     height: 44px;
@@ -963,20 +943,10 @@
   .gatePanelBtn {
     padding: 12px 22px;
     font-size: 14px;
-    width: 100%;
-    justify-content: center;
   }
 
   .gatePanelBtnGhost {
     padding: 11px 18px;
     font-size: 13px;
-    width: 100%;
-    justify-content: center;
-  }
-
-  .gatePanelActions {
-    width: 100%;
-    flex-direction: column;
-    gap: 8px;
   }
 }
