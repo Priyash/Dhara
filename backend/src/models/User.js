@@ -54,7 +54,7 @@ userSchema.virtual('isSubscriptionActive').get(function () {
   const now = new Date()
   switch (this.subscriptionStatus) {
     case 'trial':  return Boolean(this.trialEndsAt  && this.trialEndsAt  > now)
-    case 'active': return Boolean(this.subscriptionExpiresAt && this.subscriptionExpiresAt > now)
+    case 'active': return !this.subscriptionExpiresAt || this.subscriptionExpiresAt > now
     case 'grace':  return Boolean(this.graceEndsAt  && this.graceEndsAt  > now)
     default:       return false
   }

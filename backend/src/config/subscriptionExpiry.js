@@ -37,14 +37,17 @@ async function runRenewalReminders() {
     }).select('displayName email subscriptionExpiresAt subscriptionPlan renewalReminderSentAt').lean()
 
     for (const user of users) {
-      emailSubscriptionRenewalReminder(
-        user.displayName || user.email,
-        user.email,
-        user.subscriptionExpiresAt,
-        user.subscriptionPlan || 'subscription'
-      ).catch((err) => console.error('[email] renewal-reminder failed:', err.message))
-
-      await User.findByIdAndUpdate(user._id, { $set: { renewalReminderSentAt: now } })
+      try {
+        await emailSubscriptionRenewalReminder(
+          user.displayName || user.email,
+          user.email,
+          user.subscriptionExpiresAt,
+          user.subscriptionPlan || 'subscription'
+        )
+        await User.findByIdAndUpdate(user._id, { $set: { renewalReminderSentAt: now } })
+      } catch (err) {
+        console.error('[email] renewal-reminder failed for', user.email, '—', err.message)
+      }
     }
 
     if (users.length > 0) {

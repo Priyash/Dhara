@@ -16,6 +16,8 @@ function safeCompare(a, b) {
  *   publicKey             string   — safe to send to frontend
  *   createOrder(opts)     → { orderId, amount, currency }
  *   fetchOrder(orderId)   → Razorpay order object
+ *   fetchPayment(paymentId) → Razorpay payment object
+ *   fetchSubscription(subscriptionId) → Razorpay subscription object
  *   verifyPaymentSignature({ orderId, paymentId, signature }) → boolean
  *   verifyWebhookSignature({ body, signature })               → boolean
  *   createSubscription({ planId, totalCount, notes })         → subscription object
@@ -38,6 +40,14 @@ export function createRazorpayAdapter() {
 
     async fetchOrder(orderId) {
       return client.orders.fetch(orderId)
+    },
+
+    async fetchPayment(paymentId) {
+      return client.payments.fetch(paymentId)
+    },
+
+    async fetchSubscription(subscriptionId) {
+      return client.subscriptions.fetch(subscriptionId)
     },
 
     verifyPaymentSignature({ orderId, paymentId, signature }) {

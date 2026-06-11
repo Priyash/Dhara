@@ -531,12 +531,14 @@ router.get('/revenue', requireAuth, requireCreator, async (req, res, next) => {
     // Notify creator when they advance to a new tier.
     // Atomic: only the request that actually flips the field sends the email.
     const prevTier = req.user.creatorTier || 'Newcomer'
+    let tierAdvanced = false
     if (tier.name !== prevTier) {
       const updated = await User.findOneAndUpdate(
         { _id: creatorId, creatorTier: prevTier },
         { $set: { creatorTier: tier.name } },
         { new: false }
       )
+      tierAdvanced = !!updated
       if (updated) {
         emailTierAdvancement(
           req.user.creatorProfile?.studioName || req.user.displayName,

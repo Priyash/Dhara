@@ -3,26 +3,20 @@ import { User } from '../models/User.js'
 import { Transaction } from '../models/Transaction.js'
 import { requireAuth } from '../middleware/auth.js'
 import { getActiveProvider } from '../providers/index.js'
+import {
+  PLANS,
+  extendPlanFrom,
+  getExpectedProviderPlanId,
+  planEnvKey,
+  validateRazorpaySubscriptionPayment,
+} from './payments.helpers.js'
 
 const router = Router()
-
-const PLANS = {
-  monthly: { label: 'Monthly',  amount: 9900,  days: 30  },  // ₹99
-  annual:  { label: 'Annual',   amount: 59900, days: 365 },  // ₹599
-  family:  { label: 'Family',   amount: 99900, days: 365 },  // ₹999
-}
 
 const GRACE_DAYS = 7
 
 function planExpiresAt(plan) {
   return new Date(Date.now() + PLANS[plan].days * 86_400_000)
-}
-
-function extendPlanFrom(plan, currentExpiresAt = null) {
-  const current = currentExpiresAt ? new Date(currentExpiresAt).getTime() : 0
-  const now = Date.now()
-  const base = Number.isFinite(current) && current > now ? current : now
-  return new Date(base + PLANS[plan].days * 86_400_000)
 }
 
 /**
@@ -187,7 +181,7 @@ router.post('/verify-subscription', requireAuth, async (req, res, next) => {
     }
     if (!PLANS[plan]) return res.status(400).json({ error: 'Invalid plan' })
 
-    const { adapter } = await getActiveProvider()
+    const { adapter, config } = await getActiveProvider()
 
     const signatureValid = adapter.verifySubscriptionSignature({
       paymentId:      razorpay_payment_id,
@@ -198,37 +192,69 @@ router.post('/verify-subscription', requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'Subscription verification failed' })
     }
 
-    const expiresAt = extendPlanFrom(plan)
+    const tx = await Transaction.findOne({ subscriptionId: razorpay_subscription_id })
+      .sort({ createdAt: -1 })
+    if (!tx) {
+      return res.status(400).json({ error: 'Subscription record not found' })
+    }
+    if (tx.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Subscription does not belong to this account' })
+    }
+    if (tx.plan !== plan) {
+      return res.status(400).json({ error: 'Subscription plan does not match checkout plan' })
+    }
 
-    // Atomic upsert — $setOnInsert ensures only the first concurrent call writes.
-    // If paymentId already exists the unique partial index rejects duplicates, and
-    // the upsert returns the existing doc via {new:false} → we detect alreadyProcessed.
-    const txResult = await Transaction.findOneAndUpdate(
-      { paymentId: razorpay_payment_id },
+    if (tx.status === 'paid') {
+      const userFresh = await User.findById(req.user._id)
+      return res.json({
+        success:               true,
+        alreadyProcessed:      true,
+        isSubscribed:          userFresh?.isSubscriptionActive ?? req.user.isSubscriptionActive,
+        subscriptionStatus:    userFresh?.subscriptionStatus    ?? req.user.subscriptionStatus,
+        subscriptionPlan:      userFresh?.subscriptionPlan      ?? req.user.subscriptionPlan,
+        subscriptionExpiresAt: userFresh?.subscriptionExpiresAt ?? req.user.subscriptionExpiresAt,
+      })
+    }
+    if (tx.status !== 'pending') {
+      return res.status(409).json({ error: `Subscription transaction is ${tx.status}` })
+    }
+
+    const expectedPlanId = getExpectedProviderPlanId(config.activeProvider, tx.plan)
+    if (!expectedPlanId) {
+      return res.status(501).json({
+        error: `Recurring billing not configured for this plan (missing ${planEnvKey(config.activeProvider, tx.plan)})`,
+      })
+    }
+
+    const [subscription, payment] = await Promise.all([
+      adapter.fetchSubscription(razorpay_subscription_id),
+      adapter.fetchPayment(razorpay_payment_id),
+    ])
+
+    validateRazorpaySubscriptionPayment({
+      subscription,
+      payment,
+      expectedPlan:           tx.plan,
+      expectedPlanId,
+      expectedUserId:         req.user._id.toString(),
+      expectedSubscriptionId: razorpay_subscription_id,
+      expectedPaymentId:      razorpay_payment_id,
+    })
+
+    const currentUser = await User.findById(req.user._id).select('subscriptionExpiresAt').lean()
+    const expiresAt = extendPlanFrom(tx.plan, currentUser?.subscriptionExpiresAt)
+
+    const paidTx = await Transaction.findOneAndUpdate(
       {
-        $setOnInsert: {
-          userId:         req.user._id,
-          userEmail:      req.user.email,
-          plan,
-          amount:         PLANS[plan].amount,
-          currency:       'INR',
-          gateway:        'razorpay',
-          orderId:        `sub_init_${razorpay_subscription_id}`,
-          paymentId:      razorpay_payment_id,
-          subscriptionId: razorpay_subscription_id,
-          status:         'paid',
-          planSnapshot: {
-            label:  PLANS[plan].label,
-            days:   PLANS[plan].days,
-            amount: PLANS[plan].amount,
-          },
-        },
+        _id:    tx._id,
+        status: 'pending',
+        plan:   tx.plan,
       },
-      { upsert: true, new: false }
+      { $set: { status: 'paid', paymentId: razorpay_payment_id, amount: payment.amount, currency: payment.currency || 'INR' } },
+      { new: false }
     )
 
-    if (txResult !== null) {
-      // Document already existed — this is a duplicate call
+    if (!paidTx) {
       const userFresh = await User.findById(req.user._id)
       return res.json({
         success:               true,
@@ -245,7 +271,7 @@ router.post('/verify-subscription', requireAuth, async (req, res, next) => {
       {
         $set: {
           subscriptionStatus:     'active',
-          subscriptionPlan:       plan,
+          subscriptionPlan:       tx.plan,
           subscriptionStartedAt:  new Date(),
           subscriptionExpiresAt:  expiresAt,
           razorpaySubscriptionId: razorpay_subscription_id,
@@ -279,16 +305,33 @@ router.post('/create-subscription', requireAuth, async (req, res, next) => {
 
     const { adapter, config } = await getActiveProvider()
 
-    const planEnvKey = `${config.activeProvider.toUpperCase()}_PLAN_ID_${plan.toUpperCase()}`
-    const planId = process.env[planEnvKey]
+    const expectedPlanEnvKey = planEnvKey(config.activeProvider, plan)
+    const planId = process.env[expectedPlanEnvKey]
     if (!planId) {
-      return res.status(501).json({ error: `Recurring billing not configured for this plan (missing ${planEnvKey})` })
+      return res.status(501).json({ error: `Recurring billing not configured for this plan (missing ${expectedPlanEnvKey})` })
     }
 
     const subscription = await adapter.createSubscription({
       planId,
       totalCount: plan === 'monthly' ? 12 : 1,
       notes:      { userId: req.user._id.toString(), plan },
+    })
+
+    await Transaction.create({
+      userId:         req.user._id,
+      userEmail:      req.user.email,
+      plan,
+      amount:         PLANS[plan].amount,
+      currency:       'INR',
+      gateway:        'razorpay',
+      orderId:        `sub_init_${subscription.id}`,
+      subscriptionId: subscription.id,
+      status:         'pending',
+      planSnapshot: {
+        label:  PLANS[plan].label,
+        days:   PLANS[plan].days,
+        amount: PLANS[plan].amount,
+      },
     })
 
     res.json({
@@ -322,6 +365,11 @@ router.post('/webhook', async (req, res, next) => {
     switch (event.event) {
       case 'payment.captured': {
         const entity = event.payload.payment.entity
+        if (entity.subscription_id) {
+          // Subscription payments are handled by subscription.charged, where we can
+          // validate the subscription plan_id and notes alongside the payment.
+          break
+        }
         const { userId, plan } = entity.notes || {}
         if (!userId || !PLANS[plan]) {
           console.warn('[webhook] payment.captured skipped: missing userId or invalid plan', { userId, plan, orderId: entity.order_id })
@@ -333,12 +381,9 @@ router.post('/webhook', async (req, res, next) => {
           break
         }
 
-        const existingTx = await Transaction.findOne({ orderId: entity.order_id })
-          .select('status')
-          .lean()
-
-        // Upsert transaction from webhook (in case /verify wasn't called)
-        await Transaction.findOneAndUpdate(
+        // Atomic upsert — captures the pre-update status in one round-trip.
+        // new:false returns the doc as it was BEFORE the update (or null on insert).
+        const prevTx = await Transaction.findOneAndUpdate(
           { orderId: entity.order_id },
           {
             $setOnInsert: {
@@ -360,10 +405,10 @@ router.post('/webhook', async (req, res, next) => {
               paymentId: entity.id,
             },
           },
-          { upsert: true }
+          { upsert: true, new: false }
         )
 
-        if (existingTx?.status !== 'paid') {
+        if (prevTx?.status !== 'paid') {
           await User.findByIdAndUpdate(userId, {
             $set: {
               subscriptionStatus:    'active',
@@ -379,7 +424,8 @@ router.post('/webhook', async (req, res, next) => {
 
       case 'subscription.charged': {
         const entity    = event.payload.subscription.entity
-        const paymentId = event.payload.payment?.entity?.id
+        const payment   = event.payload.payment?.entity
+        const paymentId = payment?.id
         const { userId, plan } = entity.notes || {}
         if (!userId || !PLANS[plan]) {
           console.warn('[webhook] subscription.charged skipped: missing userId or invalid plan', { userId, plan, subscriptionId: entity.id })
@@ -393,25 +439,59 @@ router.post('/webhook', async (req, res, next) => {
           break
         }
 
-        const expiresAt = extendPlanFrom(plan, user.subscriptionExpiresAt)
+        const { config } = await getActiveProvider()
+        const expectedPlanId = getExpectedProviderPlanId(config.activeProvider, plan)
+        if (!expectedPlanId) {
+          console.warn('[webhook] subscription.charged skipped: missing plan id env', { plan, subscriptionId: entity.id })
+          break
+        }
 
-        await Transaction.create({
-          userId:    user._id,
-          userEmail: user.email,
-          plan,
-          amount:    PLANS[plan].amount,
-          currency:  'INR',
-          gateway:   'razorpay',
-          orderId:   `sub_renewal_${entity.id}_${Date.now()}`,
-          paymentId: event.payload.payment?.entity?.id || null,
-          subscriptionId: entity.id,
-          status:    'paid',
-          planSnapshot: {
-            label:  PLANS[plan].label,
-            days:   PLANS[plan].days,
-            amount: PLANS[plan].amount,
-          },
-        })
+        try {
+          validateRazorpaySubscriptionPayment({
+            subscription:            entity,
+            payment,
+            expectedPlan:            plan,
+            expectedPlanId,
+            expectedUserId:          user._id.toString(),
+            expectedSubscriptionId:  entity.id,
+            expectedPaymentId:       paymentId,
+          })
+        } catch (err) {
+          console.warn('[webhook] subscription.charged skipped:', err.message, { plan, subscriptionId: entity.id, paymentId })
+          break
+        }
+
+        const expiresAt = extendPlanFrom(plan, user.subscriptionExpiresAt)
+        const pendingTx = await Transaction.findOne({ subscriptionId: entity.id, status: 'pending' })
+
+        if (pendingTx) {
+          await Transaction.findByIdAndUpdate(pendingTx._id, {
+            $set: {
+              status:    'paid',
+              paymentId,
+              amount:    payment.amount,
+              currency:  payment.currency || 'INR',
+            },
+          })
+        } else {
+          await Transaction.create({
+            userId:    user._id,
+            userEmail: user.email,
+            plan,
+            amount:    payment.amount,
+            currency:  payment.currency || 'INR',
+            gateway:   'razorpay',
+            orderId:   `sub_renewal_${entity.id}_${Date.now()}`,
+            paymentId,
+            subscriptionId: entity.id,
+            status:    'paid',
+            planSnapshot: {
+              label:  PLANS[plan].label,
+              days:   PLANS[plan].days,
+              amount: PLANS[plan].amount,
+            },
+          })
+        }
 
         await User.findByIdAndUpdate(userId, {
           $set: {
