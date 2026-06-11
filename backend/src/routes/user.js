@@ -219,6 +219,7 @@ router.get('/continue-watching', async (req, res, next) => {
         (p.durationSecs === 0 || p.positionSecs < p.durationSecs - 30) &&
         (!p.updatedAt || new Date(p.updatedAt) >= cutoff)
       )
+      .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
       .slice(0, 8)
 
     if (progress.length === 0) return res.json([])

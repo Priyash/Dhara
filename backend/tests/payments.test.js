@@ -6,6 +6,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'crypto'
+import { validateRazorpaySubscriptionPayment } from '../src/routes/payments.helpers.js'
 
 // ── Helpers mirrored from the production code ─────────────────────────────────
 
@@ -277,6 +278,89 @@ describe('Razorpay subscription HMAC verification', () => {
     const orderSig = crypto.createHmac('sha256', secret2).update(`${orderId}|${payId}`).digest('hex')
     const subSig   = crypto.createHmac('sha256', secret2).update(`${payId}|${subId}`).digest('hex')
     assert.notEqual(orderSig, subSig)
+  })
+})
+
+// ── Subscription provider object validation ──────────────────────────────────
+
+describe('Razorpay subscription provider validation', () => {
+  const base = {
+    expectedPlan:           'monthly',
+    expectedPlanId:         'plan_monthly',
+    expectedUserId:         'user_123',
+    expectedSubscriptionId: 'sub_123',
+    expectedPaymentId:      'pay_123',
+  }
+
+  function validObjects(overrides = {}) {
+    return {
+      subscription: {
+        id:      'sub_123',
+        status:  'active',
+        plan_id: 'plan_monthly',
+        notes:   { userId: 'user_123', plan: 'monthly' },
+        ...(overrides.subscription || {}),
+      },
+      payment: {
+        id:              'pay_123',
+        status:          'captured',
+        subscription_id: 'sub_123',
+        amount:          PLANS.monthly.amount,
+        currency:        'INR',
+        ...(overrides.payment || {}),
+      },
+    }
+  }
+
+  it('accepts matching subscription and payment objects', () => {
+    assert.doesNotThrow(() => {
+      validateRazorpaySubscriptionPayment({ ...base, ...validObjects() })
+    })
+  })
+
+  it('rejects when Razorpay notes plan differs from expected plan', () => {
+    assert.throws(() => {
+      validateRazorpaySubscriptionPayment({
+        ...base,
+        ...validObjects({ subscription: { notes: { userId: 'user_123', plan: 'annual' } } }),
+      })
+    }, /plan does not match/)
+  })
+
+  it('rejects when Razorpay notes user differs from the authenticated user', () => {
+    assert.throws(() => {
+      validateRazorpaySubscriptionPayment({
+        ...base,
+        ...validObjects({ subscription: { notes: { userId: 'user_456', plan: 'monthly' } } }),
+      })
+    }, /does not belong/)
+  })
+
+  it('rejects when provider plan_id is not the configured plan id', () => {
+    assert.throws(() => {
+      validateRazorpaySubscriptionPayment({
+        ...base,
+        ...validObjects({ subscription: { plan_id: 'plan_family' } }),
+      })
+    }, /provider plan/)
+  })
+
+  it('rejects when payment amount does not match the expected plan amount', () => {
+    assert.throws(() => {
+      validateRazorpaySubscriptionPayment({
+        ...base,
+        ...validObjects({ payment: { amount: PLANS.annual.amount } }),
+      })
+    }, /amount/)
+  })
+
+  it('rejects when the payment is for a different subscription', () => {
+    assert.throws(() => {
+      validateRazorpaySubscriptionPayment({
+        ...base,
+        ...validObjects({ payment: { subscription_id: 'sub_other' } }),
+      })
+    }, /does not belong to this subscription/)
   })
 })
 

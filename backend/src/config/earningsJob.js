@@ -44,6 +44,15 @@ export async function calculateMonthlyEarnings(month, year) {
     creatorTotals.set(cid, (creatorTotals.get(cid) ?? 0) + (p.viewCount ?? 0))
   }
 
+  // Batch idempotency check — one query instead of N serial round-trips
+  const allIds = pieces.map((p) => p._id)
+  const alreadyDone = new Set(
+    (await CreatorEarning.find({ year, month, contentId: { $in: allIds } })
+      .select('contentId')
+      .lean()
+    ).map((e) => String(e.contentId))
+  )
+
   let created = 0, skipped = 0
   const ops = []
 
@@ -51,9 +60,7 @@ export async function calculateMonthlyEarnings(month, year) {
     const monthlyViews = (piece.viewCount ?? 0) - (piece.viewCountSnapshot ?? 0)
     if (monthlyViews <= 0) { skipped++; continue }
 
-    // Idempotent: skip if already calculated for this period
-    const exists = await CreatorEarning.exists({ contentId: piece._id, year, month })
-    if (exists) { skipped++; continue }
+    if (alreadyDone.has(String(piece._id))) { skipped++; continue }
 
     const tier       = tierFor(creatorTotals.get(String(piece.creatorId)) ?? 0)
     const grossPaise = monthlyViews * RATE_PER_VIEW_PAISE
@@ -71,9 +78,12 @@ export async function calculateMonthlyEarnings(month, year) {
         netAmountPaise:   netPaise,
         status:           'pending',
         calculatedAt:     new Date(),
-      }).then(() =>
-        Content.findByIdAndUpdate(piece._id, { $set: { viewCountSnapshot: piece.viewCount } })
-      )
+      })
+      .then(() => Content.findByIdAndUpdate(piece._id, { $set: { viewCountSnapshot: piece.viewCount } }))
+      .catch((err) => {
+        if (err.code === 11000) return  // concurrent run already created this record — safe to ignore
+        throw err
+      })
     )
     created++
   }
