@@ -10,7 +10,7 @@ import { UserRating } from '../models/UserRating.js'
 import { ActiveStream } from '../models/ActiveStream.js'
 import { requireAuth, requireSubscription } from '../middleware/auth.js'
 import { withCache } from '../config/cache.js'
-import { getPlanLimits } from '../config/planLimits.js'
+import { getPlanLimits, getPlanTier } from '../config/planLimits.js'
 
 const _require = createRequire(import.meta.url)
 const geoip    = _require('geoip-lite')
@@ -345,12 +345,16 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
 
     if (!videoId) return res.status(404).json({ error: 'No video attached to this title' })
 
-    if (item.isPremium) {
+    const limits = getPlanLimits(req.user)
+    const tier   = getPlanTier(req.user)
+
+    // Episode 1 of any premium series is a free preview for non-subscribers
+    const isFirstEpPreview = item.isPremium && epNum === 1 && (item.episodes?.length > 0) && !req.user.isSubscriptionActive
+
+    if (item.isPremium && !isFirstEpPreview) {
       if (!req.user.isSubscriptionActive) {
         return res.status(403).json({ error: 'Active subscription required', code: 'SUBSCRIPTION_REQUIRED' })
       }
-
-      const limits = getPlanLimits(req.user)
 
       // Count streams active in the last 90 s (2× heartbeat interval as tolerance)
       const activeCount = await ActiveStream.countDocuments({
@@ -371,13 +375,21 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
       await ActiveStream.create({ userId: req.user._id, sessionId, contentId: item._id.toString() })
 
       return res.json({
-        hlsUrl:          buildHlsUrl(videoId, true),
+        hlsUrl:           buildHlsUrl(videoId, true),
         sessionId,
         maxQualityHeight: limits.maxQualityHeight,
+        tier,
       })
     }
 
-    res.json({ hlsUrl: buildHlsUrl(videoId, false) })
+    // Free content or first-episode preview — unsigned URL, quality capped by user tier
+    // (preview always caps at 480p regardless of account status)
+    res.json({
+      hlsUrl:           buildHlsUrl(videoId, false),
+      maxQualityHeight: isFirstEpPreview ? 480 : limits.maxQualityHeight,
+      tier:             isFirstEpPreview ? 'free' : tier,
+      ...(isFirstEpPreview && { isFirstEpPreview: true }),
+    })
   } catch (err) {
     next(err)
   }

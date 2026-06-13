@@ -71,13 +71,15 @@ function stripExtension(name = '') {
 export default function Watch() {
   const { id }   = useParams()
   const navigate = useNavigate()
-  const { isLoggedIn, isSubscribed, user, openPaywall, openVerifyEmailGate, openAuth, openItem, authLoading } = useStore()
+  const { isLoggedIn, isSubscribed, user, openPaywall, openVerifyEmailGate, openAuth, openItem, authLoading,
+          subscriptionStatus, subscriptionPlan, trialEndsAt, graceEndsAt } = useStore()
 
   const [content,        setContent]       = useState(null)
   const [hlsUrl,           setHlsUrl]          = useState(null)
   const [sessionId,        setSessionId]        = useState(null)
   const [maxQualityHeight, setMaxQualityHeight] = useState(null)
   const [activeEp,         setActiveEp]         = useState(0)
+  const [streamTier,       setStreamTier]       = useState(null)
   const [showList,         setShowList]         = useState(false)
   const [loading,          setLoading]          = useState(true)
   const [contentError,     setContentError]     = useState(null)
@@ -178,20 +180,24 @@ export default function Watch() {
   useEffect(() => {
     if (!content || !isLoggedIn) return
     if (!user?.emailVerified) return
-    if (content.isPremium && !isSubscribed) return
 
-    const epNumber = content.episodes?.length > 0
-      ? (content.episodes[activeEp]?.number ?? null)
+    const episodes      = content.episodes || []
+    const isFirstEpFree = content.isPremium && episodes.length > 0 && activeEp === 0
+    if (content.isPremium && !isSubscribed && !isFirstEpFree) return
+
+    const epNumber = episodes.length > 0
+      ? (episodes[activeEp]?.number ?? null)
       : null
 
     setHlsUrl(null)
     setSessionId(null)
     setStreamError(null)
     fetchStreamUrl(id, epNumber)
-      .then(({ hlsUrl, sessionId: sid, maxQualityHeight: mqh }) => {
+      .then(({ hlsUrl, sessionId: sid, maxQualityHeight: mqh, tier: t }) => {
         setHlsUrl(hlsUrl)
         setSessionId(sid ?? null)
         setMaxQualityHeight(mqh ?? null)
+        setStreamTier(t ?? null)
       })
       .catch((err) => {
         if (err.message?.includes('TOO_MANY_STREAMS') || err.message?.includes('concurrent stream')) {
@@ -415,14 +421,32 @@ export default function Watch() {
     ? cloudinaryTransform(backdropRaw, 'w_1920,h_1080,c_fill,g_auto,f_auto,q_auto:low')
     : null
 
+  // Episode 1 of any premium series is always a free preview — no gate
+  const isFirstEpFree = content.isPremium && episodes.length > 0 && activeEp === 0
+
   // Determine which gate state we're in
   const gateState = !isLoggedIn
     ? 'unauthenticated'
     : !user?.emailVerified
     ? 'unverified'
-    : content.isPremium && !isSubscribed
+    : content.isPremium && !isSubscribed && !isFirstEpFree && subscriptionStatus === 'lapsed'
+    ? 'lapsed'
+    : content.isPremium && !isSubscribed && !isFirstEpFree
     ? 'premium'
     : null
+
+  // Compute subscription expiry labels for banners
+  const formatExpiryDate = (iso) => {
+    if (!iso) return null
+    const d = new Date(iso)
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+  }
+
+  const trialDaysLeft = trialEndsAt
+    ? Math.ceil((new Date(trialEndsAt) - Date.now()) / 86_400_000)
+    : null
+  const showTrialBanner = subscriptionStatus === 'trial' && trialDaysLeft !== null && trialDaysLeft <= 7
+  const showGraceBanner = subscriptionStatus === 'grace'
 
   // ── Cinematic gate — shown for all access-blocked states ──────────────────
   if (gateState) {
@@ -514,6 +538,20 @@ export default function Watch() {
                 <p className={styles.gatePanelFine}>Cancel anytime · No hidden charges</p>
               </>
             )}
+
+            {gateState === 'lapsed' && (
+              <>
+                <div className={styles.gatePanelIcon} style={{ color: '#f59e0b' }}><Crown size={22} /></div>
+                <h2 className={styles.gatePanelTitle}>Your subscription has expired</h2>
+                <p className={styles.gatePanelDesc}>
+                  Renew your Dhara subscription to keep watching premium content without interruption.
+                </p>
+                <button className={styles.gatePanelBtn} onClick={openPaywall}>
+                  <Crown size={14} /> Renew Subscription
+                </button>
+                <p className={styles.gatePanelFine}>Pick up right where you left off</p>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -528,6 +566,20 @@ export default function Watch() {
           <span>Back</span>
         </button>
       </div>
+
+      {showGraceBanner && (
+        <div className={styles.tierBannerGrace}>
+          Your subscription has expired — you're in a grace period until <strong>{formatExpiryDate(graceEndsAt)}</strong>.{' '}
+          <button className={styles.tierBannerLink} onClick={openPaywall}>Renew now</button>
+        </div>
+      )}
+
+      {showTrialBanner && !showGraceBanner && (
+        <div className={styles.tierBannerTrial}>
+          Your free trial ends in <strong>{trialDaysLeft} {trialDaysLeft === 1 ? 'day' : 'days'}</strong>{trialEndsAt ? ` (${formatExpiryDate(trialEndsAt)})` : ''}.{' '}
+          <button className={styles.tierBannerLink} onClick={openPaywall}>Subscribe to continue</button>
+        </div>
+      )}
 
       <div ref={playerWrapRef} className={styles.playerWrap}>
         {streamError ? (
@@ -544,10 +596,11 @@ export default function Watch() {
                 setHlsUrl(null)
                 setSessionId(null)
                 fetchStreamUrl(id, epNumber)
-                  .then(({ hlsUrl, sessionId: sid, maxQualityHeight: mqh }) => {
+                  .then(({ hlsUrl, sessionId: sid, maxQualityHeight: mqh, tier: t }) => {
                     setHlsUrl(hlsUrl)
                     setSessionId(sid ?? null)
                     setMaxQualityHeight(mqh ?? null)
+                    setStreamTier(t ?? null)
                   })
                   .catch((err) => {
                     if (err.message?.includes('TOO_MANY_STREAMS') || err.message?.includes('concurrent stream')) {
@@ -587,6 +640,16 @@ export default function Watch() {
           </div>
         )}
       </div>
+
+      {isFirstEpFree && !isSubscribed && (
+        <div className={styles.firstEpBanner}>
+          <Crown size={14} className={styles.firstEpBannerIcon} />
+          <span>You're watching the <strong>free preview</strong> of Episode 1 · Subscribe to unlock all episodes in full HD</span>
+          <button className={styles.firstEpBannerBtn} onClick={openPaywall}>
+            Subscribe — from ₹99/mo
+          </button>
+        </div>
+      )}
 
       <div className={styles.below}>
         {hasMeta && (
@@ -628,6 +691,19 @@ export default function Watch() {
                     {content.rating.toFixed(1)}
                   </span>
                 )}
+                {streamTier && (() => {
+                  const QUALITY_LABEL = { free: '480p', trial: 'HD', monthly: 'HD', annual: 'Full HD', family: '4K' }
+                  const label = QUALITY_LABEL[streamTier] ?? streamTier
+                  const isCapped = streamTier === 'free' || streamTier === 'trial' || streamTier === 'monthly'
+                  return (
+                    <span
+                      className={styles.factQuality}
+                      title={isCapped ? 'Upgrade your plan for higher quality' : undefined}
+                    >
+                      {label}
+                    </span>
+                  )
+                })()}
               </div>
 
               {/* Engagement strip — always visible, shows zeros until activity accumulates */}
