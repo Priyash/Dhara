@@ -2,10 +2,17 @@ import mongoose from 'mongoose'
 
 const episodeSchema = new mongoose.Schema({
   number:       { type: Number, required: true },
-  title:        { type: String, required: true },
-  duration:     String,
+  title:        { type: String, default: '' },
+  desc:         { type: String, default: '' },
+  duration:     { type: String, default: '' },
   bunnyVideoId: String,  // Bunny Stream video GUID for this episode
   viewCount:    { type: Number, default: 0, min: 0 },
+})
+
+const seasonSchema = new mongoose.Schema({
+  number:   { type: Number, required: true },
+  title:    { type: String, default: '' },  // optional subtitle e.g. "The Beginning"
+  episodes: [episodeSchema],
 })
 
 const contentSchema = new mongoose.Schema(
@@ -27,7 +34,7 @@ const contentSchema = new mongoose.Schema(
     posterUrl:    String,                            // Cloudinary portrait image (2:3)
     backdropUrl:  String,                            // Cloudinary landscape image (16:9) for hero
     trailerVideoId: String,                          // optional Bunny trailer GUID
-    episodes:     [episodeSchema],
+    seasons:      [seasonSchema],
     cast:         [String],
     director:     String,
     releaseYear:  Number,

@@ -10,6 +10,7 @@ const uploadJobSchema = new mongoose.Schema(
     // Exactly one of contentId or reelId must be set — enforced at the route layer.
     contentId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Content', default: null },
     reelId:          { type: mongoose.Schema.Types.ObjectId, ref: 'Reel',    default: null },
+    seasonNumber:    { type: Number,  default: null },  // null = main content video (Film/Documentary)
     episodeNumber:   { type: Number,  default: null },  // null = main content video; ignored for reels
     episodeTitle:    { type: String,  default: '' },
     episodeDuration: { type: String,  default: '' },    // e.g. "42m"
@@ -29,5 +30,7 @@ const uploadJobSchema = new mongoose.Schema(
 )
 
 uploadJobSchema.index({ status: 1, updatedAt: -1 })
+// Auto-purge jobs older than 90 days — MongoDB TTL reaper runs every ~60 s
+uploadJobSchema.index({ createdAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 })
 
 export const UploadJob = mongoose.model('UploadJob', uploadJobSchema)

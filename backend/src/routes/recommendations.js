@@ -7,7 +7,7 @@ import { InteractionEvent, INTERACTION_EVENT_TYPES } from '../models/Interaction
 
 const router = Router()
 
-const PUBLIC_FIELDS = '-bunnyVideoId -trailerVideoId -episodes.bunnyVideoId'
+const PUBLIC_FIELDS = '-bunnyVideoId -trailerVideoId -seasons.episodes.bunnyVideoId'
 
 const EVENT_WEIGHTS = {
   impression: 0.2,
@@ -93,6 +93,7 @@ function normalizeEventPayload(body = {}) {
     itemId,
     eventType,
     sessionId: String(body.sessionId || '').slice(0, 120),
+    seasonNumber:  body.seasonNumber  != null ? Number(body.seasonNumber)  : null,
     episodeNumber: body.episodeNumber != null ? Number(body.episodeNumber) : null,
     source: String(body.source || '').slice(0, 80),
     positionSecs: Math.max(0, Number(body.positionSecs) || 0),

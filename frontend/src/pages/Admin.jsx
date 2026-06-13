@@ -514,8 +514,16 @@ const EMPTY_EDIT_FORM = {
 }
 
 const SHELF_ACCENT_COLORS = [
-  '#db2777', '#f472b6', '#34d399', '#f87171',
-  '#a78bfa', '#fb923c', '#38bdf8', '#fb7185',
+  { hex: '#db2777', name: 'Rose'    },
+  { hex: '#dc2626', name: 'Crimson' },
+  { hex: '#d97706', name: 'Amber'   },
+  { hex: '#ca8a04', name: 'Gold'    },
+  { hex: '#16a34a', name: 'Emerald' },
+  { hex: '#0d9488', name: 'Teal'    },
+  { hex: '#0ea5e9', name: 'Sky'     },
+  { hex: '#2563eb', name: 'Cobalt'  },
+  { hex: '#7c3aed', name: 'Violet'  },
+  { hex: '#64748b', name: 'Slate'   },
 ]
 
 const EMPTY_SHELF = { name: '', tagline: '', backdropUrl: '', accentColor: '#db2777', contentIds: [] }
@@ -1103,12 +1111,12 @@ export default function Admin() {
   }
 
   const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'video/webm']
-  const MAX_FILE_SIZE = 1024 * 1024 * 1024 // 1 GB — server limit
+  const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2 GB
 
   const validateVideoFile = (f) => {
     if (!f) return 'Please choose a video file.'
     if (!ALLOWED_VIDEO_TYPES.includes(f.type)) return `Unsupported file type "${f.type}". Use MP4, MOV, or MKV.`
-    if (f.size > MAX_FILE_SIZE) return `File is too large (${(f.size / 1024 / 1024).toFixed(0)} MB). Maximum is 1 GB.`
+    if (f.size > MAX_FILE_SIZE) return `File is too large (${(f.size / 1024 / 1024).toFixed(0)} MB). Maximum is 2 GB.`
     return null
   }
 
@@ -2125,14 +2133,15 @@ export default function Admin() {
                     <div className={`${styles.label} ${styles.spanFull}`}>
                       Accent Colour
                       <div className={styles.shelfSwatches}>
-                        {SHELF_ACCENT_COLORS.map((c) => (
+                        {SHELF_ACCENT_COLORS.map(({ hex, name }) => (
                           <button
-                            key={c}
+                            key={hex}
                             type="button"
-                            className={`${styles.shelfSwatch} ${shelfForm.accentColor === c ? styles.shelfSwatchActive : ''}`}
-                            style={{ background: c }}
-                            onClick={() => setShelfForm((p) => ({ ...p, accentColor: c }))}
-                            title={c}
+                            className={`${styles.shelfSwatch} ${shelfForm.accentColor === hex ? styles.shelfSwatchActive : ''}`}
+                            style={{ background: hex }}
+                            onClick={() => setShelfForm((p) => ({ ...p, accentColor: hex }))}
+                            title={name}
+                            aria-label={name}
                           />
                         ))}
                         <input

@@ -2,6 +2,7 @@ import { Schema, model } from 'mongoose'
 
 const viewEventSchema = new Schema({
   contentId:     { type: Schema.Types.ObjectId, ref: 'Content', required: true },
+  seasonNumber:  { type: Number,  default: null },
   episodeNumber: { type: Number,  default: null },
   creatorId:     { type: Schema.Types.ObjectId, ref: 'User',    default: null },
   userId:        { type: Schema.Types.ObjectId, ref: 'User',    default: null },  // authenticated viewer

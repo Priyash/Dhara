@@ -23,6 +23,7 @@ const userSchema = new mongoose.Schema(
     dislikedContent:        [{ type: String }],
     watchProgress:          [{
       contentId:     { type: String, required: true },
+      seasonNumber:  { type: Number, default: null },   // null = not a series
       episodeNumber: { type: Number, default: null },
       positionSecs:  { type: Number, default: 0 },
       durationSecs:  { type: Number, default: 0 },

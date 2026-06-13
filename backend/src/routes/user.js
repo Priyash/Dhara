@@ -4,7 +4,7 @@ import { Content } from '../models/Content.js'
 import { requireAuth } from '../middleware/auth.js'
 import { serializeUser } from './auth.js'
 
-const PUBLIC_FIELDS = '-bunnyVideoId -trailerVideoId -episodes.bunnyVideoId'
+const PUBLIC_FIELDS = '-bunnyVideoId -trailerVideoId -seasons.episodes.bunnyVideoId'
 
 const router = Router()
 
@@ -117,7 +117,7 @@ router.get('/watchlist-items', async (req, res, next) => {
  */
 router.post('/watch-progress', async (req, res, next) => {
   try {
-    const { contentId, episodeNumber = null, positionSecs, durationSecs } = req.body
+    const { contentId, seasonNumber = null, episodeNumber = null, positionSecs, durationSecs } = req.body
     if (!contentId || positionSecs == null) {
       return res.status(400).json({ error: 'contentId and positionSecs are required' })
     }
@@ -126,10 +126,13 @@ router.post('/watch-progress', async (req, res, next) => {
     const dur = Number(durationSecs) || 0
     const now = new Date()
 
-    // Try to update the existing entry in-place first (single atomic op, no race condition).
-    // Fall back to push only when no entry exists yet.
     const updated = await User.findOneAndUpdate(
-      { _id: req.user._id, 'watchProgress.contentId': contentId, 'watchProgress.episodeNumber': episodeNumber ?? null },
+      {
+        _id: req.user._id,
+        'watchProgress.contentId':     contentId,
+        'watchProgress.seasonNumber':  seasonNumber  ?? null,
+        'watchProgress.episodeNumber': episodeNumber ?? null,
+      },
       { $set: { 'watchProgress.$.positionSecs': pos, 'watchProgress.$.durationSecs': dur, 'watchProgress.$.updatedAt': now } },
       { new: false, select: '_id' }
     )
@@ -138,7 +141,7 @@ router.post('/watch-progress', async (req, res, next) => {
       await User.findByIdAndUpdate(req.user._id, {
         $push: {
           watchProgress: {
-            $each: [{ contentId, episodeNumber: episodeNumber ?? null, positionSecs: pos, durationSecs: dur, updatedAt: now }],
+            $each: [{ contentId, seasonNumber: seasonNumber ?? null, episodeNumber: episodeNumber ?? null, positionSecs: pos, durationSecs: dur, updatedAt: now }],
             $position: 0,
             $slice: 30,
           },
@@ -236,7 +239,7 @@ router.get('/continue-watching', async (req, res, next) => {
       .map((p) => {
         const item = itemMap.get(p.contentId)
         if (!item) return null
-        return { ...item, _progress: { positionSecs: p.positionSecs, durationSecs: p.durationSecs, episodeNumber: p.episodeNumber } }
+        return { ...item, _progress: { positionSecs: p.positionSecs, durationSecs: p.durationSecs, seasonNumber: p.seasonNumber, episodeNumber: p.episodeNumber } }
       })
       .filter(Boolean)
 

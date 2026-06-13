@@ -141,8 +141,11 @@ export async function fetchTrailerUrl(id) {
   return request(`/api/content/${id}/trailer`)
 }
 
-export async function fetchStreamUrl(contentId, episodeNumber = null) {
-  const qs = episodeNumber != null ? `?episode=${episodeNumber}` : ''
+export async function fetchStreamUrl(contentId, episodeNumber = null, seasonNumber = null) {
+  const params = new URLSearchParams()
+  if (episodeNumber != null) params.set('episode', episodeNumber)
+  if (seasonNumber  != null) params.set('season',  seasonNumber)
+  const qs = params.toString() ? `?${params.toString()}` : ''
   return request(`/api/content/${contentId}/stream${qs}`)
 }
 
@@ -467,12 +470,13 @@ export async function requestCreatorPayout(payload = {}) {
   return request('/api/creator/payouts/request', { method: 'POST', body: JSON.stringify(payload) })
 }
 
-export async function recordView(id, episodeNumber = null, positionSecs = 30) {
+export async function recordView(id, episodeNumber = null, positionSecs = 30, seasonNumber = null) {
   return request(`/api/content/${id}/view`, {
     method: 'POST',
     body: JSON.stringify({
       positionSecs,
       ...(episodeNumber != null ? { episodeNumber } : {}),
+      ...(seasonNumber  != null ? { seasonNumber  } : {}),
     }),
   })
 }
