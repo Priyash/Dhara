@@ -218,6 +218,16 @@
 
 /* ── Cinematic gate (unauthenticated / unverified / premium blocked) ──────── */
 /* ── Cinematic gate ───────────────────────────────────────────────────────── */
+@keyframes gateFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes gateSlideUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .cinematicGate {
   position: relative;
   min-height: 100dvh;
@@ -228,6 +238,7 @@
   align-items: center;
   justify-content: center;
   background: #0a0a0c;
+  animation: gateFadeIn 0.4s ease both;
 }
 
 /* Backdrop rendered as an absolutely-positioned pseudo-layer so we can
@@ -241,6 +252,7 @@
   background-position: center center;
   opacity: 0.65;
   z-index: 0;
+  animation: gateFadeIn 0.7s 0.05s ease both;
 }
 
 /* Gradient overlay on top of the backdrop — lighter at top so backdrop shows */
@@ -307,6 +319,7 @@
   flex-direction: column;
   align-items: center;
   gap: 10px;
+  animation: gateSlideUp 0.5s 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* Small poster thumbnail floated above the genre chips */
@@ -376,6 +389,7 @@
   align-items: center;
   gap: 12px;
   width: 100%;
+  animation: gateSlideUp 0.5s 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .gatePanelIcon {
@@ -970,5 +984,45 @@
   .gatePanelBtnGhost {
     padding: 11px 18px;
     font-size: 13px;
+  }
+}
+
+/* ── Gate landscape (phone held sideways) ────────────────────────────────── */
+@media (max-height: 500px) and (orientation: landscape) {
+  .cinematicGate {
+    justify-content: flex-start;
+    overflow-y: auto;
+  }
+
+  .gateCentered {
+    flex-direction: row;
+    align-items: flex-start;
+    max-width: 100%;
+    padding: 16px 24px 24px;
+    gap: 20px;
+    margin-top: calc(var(--nav-height, 56px) + 8px);
+  }
+
+  .gateMovieInfo {
+    flex-shrink: 0;
+    max-width: 180px;
+  }
+
+  .gatePosterThumb {
+    width: 52px;
+  }
+
+  .gateMovieTitle {
+    font-size: clamp(14px, 3vw, 20px);
+  }
+
+  .gatePanel {
+    flex: 1;
+    min-width: 0;
+    gap: 10px;
+  }
+
+  .gatePanelFine {
+    display: none;
   }
 }

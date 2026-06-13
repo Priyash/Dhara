@@ -119,21 +119,16 @@
   border-color: rgba(219, 39, 119, 0.25);
 }
 
-/* ── Strip — chips that slide in above title on hover ───────────────── */
+/* ── Strip — genre chips above title ────────────────────────────────── */
+/* Always visible; on desktop the full card hover-scale provides the reveal moment */
 .infoStrip {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
   margin-bottom: 5px;
-  max-height: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition: max-height 0.22s ease, opacity 0.18s ease 0.04s;
-}
-
-.card:hover .infoStrip {
   max-height: 32px;
+  overflow: hidden;
   opacity: 1;
 }
 
@@ -272,22 +267,34 @@
 }
 
 /* ── Touch / no-hover devices ───────────────────────────────────────── */
-/* On mobile/tablet, hover states never fire. Genre chips always visible,
-   scale disabled (avoids cards getting stuck mid-zoom on tap). */
 @media (hover: none) {
+  /* Disable stuck-zoom states */
   .card:hover {
     transform: none;
     box-shadow: none;
     border-color: rgba(255, 255, 255, 0.07);
   }
 
-  .infoStrip {
-    max-height: 32px;
-    opacity: 1;
-  }
-
   .card:hover .posterImg {
     transform: none;
+  }
+
+  /* Rose accent on the card's left edge — always-on visual marker for touch UX */
+  .card {
+    border-left: 2px solid rgba(219, 39, 119, 0.28);
+  }
+
+  /* Info panel gets a soft rose tint to match the border accent */
+  .info {
+    background: rgba(9, 9, 11, 0.78);
+    border-top-color: rgba(219, 39, 119, 0.18);
+  }
+
+  /* Quick scale-down on tap for satisfying press feedback */
+  .card:active {
+    transform: scale(0.96);
+    transition: transform 0.1s ease;
+    border-left-color: rgba(219, 39, 119, 0.55);
   }
 }
 
