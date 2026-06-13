@@ -1110,12 +1110,16 @@ export default function Admin() {
     } finally { setBusy(false) }
   }
 
-  const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'video/webm']
+  const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'video/webm', 'video/mkv']
+  const ALLOWED_VIDEO_EXTS  = ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v']
   const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2 GB
 
   const validateVideoFile = (f) => {
     if (!f) return 'Please choose a video file.'
-    if (!ALLOWED_VIDEO_TYPES.includes(f.type)) return `Unsupported file type "${f.type}". Use MP4, MOV, or MKV.`
+    // Browsers sometimes report MKV as empty string or non-standard MIME — fall back to extension
+    const ext = f.name.split('.').pop()?.toLowerCase() || ''
+    const typeOk = ALLOWED_VIDEO_TYPES.includes(f.type) || ALLOWED_VIDEO_EXTS.includes(ext)
+    if (!typeOk) return `Unsupported file type. Use MP4, MOV, or MKV.`
     if (f.size > MAX_FILE_SIZE) return `File is too large (${(f.size / 1024 / 1024).toFixed(0)} MB). Maximum is 2 GB.`
     return null
   }
@@ -1540,7 +1544,7 @@ export default function Admin() {
           <button
             key={id}
             className={`${styles.tab} ${activeTab === id ? styles.tabActive : ''}`}
-            onClick={() => setActiveTab(id)}
+            onClick={() => { setActiveTab(id); setError(''); setNotice('') }}
           >
             <Icon size={14} />
             {label}
@@ -1987,7 +1991,7 @@ export default function Admin() {
                     <Film size={22} className={styles.dropZoneIcon} />
                     {file
                       ? <><span className={styles.dropZoneFile}>{file.name}</span><span className={styles.dropZoneHint}>{(file.size / 1024 / 1024).toFixed(1)} MB</span></>
-                      : <><span className={styles.dropZoneText}>Drop video file here</span><span className={styles.dropZoneHint}>or click to browse · MP4, MOV, MKV · max 1 GB</span></>
+                      : <><span className={styles.dropZoneText}>Drop video file here</span><span className={styles.dropZoneHint}>or click to browse · MP4, MOV, MKV · max 2 GB</span></>
                     }
                     <input className={styles.fileInput} type="file" accept=".mp4,.mov,.mkv,video/mp4,video/quicktime,video/x-matroska" onChange={(e) => handleFileChange(e.target.files?.[0] || null)} required />
                   </div>
