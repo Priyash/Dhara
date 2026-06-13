@@ -1186,9 +1186,12 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
           </div>
         </div>
 
-        {/* Settings panel */}
-        {showSettings && (
-          <div className={styles.settingsPanel}>
+        </div>{/* end controlsBar */}
+
+        {/* Settings panel — anchored to videoArea, not controlsBar, so
+            position stays consistent across all aspect ratios and screen sizes */}
+        {showSettings && controlsVisible && (
+          <div className={styles.settingsPanel} onClick={(e) => e.stopPropagation()}>
             <div className={styles.settingsGroup}>
               <p className={styles.settingsLabel}>Speed</p>
               <div className={styles.settingsChips}>
@@ -1223,7 +1226,6 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
             )}
           </div>
         )}
-        </div>{/* end controlsBar */}
       </div>{/* end videoArea */}
     </div>
   )

@@ -94,7 +94,14 @@ export async function saveWatchProgress(payload) {
 
 export async function fetchContinueWatching() {
   const data = await request('/api/user/continue-watching')
-  return data.map(normalizeItem)
+  return data.map((item) => {
+    const normalized = normalizeItem(item)
+    const { positionSecs = 0, durationSecs = 0 } = item._progress || {}
+    const progressPct = durationSecs > 0
+      ? Math.min(99, Math.round((positionSecs / durationSecs) * 100))
+      : 0
+    return { ...normalized, progressPct, _progress: item._progress }
+  })
 }
 
 // ── Content ───────────────────────────────────────────────────────────────────
