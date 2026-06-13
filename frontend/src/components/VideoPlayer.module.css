@@ -593,3 +593,66 @@
     transform-origin: bottom center;
   }
 }
+
+/* Touch devices: progress thumb always visible (no hover) */
+@media (hover: none) {
+  .progressThumb {
+    transform: translate(-50%, -50%) scale(1) !important;
+  }
+
+  .progressTrack {
+    height: 5px;
+  }
+
+  .ctrlBtn,
+  .ctrlBtnPrimary {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* TV / 4K: much larger controls */
+@media (min-width: 1920px) {
+  .controlsBar {
+    padding: 80px 48px 32px;
+    gap: 16px;
+  }
+
+  .ctrlBtn {
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+  }
+
+  .ctrlBtnPrimary {
+    width: 60px;
+    height: 60px;
+  }
+
+  .progressTrack {
+    height: 6px;
+  }
+
+  .progressThumb {
+    width: 18px;
+    height: 18px;
+  }
+
+  .timeElapsed,
+  .timeRemaining {
+    font-size: 15px;
+  }
+
+  .volumeSlider {
+    width: 120px;
+  }
+
+  .titleOverlayText {
+    font-size: 18px;
+  }
+
+  .settingsPanel {
+    width: 380px;
+    right: 48px;
+  }
+}

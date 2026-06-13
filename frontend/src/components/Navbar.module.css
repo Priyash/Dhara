@@ -347,3 +347,33 @@
     font-size: 12px;
   }
 }
+
+/* TV / 4K: larger nav targets, more breathing room */
+@media (min-width: 1920px) {
+  .nav {
+    padding: 0 72px;
+    gap: 48px;
+  }
+
+  .logo {
+    font-size: 32px;
+  }
+
+  .links {
+    gap: 36px;
+  }
+
+  .link {
+    font-size: 17px;
+  }
+
+  .iconBtn {
+    width: 48px;
+    height: 48px;
+  }
+
+  .subscribeBtn {
+    padding: 12px 24px;
+    font-size: 15px;
+  }
+}

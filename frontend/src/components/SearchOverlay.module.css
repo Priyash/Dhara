@@ -21,6 +21,32 @@
   padding: calc(var(--nav-height, 64px) + 32px) 24px 60px;
 }
 
+@media (min-width: 1920px) {
+  .inner {
+    max-width: 900px;
+    padding: calc(var(--nav-height, 80px) + 48px) 32px 80px;
+  }
+
+  .input {
+    font-size: 20px;
+  }
+
+  .tag,
+  .recentTag {
+    font-size: 15px;
+    padding: 10px 20px;
+  }
+
+  .resultTitle {
+    font-size: 17px;
+  }
+
+  .resultPoster {
+    width: 64px;
+    height: 64px;
+  }
+}
+
 /* ── Search bar ──────────────────────────────────────────────────────────────*/
 .searchBar {
   display: flex;

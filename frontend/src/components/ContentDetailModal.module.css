@@ -518,6 +518,44 @@
   .epThumb { width: 90px; height: 52px; }
 }
 
+/* ── TV / large screen ───────────────────────────────────────────────────────*/
+@media (min-width: 1920px) {
+  .modal {
+    width: min(1100px, 100%);
+  }
+
+  .playBtn {
+    padding: 14px 36px;
+    font-size: 18px;
+  }
+
+  .circleBtn {
+    width: 52px;
+    height: 52px;
+  }
+
+  .title {
+    font-size: clamp(28px, 3vw, 56px);
+  }
+
+  .desc {
+    font-size: 16px;
+  }
+
+  .episode {
+    padding: 18px 20px;
+  }
+
+  .epTitle {
+    font-size: 17px;
+  }
+
+  .epThumb {
+    width: 160px;
+    height: 90px;
+  }
+}
+
 /* ── Trailer ──────────────────────────────────────────────────────────────── */
 .trailerWrap {
   position: relative;

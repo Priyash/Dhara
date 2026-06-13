@@ -85,6 +85,13 @@
   opacity: 1;
 }
 
+/* Touch / TV: no hover — always show scroll buttons */
+@media (hover: none) {
+  .scrollBtn {
+    opacity: 0.7;
+  }
+}
+
 .scrollLeft {
   left: 0;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
@@ -102,6 +109,7 @@
 /* ── Ranked (Top 10) rows ─────────────────────────────────────────────────── */
 .rankedRow {
   gap: 0;
+  padding-bottom: 28px; /* room for rank numbers that hang below the card */
 }
 
 .rankedItem {
@@ -151,5 +159,39 @@
   .rankNum {
     font-size: 72px;
     left: -2px;
+  }
+}
+
+/* TV / 4K: wider padding, larger headings */
+@media (min-width: 1920px) {
+  .header {
+    padding: 0 72px;
+  }
+
+  .row {
+    padding: 8px 72px 16px;
+    gap: 20px;
+  }
+
+  .title {
+    font-size: 28px;
+  }
+
+  .eyebrow {
+    font-size: 13px;
+  }
+
+  .rankNum {
+    font-size: 120px;
+  }
+
+  .rankedItem {
+    padding-left: 68px;
+  }
+
+  .scrollBtn {
+    width: 56px;
+    height: 110px;
+    opacity: 0.85;
   }
 }
