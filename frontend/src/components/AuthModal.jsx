@@ -9,6 +9,7 @@ function friendlyError(code) {
     case 'auth/user-not-found':
     case 'auth/wrong-password':
     case 'auth/invalid-credential':
+    case 'auth/invalid-login-credentials':
       return 'Incorrect email or password.'
     case 'auth/email-already-in-use':
       return 'An account with this email already exists.'
@@ -16,6 +17,12 @@ function friendlyError(code) {
       return 'Please enter a valid email address.'
     case 'auth/weak-password':
       return 'Password must be at least 6 characters.'
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please wait a moment and try again.'
+    case 'auth/network-request-failed':
+      return 'Network error. Please check your connection and try again.'
+    case 'auth/user-disabled':
+      return 'This account has been disabled. Please contact support.'
     default:
       return 'Something went wrong. Please try again.'
   }
@@ -56,6 +63,7 @@ export default function AuthModal() {
         }
       )
     } catch (err) {
+      console.error('[auth] sign-in error:', err)
       setError(friendlyError(err.code))
     } finally {
       setLoading(false)
@@ -83,13 +91,13 @@ export default function AuthModal() {
         <div className={styles.tabs}>
           <button
             className={`${styles.tab} ${!isSignUp ? styles.tabActive : ''}`}
-            onClick={() => { setAuthMode('signin'); setError(null) }}
+            onClick={() => { setAuthMode('signin'); setEmail(''); setPassword(''); setError(null) }}
           >
             Sign In
           </button>
           <button
             className={`${styles.tab} ${isSignUp ? styles.tabActive : ''}`}
-            onClick={() => { setAuthMode('signup'); setError(null) }}
+            onClick={() => { setAuthMode('signup'); setEmail(''); setPassword(''); setError(null) }}
           >
             Sign Up
           </button>
@@ -154,7 +162,7 @@ export default function AuthModal() {
             <button
               type="button"
               className={styles.switchLink}
-              onClick={() => { setAuthMode(isSignUp ? 'signin' : 'signup'); setError(null) }}
+              onClick={() => { setAuthMode(isSignUp ? 'signin' : 'signup'); setEmail(''); setPassword(''); setError(null) }}
             >
               {isSignUp ? 'Sign in' : 'Sign up'}
             </button>

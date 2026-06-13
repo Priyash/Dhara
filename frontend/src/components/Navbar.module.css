@@ -192,7 +192,8 @@
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: var(--radius-sm);
-  padding: 8px 18px;
+  height: 38px;
+  padding: 0 18px;
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 500;
@@ -343,7 +344,8 @@
   }
 
   .signInBtn {
-    padding: 7px 12px;
+    height: 34px;
+    padding: 0 12px;
     font-size: 12px;
   }
 }
