@@ -31,7 +31,7 @@
   width: 74px;
   height: 74px;
   border-radius: 50%;
-  background: var(--color-accent));
+  background: var(--color-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -346,7 +346,7 @@
 
 /* Filled accent — primary CTA */
 .primaryBtn {
-  background: var(--color-accent));
+  background: var(--color-accent);
   border-color: transparent;
   color: #fff;
 }
@@ -1018,4 +1018,20 @@
     grid-template-columns: repeat(2, 1fr);
     gap: 12px;
   }
+
+  .avatar { width: 60px; height: 60px; font-size: 22px; }
+  .sectionTitle { font-size: 22px; }
+  .accountTitle { font-size: 17px; }
+  .hero { padding: 16px; }
+  .creatorCard { padding: 14px 16px; gap: 14px; }
+}
+
+/* ── TV / 4K ──────────────────────────────────────────────────────────────── */
+@media (min-width: 1920px) {
+  .page { padding: calc(var(--nav-height, 64px) + 48px) 120px 96px; }
+  .name { font-size: 48px; }
+  .statsBand { grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .statValue { font-size: 36px; }
+  .sectionTitle { font-size: 38px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 24px; }
 }

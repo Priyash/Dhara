@@ -270,3 +270,33 @@
     inset 0 0 0 1.5px rgba(219, 39, 119, 0.55),
     0 24px 52px rgba(0, 0, 0, 0.7);
 }
+
+/* ── Touch / no-hover devices ───────────────────────────────────────── */
+/* On mobile/tablet, hover states never fire. Genre chips always visible,
+   scale disabled (avoids cards getting stuck mid-zoom on tap). */
+@media (hover: none) {
+  .card:hover {
+    transform: none;
+    box-shadow: none;
+    border-color: rgba(255, 255, 255, 0.07);
+  }
+
+  .infoStrip {
+    max-height: 32px;
+    opacity: 1;
+  }
+
+  .card:hover .posterImg {
+    transform: none;
+  }
+}
+
+/* ── TV / 4K ─────────────────────────────────────────────────────────── */
+@media (min-width: 1920px) {
+  .normal { width: 240px; }
+  .small  { width: 180px; }
+  .large  { width: 300px; }
+
+  .title { font-size: 14px; }
+  .type  { font-size: 10px; }
+}

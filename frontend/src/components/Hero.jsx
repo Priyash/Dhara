@@ -32,7 +32,9 @@ export default function Hero() {
   const [items,     setItems]     = useState([])
   const [active,    setActive]    = useState(0)
   const [paused,    setPaused]    = useState(false)
-  const timerRef = useRef(null)
+  const timerRef     = useRef(null)
+  const touchStartX  = useRef(null)
+  const touchStartY  = useRef(null)
 
   useEffect(() => {
     fetchFeaturedContent().then(setItems).catch(() => {})
@@ -68,6 +70,27 @@ export default function Hero() {
     return () => clearTimeout(resume)
   }, [paused])
 
+  const handleTouchStart = useCallback((e) => {
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+  }, [])
+
+  const handleTouchEnd = useCallback((e) => {
+    if (touchStartX.current === null || items.length <= 1) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    const dy = e.changedTouches[0].clientY - touchStartY.current
+    if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) {
+      dx < 0 ? next() : prev()
+    }
+    touchStartX.current = null
+    touchStartY.current = null
+  }, [items.length, next, prev])
+
+  const handleTouchCancel = useCallback(() => {
+    touchStartX.current = null
+    touchStartY.current = null
+  }, [])
+
   if (items.length === 0) return <div className={styles.hero} aria-hidden="true" />
 
   const featured    = items[active]
@@ -86,6 +109,9 @@ export default function Hero() {
       aria-label="Featured content"
       onMouseEnter={() => multi && setPaused(true)}
       onMouseLeave={() => multi && setPaused(false)}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
     >
       {/* Background slides — crossfade between them */}
       {items.map((item, i) => {

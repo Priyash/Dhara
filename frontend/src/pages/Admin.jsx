@@ -8,7 +8,7 @@ import {
   Calculator, Wallet, Clock, ChevronDown, TrendingUp, Users, BarChart2,
   Activity, Server, AlertCircle, Database, Heart, MessageCircle, Play,
 } from 'lucide-react'
-import { uploadToCloudinary } from '../services/cloudinary'
+import { uploadToCloudinary, cloudinaryTransform } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
 import { useUploadNotifier } from '../hooks/useUploadNotifier'
 import {
@@ -2078,11 +2078,31 @@ export default function Admin() {
                     {/* Content picker */}
                     <div className={`${styles.label} ${styles.spanFull}`}>
                       Content <span className={styles.labelHint}>({shelfForm.contentIds.length} selected)</span>
+
+                      {/* Selected chips */}
+                      {shelfForm.contentIds.length > 0 && (
+                        <div className={styles.shelfSelectedChips}>
+                          {shelfForm.contentIds.map((id) => {
+                            const it = contentItems.find((c) => String(c._id) === id)
+                            if (!it) return null
+                            return (
+                              <span key={id} className={styles.shelfSelectedChip} style={{ borderColor: shelfForm.accentColor + '66' }}>
+                                {it.posterUrl && (
+                                  <img src={cloudinaryTransform(it.posterUrl, 'w_28,h_40,c_fill,f_auto,q_auto')} alt="" className={styles.shelfChipThumb} />
+                                )}
+                                <span className={styles.shelfChipLabel}>{it.title}</span>
+                                <button type="button" className={styles.shelfChipRemove} onClick={() => toggleShelfContent(id)}>×</button>
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
+
                       <input
                         className={styles.input}
                         value={shelfContentSearch}
                         onChange={(e) => setShelfContentSearch(e.target.value)}
-                        placeholder="Search titles…"
+                        placeholder="Search titles to add…"
                         style={{ marginBottom: 8 }}
                       />
                       <div className={styles.shelfContentPicker}>
@@ -2090,9 +2110,17 @@ export default function Admin() {
                           .filter((item) => !shelfContentSearch.trim() || item.title.toLowerCase().includes(shelfContentSearch.toLowerCase()))
                           .map((item) => {
                             const selected = shelfForm.contentIds.includes(String(item._id))
+                            const thumb = item.posterUrl
+                              ? cloudinaryTransform(item.posterUrl, 'w_40,h_60,c_fill,f_auto,q_auto')
+                              : null
                             return (
-                              <label key={item._id} className={`${styles.shelfContentRow} ${selected ? styles.shelfContentRowSelected : ''}`} style={selected ? { borderColor: shelfForm.accentColor + '55' } : {}}>
+                              <label
+                                key={item._id}
+                                className={`${styles.shelfContentRow} ${selected ? styles.shelfContentRowSelected : ''}`}
+                                style={selected ? { borderColor: shelfForm.accentColor + '55' } : {}}
+                              >
                                 <input type="checkbox" checked={selected} onChange={() => toggleShelfContent(item._id)} style={{ accentColor: shelfForm.accentColor }} />
+                                <div className={styles.shelfContentThumb} style={{ backgroundImage: thumb ? `url(${thumb})` : undefined }} />
                                 <span className={styles.shelfContentTitle}>{item.title}</span>
                                 <span className={styles.shelfContentType}>{item.type}</span>
                               </label>

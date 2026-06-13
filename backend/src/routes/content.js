@@ -101,9 +101,10 @@ router.get('/', withCache(60), async (req, res, next) => {
     if (genre  && genre  !== 'All') query.genre      = genre  // genre[] array field — Mongo matches if element equals value
 
     const sortObj =
-      sort === 'title'  ? { title: 1 } :
-      sort === 'newest' ? { releaseYear: -1, createdAt: -1 } :
-                          { rating: -1 }
+      sort === 'title'   ? { title: 1 } :
+      sort === 'newest'  ? { releaseYear: -1, createdAt: -1 } :
+      sort === 'popular' ? { viewCount: -1, communityRating: -1 } :
+                           { rating: -1 }
 
     // ── Paginated mode ────────────────────────────────────────────────────────
     if (page != null) {

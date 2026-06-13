@@ -356,14 +356,15 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
-  column-gap: 20px;
-  row-gap: 32px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
 }
 
 /* Cards must fill their grid cell, not overflow with a fixed px width */
 .grid > article {
-  width: 100%;
+  width: 100% !important;
+  min-width: 0;
+  flex-shrink: unset;
 }
 
 /* ── Empty state ─────────────────────────────────────────────────────── */
@@ -424,28 +425,46 @@
 }
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
-@media (max-width: 1024px) and (min-width: 701px) {
-  .gridWrap { padding: 28px 32px 48px; }
-  .grid     { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); column-gap: 16px; row-gap: 28px; }
+@media (max-width: 1200px) {
+  .grid { grid-template-columns: repeat(4, 1fr); }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 1024px) and (min-width: 769px) {
+  .gridWrap { padding: 28px 32px 48px; }
+  .grid     { grid-template-columns: repeat(4, 1fr); gap: 10px; }
+}
+
+@media (max-width: 768px) {
   .hero        { padding: 28px 20px 24px; }
   .heroIcon    { width: 44px; height: 44px; border-radius: 12px; }
   .genreRow    { padding: 10px 20px; }
   .controlRow  { padding: 8px 16px; gap: 8px; }
   .accessLabel { display: none; }
   .gridWrap    { padding: 20px 16px 48px; }
-  .grid        { grid-template-columns: repeat(2, 1fr); column-gap: 12px; row-gap: 20px; }
+  .grid        { grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .emptyState  { padding: 60px 16px; }
   .resultCount { display: none; }
+}
+
+@media (max-width: 480px) {
+  .grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+}
+
+@media (max-width: 360px) {
+  .gridWrap { padding: 16px 12px 48px; }
+  .grid     { gap: 6px; }
+}
+
+@media (min-width: 1920px) {
+  .gridWrap { padding: 40px 72px 80px; }
+  .grid     { grid-template-columns: repeat(7, 1fr); gap: 16px; }
 }
 
 /* ── Skeleton loading grid ──────────────────────────────────────────────────── */
 .skeletonGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 20px 16px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
   padding: 32px 48px 80px;
 }
 
@@ -510,6 +529,14 @@
 }
 
 @media (max-width: 768px) {
-  .skeletonGrid  { padding: 24px 20px 48px; grid-template-columns: repeat(2, 1fr); }
+  .skeletonGrid  { padding: 24px 20px 48px; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .loadMoreWrap  { padding: 8px 20px 60px; }
+}
+
+@media (max-width: 480px) {
+  .skeletonGrid  { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 1920px) {
+  .skeletonGrid  { padding: 36px 72px 80px; grid-template-columns: repeat(7, 1fr); gap: 16px; }
 }
