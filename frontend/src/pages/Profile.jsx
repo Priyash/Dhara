@@ -134,11 +134,16 @@ export default function Profile() {
 
   useEffect(() => {
     if (!isLoggedIn) return
+
+    let cancelled = false
     setLoadingHistory(true)
+
     getPaymentHistory()
-      .then((data) => setPaymentHistory(data || []))
-      .catch(() => setPaymentHistory([]))
-      .finally(() => setLoadingHistory(false))
+      .then((data) => { if (!cancelled) setPaymentHistory(data || []) })
+      .catch(() => { if (!cancelled) setPaymentHistory([]) })
+      .finally(() => { if (!cancelled) setLoadingHistory(false) })
+
+    return () => { cancelled = true }
   }, [isLoggedIn])
 
   const planLabel = useMemo(() => {
