@@ -104,6 +104,7 @@
   justify-content: center;
   color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
+  flex-shrink: 0;
   transition: background var(--transition), color var(--transition);
 }
 
@@ -336,18 +337,18 @@
   }
 
   .subscribeBtn {
-    padding: 8px 12px;
+    padding: 0 12px;
     font-size: 12px;
   }
 
   .adminBtn,
   .creatorBtn {
-    padding: 7px 10px;
+    padding: 0 10px;
     font-size: 12px;
   }
 
   .signInBtn {
-    height: 34px;
+    height: 38px;
     padding: 0 12px;
     font-size: 12px;
   }
@@ -378,7 +379,21 @@
   }
 
   .subscribeBtn {
-    padding: 12px 24px;
+    height: 48px;
+    padding: 0 24px;
+    font-size: 15px;
+  }
+
+  .adminBtn,
+  .creatorBtn {
+    height: 48px;
+    padding: 0 18px;
+    font-size: 15px;
+  }
+
+  .signInBtn {
+    height: 48px;
+    padding: 0 22px;
     font-size: 15px;
   }
 }

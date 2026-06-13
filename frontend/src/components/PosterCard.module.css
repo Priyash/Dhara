@@ -20,9 +20,9 @@
 
 /* Size variants — used in horizontal scroll (ContentRow) */
 /* In grid (Browse), overridden to width: 100% by .grid > article */
-.normal { width: 180px; }
-.small  { width: 140px; }
-.large  { width: 220px; }
+.normal { width: 200px; }
+.small  { width: 160px; }
+.large  { width: 240px; }
 
 /* ── Poster area ─────────────────────────────────────────────────────── */
 .poster {
@@ -300,9 +300,9 @@
 
 /* ── TV / 4K ─────────────────────────────────────────────────────────── */
 @media (min-width: 1920px) {
-  .normal { width: 240px; }
-  .small  { width: 180px; }
-  .large  { width: 300px; }
+  .normal { width: 260px; }
+  .small  { width: 200px; }
+  .large  { width: 320px; }
 
   .title { font-size: 14px; }
   .type  { font-size: 10px; }
