@@ -514,8 +514,16 @@ const EMPTY_EDIT_FORM = {
 }
 
 const SHELF_ACCENT_COLORS = [
-  '#db2777', '#f472b6', '#34d399', '#f87171',
-  '#a78bfa', '#fb923c', '#38bdf8', '#fb7185',
+  { hex: '#db2777', name: 'Rose'    },
+  { hex: '#dc2626', name: 'Crimson' },
+  { hex: '#d97706', name: 'Amber'   },
+  { hex: '#ca8a04', name: 'Gold'    },
+  { hex: '#16a34a', name: 'Emerald' },
+  { hex: '#0d9488', name: 'Teal'    },
+  { hex: '#0ea5e9', name: 'Sky'     },
+  { hex: '#2563eb', name: 'Cobalt'  },
+  { hex: '#7c3aed', name: 'Violet'  },
+  { hex: '#64748b', name: 'Slate'   },
 ]
 
 const EMPTY_SHELF = { name: '', tagline: '', backdropUrl: '', accentColor: '#db2777', contentIds: [] }
@@ -2125,14 +2133,15 @@ export default function Admin() {
                     <div className={`${styles.label} ${styles.spanFull}`}>
                       Accent Colour
                       <div className={styles.shelfSwatches}>
-                        {SHELF_ACCENT_COLORS.map((c) => (
+                        {SHELF_ACCENT_COLORS.map(({ hex, name }) => (
                           <button
-                            key={c}
+                            key={hex}
                             type="button"
-                            className={`${styles.shelfSwatch} ${shelfForm.accentColor === c ? styles.shelfSwatchActive : ''}`}
-                            style={{ background: c }}
-                            onClick={() => setShelfForm((p) => ({ ...p, accentColor: c }))}
-                            title={c}
+                            className={`${styles.shelfSwatch} ${shelfForm.accentColor === hex ? styles.shelfSwatchActive : ''}`}
+                            style={{ background: hex }}
+                            onClick={() => setShelfForm((p) => ({ ...p, accentColor: hex }))}
+                            title={name}
+                            aria-label={name}
                           />
                         ))}
                         <input

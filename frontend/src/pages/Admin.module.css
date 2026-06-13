@@ -1,10 +1,7 @@
 .page {
   min-height: 100vh;
   padding: calc(var(--nav-height, 64px) + 32px) 40px 56px;
-  background:
-    radial-gradient(ellipse 60% 40% at 10% 0%, rgba(219,39,119,0.08), transparent),
-    radial-gradient(ellipse 40% 30% at 90% 0%, rgba(219,39,119,0.05), transparent),
-    var(--color-bg);
+  background: var(--color-bg);
   max-width: 1400px;
   margin: 0 auto;
 }
@@ -2373,35 +2370,53 @@
 .shelfSwatches {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 6px;
+  gap: 6px;
+  margin-top: 10px;
   flex-wrap: wrap;
 }
 
 .shelfSwatch {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   border: 2px solid transparent;
   cursor: pointer;
-  transition: transform 0.15s, border-color 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
   flex-shrink: 0;
+  outline: none;
 }
-.shelfSwatch:hover { transform: scale(1.15); }
+.shelfSwatch:hover {
+  transform: scale(1.12);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
 .shelfSwatchActive {
   border-color: #fff;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.4);
-  transform: scale(1.15);
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.2);
+  transform: scale(1.1);
+}
+.shelfSwatchActive::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.25) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center / 14px no-repeat;
 }
 
 .shelfColorInput {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.15);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 2px dashed rgba(255,255,255,0.2);
   padding: 0;
   cursor: pointer;
-  background: none;
+  background: rgba(255,255,255,0.05);
+  transition: border-color 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+.shelfColorInput:hover {
+  border-color: rgba(255,255,255,0.4);
+  transform: scale(1.1);
 }
 
 /* Content multi-picker */

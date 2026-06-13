@@ -112,17 +112,17 @@
 }
 
 @keyframes contentIn {
-  from { opacity: 0; transform: translateY(18px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
-/* Staggered entrance for each content element */
-.eyebrow  { animation: contentIn 0.55s 0.05s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.heading  { animation: contentIn 0.6s  0.16s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.genre    { animation: contentIn 0.55s 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.rating   { animation: contentIn 0.55s 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.desc     { animation: contentIn 0.55s 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.actions  { animation: contentIn 0.55s 0.48s cubic-bezier(0.22, 1, 0.36, 1) both; }
+/* Staggered fade-in — no translateY so buttons don't "jump in" on slide change */
+.eyebrow  { animation: contentIn 0.35s 0.05s ease both; }
+.heading  { animation: contentIn 0.4s  0.10s ease both; }
+.genre    { animation: contentIn 0.35s 0.15s ease both; }
+.rating   { animation: contentIn 0.35s 0.18s ease both; }
+.desc     { animation: contentIn 0.35s 0.22s ease both; }
+.actions  { animation: contentIn 0.35s 0.28s ease both; }
 
 .eyebrow {
   display: flex;
@@ -154,20 +154,6 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  transform: scale(0.72);
-  transform-origin: left center;
-  transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
-.hero:hover .heading {
-  transform: scale(1);
-}
-
-/* Touch / TV: no hover — heading always full size */
-@media (hover: none) {
-  .heading {
-    transform: scale(1) !important;
-  }
 }
 
 .genre {
