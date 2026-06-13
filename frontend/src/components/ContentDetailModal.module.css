@@ -109,7 +109,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: linear-gradient(135deg, #f59e0b, #d97706);
+  background: linear-gradient(135deg, #e85d26, #c94e1d);
   border-radius: 4px;
   padding: 2px 8px;
   font-size: 10px;
@@ -210,11 +210,11 @@
 }
 
 .circleBtnSaved {
-  background: rgba(245, 158, 11, 0.15);
-  border-color: #f59e0b;
-  color: #f59e0b;
+  background: rgba(232, 93, 38, 0.15);
+  border-color: #e85d26;
+  color: #e85d26;
 }
-.circleBtnSaved:hover { background: rgba(245, 158, 11, 0.25); }
+.circleBtnSaved:hover { background: rgba(232, 93, 38, 0.25); }
 
 .circleBtnLiked {
   background: rgba(74, 222, 128, 0.12);

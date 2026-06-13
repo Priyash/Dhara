@@ -135,8 +135,8 @@ export default function Hero() {
                 <Star
                   key={i}
                   size={14}
-                  color="#f59e0b"
-                  fill={filled ? '#f59e0b' : half ? 'rgba(245,158,11,0.5)' : 'rgba(245,158,11,0.15)'}
+                  color="#e85d26"
+                  fill={filled ? '#e85d26' : half ? 'rgba(232,93,38,0.5)' : 'rgba(232,93,38,0.15)'}
                 />
               )
             })}

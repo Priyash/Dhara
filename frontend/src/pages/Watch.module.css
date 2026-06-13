@@ -95,7 +95,7 @@
 
 .resumeBtn {
   padding: 5px 14px;
-  background: #f59e0b;
+  background: #e85d26;
   border: none;
   border-radius: 999px;
   color: #000;
@@ -181,9 +181,9 @@
 }
 
 .backBtn:hover {
-  background: rgba(245,158,11,0.1);
-  border-color: rgba(245,158,11,0.35);
-  color: #f59e0b;
+  background: rgba(232,93,38,0.1);
+  border-color: rgba(232,93,38,0.35);
+  color: #e85d26;
   transform: translateX(-2px);
 }
 
@@ -365,7 +365,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #f59e0b;
+  color: #e85d26;
   font-weight: 600;
 }
 
@@ -427,7 +427,7 @@
   font-weight: 700;
   border: none;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark, #d97706));
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark, #c94e1d));
   color: #000;
   cursor: pointer;
   transition: opacity 0.15s, transform 0.12s;
@@ -549,7 +549,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: linear-gradient(135deg, #f59e0b, #d97706);
+  background: linear-gradient(135deg, #e85d26, #c94e1d);
   border-radius: 6px;
   padding: 2px 9px;
   font-size: 10px;
@@ -606,11 +606,11 @@
   gap: 4px;
   font-size: 13px;
   font-weight: 600;
-  color: #f59e0b;
+  color: #e85d26;
   padding: 2px 10px;
-  border: 1px solid rgba(245,158,11,0.25);
+  border: 1px solid rgba(232,93,38,0.25);
   border-radius: 999px;
-  background: rgba(245,158,11,0.08);
+  background: rgba(232,93,38,0.08);
 }
 
 /* Engagement metrics strip */
@@ -719,11 +719,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: linear-gradient(135deg, rgba(245,158,11,0.18), rgba(245,158,11,0.08));
-  border: 1px solid rgba(245,158,11,0.35);
+  background: linear-gradient(135deg, rgba(232,93,38,0.18), rgba(232,93,38,0.08));
+  border: 1px solid rgba(232,93,38,0.35);
   border-radius: 10px;
   padding: 10px 18px;
-  color: #f59e0b;
+  color: #e85d26;
   font-family: var(--font-body, sans-serif);
   font-size: 13px;
   font-weight: 600;
@@ -737,8 +737,8 @@
 }
 
 .nextEpBtn:hover {
-  background: rgba(245,158,11,0.22);
-  border-color: rgba(245,158,11,0.55);
+  background: rgba(232,93,38,0.22);
+  border-color: rgba(232,93,38,0.55);
 }
 
 .listToggle {
@@ -804,8 +804,8 @@
 }
 
 .episodeActive {
-  border-color: #f59e0b !important;
-  background: rgba(245,158,11,0.07) !important;
+  border-color: #e85d26 !important;
+  background: rgba(232,93,38,0.07) !important;
 }
 
 .epNumber {
@@ -822,7 +822,7 @@
 }
 
 .episodeActive .epNumber {
-  background: #f59e0b;
+  background: #e85d26;
   color: #000;
 }
 
@@ -847,7 +847,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #f59e0b;
+  background: #e85d26;
   flex-shrink: 0;
 }
 

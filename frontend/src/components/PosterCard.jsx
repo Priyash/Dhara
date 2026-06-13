@@ -164,7 +164,7 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false, sour
       {/* Rating — only when no other top-left badge */}
       {!item.badge && !item.isPremium && item.rating > 0 && (
         <div className={styles.ratingBadge}>
-          <Star size={10} color="#f59e0b" fill="#f59e0b" />
+          <Star size={10} color="#e85d26" fill="#e85d26" />
           <span>{item.rating}</span>
         </div>
       )}

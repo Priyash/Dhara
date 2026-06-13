@@ -133,7 +133,7 @@
 }
 
 .heroStatApproved strong { color: #4ade80; }
-.heroStatPending  strong { color: #fbbf24; }
+.heroStatPending  strong { color: #f07a4e; }
 .heroStatRejected strong { color: #f87171; }
 
 .heroStatDivider {
@@ -2324,7 +2324,7 @@
 .peakHourNote {
   font-family: var(--font-body);
   font-size: 10px;
-  color: rgba(245,158,11,0.75);
+  color: rgba(232,93,38,0.75);
   margin: 6px 0 0;
   text-align: center;
 }
@@ -3394,7 +3394,7 @@
 
 .analyticsDualBarFillLikes {
   height: 100%;
-  background: linear-gradient(90deg, #b45309, #f59e0b);
+  background: linear-gradient(90deg, #b45309, #e85d26);
   border-radius: 3px;
   transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
 }

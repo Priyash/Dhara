@@ -14,7 +14,7 @@ export default function CuratedShelfRow({ shelf, onCardClick, isSubscribed = fal
 
   if (!shelf.items?.length) return null
 
-  const accent = shelf.accentColor || '#f59e0b'
+  const accent = shelf.accentColor || '#e85d26'
 
   return (
     <section

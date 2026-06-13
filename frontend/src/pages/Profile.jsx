@@ -493,8 +493,8 @@ export default function Profile() {
           {/* ── Applied: under review ── */}
           {creatorStatus === 'applied' && (
             <>
-              <span className={styles.creatorStatusPill} style={{ color: '#fbbf24', background: 'rgba(251,191,36,0.1)', borderColor: 'rgba(251,191,36,0.25)' }}>
-                <span className={styles.statusDotPulse} style={{ background: '#fbbf24' }} />
+              <span className={styles.creatorStatusPill} style={{ color: '#f07a4e', background: 'rgba(240,122,78,0.1)', borderColor: 'rgba(240,122,78,0.25)' }}>
+                <span className={styles.statusDotPulse} style={{ background: '#f07a4e' }} />
                 Application under review
               </span>
               <p className={styles.creatorCardDesc}>

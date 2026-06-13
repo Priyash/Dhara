@@ -1169,12 +1169,12 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
                 aria-label={castConnected ? 'Casting — tap to disconnect' : 'Cast to TV or AirPlay'}
                 title={castConnected ? 'Casting…' : 'Cast / AirPlay'}
               >
-                <Airplay size={18} color={castConnected ? '#f59e0b' : undefined} />
+                <Airplay size={18} color={castConnected ? '#e85d26' : undefined} />
               </button>
             )}
             {document.pictureInPictureEnabled && (
               <button className={styles.ctrlBtn} onClick={togglePip} aria-label="Picture in Picture">
-                <PictureInPicture2 size={18} color={pipEnabled ? '#f59e0b' : undefined} />
+                <PictureInPicture2 size={18} color={pipEnabled ? '#e85d26' : undefined} />
               </button>
             )}
             <button className={styles.ctrlBtn} onClick={() => setShowSettings((s) => !s)} aria-label="Settings">

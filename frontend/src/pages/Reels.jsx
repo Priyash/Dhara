@@ -85,12 +85,11 @@ function ReelGrid() {
   }, [])
 
   useEffect(() => {
-    // Wait for Firebase auth to initialise — same reason as ReelPlayer
-    if (authLoading || !isLoggedIn) return
+    if (authLoading) return
     setLoading(true)
     setPage(1)
     load(tab, hashtag, 1)
-  }, [tab, hashtag, load, authLoading, isLoggedIn])
+  }, [tab, hashtag, load, authLoading])
 
   const loadMore = () => {
     if (loadingMore || !hasMore) return
@@ -100,20 +99,13 @@ function ReelGrid() {
     load(tab, hashtag, next)
   }
 
-  if (!isLoggedIn) return (
-    <div className={styles.gate}>
-      <div className={styles.gateCard}>
-        <div className={styles.gateIcon}><Play size={26} strokeWidth={1.5} /></div>
-        <h2 className={styles.gateTitle}>Reels</h2>
-        <p className={styles.gateSub}>Short clips &amp; moments from Bengali creators</p>
-        <div className={styles.gateActions}>
-          <button className={styles.gateBtn} onClick={() => openAuth('signin')}>Sign in to watch</button>
-          <button className={styles.gateBtnGhost} onClick={() => openAuth('signup')}>Create Free Account</button>
-        </div>
-        <p className={styles.gateFine}>Free trial available · No credit card required</p>
-      </div>
-    </div>
-  )
+  const handleReelClick = (reel) => {
+    if (!isLoggedIn) {
+      openAuth('signin')
+      return
+    }
+    navigate(`/reels/${reel._id}`)
+  }
 
   return (
     <div className={styles.gridRoot}>
@@ -226,7 +218,7 @@ function ReelGrid() {
         <>
           <div className={styles.grid}>
             {reels.map((reel) => (
-              <ReelCard key={reel._id} reel={reel} onClick={() => navigate(`/reels/${reel._id}`)} />
+              <ReelCard key={reel._id} reel={reel} showGate={!isLoggedIn} onClick={() => handleReelClick(reel)} />
             ))}
           </div>
           {hasMore && (
@@ -245,7 +237,7 @@ function ReelGrid() {
 
 // ── Individual grid card ──────────────────────────────────────────────────────
 
-function ReelCard({ reel, onClick }) {
+function ReelCard({ reel, onClick, showGate = false }) {
   const creator    = reel.creatorId
   const studioName = creator?.creatorProfile?.studioName || creator?.displayName || 'Creator'
 
@@ -260,8 +252,13 @@ function ReelCard({ reel, onClick }) {
       >
         <div className={styles.cardScrim} />
 
-        {/* Play button — appears on hover only */}
-        <div className={styles.cardPlay}><Play size={18} fill="#fff" /></div>
+        {/* Play button — gate hint for signed-out users, plain play for signed-in */}
+        <div className={styles.cardPlay}>
+          {showGate
+            ? <span className={styles.cardGateBadge}>Sign in to watch</span>
+            : <Play size={18} fill="#fff" />
+          }
+        </div>
 
         {/* Engagement stats — always visible */}
         <div className={styles.cardStats}>

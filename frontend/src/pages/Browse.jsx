@@ -11,12 +11,12 @@ const FILTERS     = ['All', 'Free', 'Premium', 'New']
 const VALID_TYPES = ['Film', 'Series', 'Serial Drama', 'Documentary', 'Live']
 
 const SECTION_META = {
-  Film:           { label: 'Movies',        eyebrow: 'Bengali Cinema',        Icon: Film,       accent: '#f59e0b' },
+  Film:           { label: 'Movies',        eyebrow: 'Bengali Cinema',        Icon: Film,       accent: '#e85d26' },
   Series:         { label: 'Series',        eyebrow: 'Bengali Series',        Icon: Tv2,        accent: '#818cf8' },
   'Serial Drama': { label: 'ধারাবাহিক',     eyebrow: 'বাংলা ধারাবাহিক',       Icon: Tv2,        accent: '#f472b6' },
   Documentary:    { label: 'Originals',     eyebrow: 'Dhara Originals',       Icon: BookOpen,   accent: '#34d399' },
   Live:           { label: 'Live',          eyebrow: 'Live Channels',         Icon: Radio,      accent: '#f87171' },
-  All:            { label: 'Browse All',    eyebrow: 'Dhara Streaming',       Icon: LayoutGrid, accent: '#f59e0b' },
+  All:            { label: 'Browse All',    eyebrow: 'Dhara Streaming',       Icon: LayoutGrid, accent: '#e85d26' },
 }
 
 export default function Browse() {

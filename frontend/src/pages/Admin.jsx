@@ -81,7 +81,7 @@ function MonJobDonut({ byStatus }) {
     { key: 'ready',        label: 'Ready',        color: '#4ade80' },
     { key: 'uploading',    label: 'Uploading',    color: MON_CYAN  },
     { key: 'processing',   label: 'Processing',   color: '#a78bfa' },
-    { key: 'queued',       label: 'Queued',       color: '#fbbf24' },
+    { key: 'queued',       label: 'Queued',       color: '#f07a4e' },
     { key: 'awaiting_file',label: 'Awaiting',     color: 'rgba(255,255,255,0.2)' },
     { key: 'failed',       label: 'Failed',       color: '#f87171' },
   ]
@@ -165,7 +165,7 @@ function MonTopContentList({ items }) {
     </p>
   )
   const maxV = Math.max(...items.map(i => i.views), 1)
-  const TYPE_COLOR = { Film:'#f59e0b', Series:'#a78bfa', 'Serial Drama':'#f472b6', Documentary:'#34d399' }
+  const TYPE_COLOR = { Film:'#e85d26', Series:'#a78bfa', 'Serial Drama':'#f472b6', Documentary:'#34d399' }
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:8 }}>
       {items.map(item => {
@@ -195,7 +195,7 @@ function MonDeviceDonut({ devices }) {
   const CFG = [
     { key:'mobile',  label:'Mobile',  color:'#22d3ee' },
     { key:'desktop', label:'Desktop', color:'#a78bfa' },
-    { key:'tv',      label:'TV',      color:'#f59e0b' },
+    { key:'tv',      label:'TV',      color:'#e85d26' },
     { key:'unknown', label:'Other',   color:'rgba(255,255,255,0.2)' },
   ]
   const segs = CFG.map(c => ({ ...c, count: devices?.find(d => d.device === c.key)?.count || 0 })).filter(s => s.count > 0)
@@ -303,14 +303,14 @@ function RevMonthlyBarsChart({ data }) {
         return (
           <g key={`${y}-${m}`}>
             <rect x={cx - barW/2} y={vy} width={barW} height={barH} rx="3"
-              fill={isCur ? '#f59e0b' : 'rgba(245,158,11,0.32)'}
-              style={isCur ? { filter:'drop-shadow(0 0 6px rgba(245,158,11,0.5))' } : undefined} />
+              fill={isCur ? '#e85d26' : 'rgba(232,93,38,0.32)'}
+              style={isCur ? { filter:'drop-shadow(0 0 6px rgba(232,93,38,0.5))' } : undefined} />
             {rev > 0 && (
               <text x={cx} y={vy - 5} textAnchor="middle" fontSize="8" fontWeight="600"
-                fill="rgba(245,158,11,0.85)" fontFamily="system-ui,sans-serif">{fmt(rev)}</text>
+                fill="rgba(232,93,38,0.85)" fontFamily="system-ui,sans-serif">{fmt(rev)}</text>
             )}
             <text x={cx} y={H - 2} textAnchor="middle" fontSize="8"
-              fill={isCur ? 'rgba(245,158,11,0.9)' : 'rgba(255,255,255,0.28)'}
+              fill={isCur ? 'rgba(232,93,38,0.9)' : 'rgba(255,255,255,0.28)'}
               fontWeight={isCur ? '700' : '400'} fontFamily="system-ui,sans-serif">{ABBR[m]}</text>
           </g>
         )
@@ -322,9 +322,9 @@ function RevMonthlyBarsChart({ data }) {
 // ── Plan mix donut ────────────────────────────────────────────────────────────
 function PlanDonutChart({ data }) {
   const PLANS = [
-    { key: 'monthly', label: 'Monthly ₹99',  color: '#f59e0b' },
+    { key: 'monthly', label: 'Monthly ₹99',  color: '#e85d26' },
     { key: 'annual',  label: 'Annual ₹599',  color: '#fb923c' },
-    { key: 'family',  label: 'Family ₹999',  color: '#fbbf24' },
+    { key: 'family',  label: 'Family ₹999',  color: '#f07a4e' },
   ].map(p => ({
     ...p,
     paise: (data || []).find(d => d.plan === p.key)?.revenuePaise || 0,
@@ -379,7 +379,7 @@ function SubHealthBarChart({ data }) {
   const STATUSES = [
     { key: 'active', label: 'Active',  color: '#4ade80' },
     { key: 'trial',  label: 'Trial',   color: '#38bdf8' },
-    { key: 'grace',  label: 'Grace',   color: '#fbbf24' },
+    { key: 'grace',  label: 'Grace',   color: '#f07a4e' },
     { key: 'lapsed', label: 'Lapsed',  color: '#f87171' },
     { key: 'free',   label: 'Free',    color: 'rgba(255,255,255,0.12)' },
   ]
@@ -435,7 +435,7 @@ function CreatorEarningsBarsChart({ data }) {
             <div style={{ textAlign:'right' }}>
               <div style={{ fontFamily:'var(--font-display)', fontSize:13, fontWeight:700, color }}>{fmt(c.totalEarned)}</div>
               {c.pending > 0 && (
-                <div style={{ fontFamily:'var(--font-body)', fontSize:10, color:'#fbbf24' }}>₹{c.pending.toLocaleString('en-IN')} pending</div>
+                <div style={{ fontFamily:'var(--font-body)', fontSize:10, color:'#f07a4e' }}>₹{c.pending.toLocaleString('en-IN')} pending</div>
               )}
             </div>
           </div>
@@ -471,11 +471,11 @@ const EMPTY_EDIT_FORM = {
 }
 
 const SHELF_ACCENT_COLORS = [
-  '#f59e0b', '#818cf8', '#34d399', '#f87171',
+  '#e85d26', '#818cf8', '#34d399', '#f87171',
   '#a78bfa', '#fb923c', '#38bdf8', '#fb7185',
 ]
 
-const EMPTY_SHELF = { name: '', tagline: '', backdropUrl: '', accentColor: '#f59e0b', contentIds: [] }
+const EMPTY_SHELF = { name: '', tagline: '', backdropUrl: '', accentColor: '#e85d26', contentIds: [] }
 
 const statusClass = {
   awaiting_file: styles.statusAwaiting,
@@ -1118,7 +1118,7 @@ export default function Admin() {
       name:        shelf.name        || '',
       tagline:     shelf.tagline     || '',
       backdropUrl: shelf.backdropUrl || '',
-      accentColor: shelf.accentColor || '#f59e0b',
+      accentColor: shelf.accentColor || '#e85d26',
       contentIds:  (shelf.contentIds || []).map((id) => String(id)),
     })
     setShelfNotice(''); setShelfError(''); setShelfContentSearch('')
@@ -1534,7 +1534,7 @@ export default function Admin() {
                         </span>
                       )}
                       {item.communityRatingCount > 0 && (
-                        <span className={styles.contentEngStat} style={{ color: '#fbbf24' }}>
+                        <span className={styles.contentEngStat} style={{ color: '#f07a4e' }}>
                           ★ {item.communityRating?.toFixed(1)} <span style={{ opacity: 0.6 }}>({item.communityRatingCount})</span>
                         </span>
                       )}
@@ -2551,7 +2551,7 @@ export default function Admin() {
                 {submissions.map((sub) => {
                   const isPending  = sub.submissionStatus === 'pending'
                   const isApproved = sub.submissionStatus === 'approved'
-                  const statusColor = isPending ? '#fbbf24' : isApproved ? '#4ade80' : '#f87171'
+                  const statusColor = isPending ? '#f07a4e' : isApproved ? '#4ade80' : '#f87171'
                   const statusLabel = isPending ? 'In Review' : isApproved ? 'Live' : 'Rejected'
 
                   return (
@@ -2685,7 +2685,7 @@ export default function Admin() {
                       ? `https://iframe.mediadelivery.net/embed/${bunnyLib}/${reel.bunnyVideoId}?autoplay=false&muted=true`
                       : null
 
-                    const statusColor = isPending ? '#fbbf24' : isApproved ? '#4ade80' : '#f87171'
+                    const statusColor = isPending ? '#f07a4e' : isApproved ? '#4ade80' : '#f87171'
                     const statusLabel = isPending ? 'In Review' : isApproved ? 'Live' : 'Rejected'
 
                     return (
@@ -3131,7 +3131,7 @@ export default function Admin() {
                 <button
                   type="button"
                   className={styles.primaryBtn}
-                  style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
+                  style={{ background: 'linear-gradient(135deg, #e85d26, #c94e1d)' }}
                   onClick={() => {
                     closeEditModal()
                     setActiveTab('uploads')
@@ -3433,8 +3433,8 @@ export default function Admin() {
                     <p className={styles.revKpiSub}>all time to creators</p>
                   </div>
                   <div className={styles.revKpiCard}>
-                    <div className={styles.revKpiCardIcon} style={{ background:'rgba(251,191,36,0.1)', borderColor:'rgba(251,191,36,0.2)', color:'#fbbf24' }}><Clock size={13} /></div>
-                    <p className={styles.revKpiValue} style={{ color: cs.totalPendingPaise > 0 ? '#fbbf24' : undefined }}>{fmtRs(cs.totalPendingPaise)}</p>
+                    <div className={styles.revKpiCardIcon} style={{ background:'rgba(240,122,78,0.1)', borderColor:'rgba(240,122,78,0.2)', color:'#f07a4e' }}><Clock size={13} /></div>
+                    <p className={styles.revKpiValue} style={{ color: cs.totalPendingPaise > 0 ? '#f07a4e' : undefined }}>{fmtRs(cs.totalPendingPaise)}</p>
                     <p className={styles.revKpiLabel}>Pending Payouts</p>
                     <p className={styles.revKpiSub}>awaiting processing</p>
                   </div>
@@ -3490,7 +3490,7 @@ export default function Admin() {
                           </div>
                           <p className={styles.revenueCreatorEmail}>{row.email}</p>
                         </div>
-                        <span className={styles.revenuePending} style={{ color: row.pending > 0 ? '#fbbf24' : 'var(--color-text-muted)' }}>
+                        <span className={styles.revenuePending} style={{ color: row.pending > 0 ? '#f07a4e' : 'var(--color-text-muted)' }}>
                           ₹{row.pending.toLocaleString('en-IN')}
                         </span>
                         <span className={styles.revenueTotal}>₹{row.totalEarned.toLocaleString('en-IN')}</span>
@@ -3526,7 +3526,7 @@ export default function Admin() {
                           <span style={{ fontSize:12, color:'var(--color-text-muted)' }}>
                             {p.paidAt ? new Date(p.paidAt).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '—'}
                           </span>
-                          <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:700, color: p.status === 'paid' ? '#4ade80' : '#fbbf24' }}>
+                          <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:700, color: p.status === 'paid' ? '#4ade80' : '#f07a4e' }}>
                             {p.status === 'paid' ? <CheckCircle2 size={11} /> : <Clock size={11} />}
                             {p.status === 'paid' ? 'Paid' : 'Processing'}
                           </span>
@@ -3599,7 +3599,7 @@ export default function Admin() {
               {(() => {
                 const ph = md?.paymentHealth || {}
                 const successColor = ph.successRate == null ? 'rgba(255,255,255,0.28)'
-                  : ph.successRate >= 90 ? '#4ade80' : ph.successRate >= 70 ? '#fbbf24' : '#f87171'
+                  : ph.successRate >= 90 ? '#4ade80' : ph.successRate >= 70 ? '#f07a4e' : '#f87171'
                 return (
                   <div className={styles.monPayStrip}>
                     <div className={styles.monPayMetric}>
@@ -3678,10 +3678,10 @@ export default function Admin() {
                   const urgent = total > 0
                   return (
                     <div className={`${styles.monKpiCard} ${urgent ? styles.monKpiWarn : ''}`}>
-                      <div className={styles.monKpiIcon} style={{ background: urgent ? 'rgba(251,191,36,0.12)' : 'rgba(167,139,250,0.12)', borderColor: urgent ? 'rgba(251,191,36,0.25)' : 'rgba(167,139,250,0.2)', color: urgent ? '#fbbf24' : '#a78bfa' }}>
+                      <div className={styles.monKpiIcon} style={{ background: urgent ? 'rgba(240,122,78,0.12)' : 'rgba(167,139,250,0.12)', borderColor: urgent ? 'rgba(240,122,78,0.25)' : 'rgba(167,139,250,0.2)', color: urgent ? '#f07a4e' : '#a78bfa' }}>
                         <UserCheck size={13} />
                       </div>
-                      <p className={styles.monKpiValue} style={{ color: urgent ? '#fbbf24' : undefined }}>{total}</p>
+                      <p className={styles.monKpiValue} style={{ color: urgent ? '#f07a4e' : undefined }}>{total}</p>
                       <p className={styles.monKpiLabel}>Creator Actions</p>
                       <p className={styles.monKpiSub}>
                         {ca.pendingApplications || 0} apps · {ca.pendingSubmissions || 0} content · {ca.pendingReels || 0} reels
