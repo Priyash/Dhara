@@ -37,8 +37,12 @@ function analyseVideo(file) {
     const video  = document.createElement('video')
     const canvas = document.createElement('canvas')
     const url    = URL.createObjectURL(file)
+    let   settled = false
 
     const finish = () => {
+      if (settled) return
+      settled = true
+
       const { duration, videoWidth: w, videoHeight: h } = video
       const r = w > 0 && h > 0 ? w / h : 0
       const aspectRatio = r >= 1.5 ? '16:9' : r >= 0.85 && r <= 1.15 ? '1:1' : '9:16'
@@ -56,13 +60,20 @@ function analyseVideo(file) {
       resolve({ duration, width: w, height: h, aspectRatio, thumb })
     }
 
+    // preload='auto' ensures actual video data loads so the seek produces a real frame.
+    // Seeking to 1e-5 avoids the blank frame some codecs return at exactly t=0.
+    video.preload = 'auto'
     video.onloadedmetadata = () => {
-      video.currentTime = Math.min(0.5, video.duration * 0.1)
+      video.currentTime = Math.min(1e-5, video.duration)
     }
-    video.onseeked   = finish
-    video.onerror    = () => { URL.revokeObjectURL(url); resolve({ duration: 0, width: 0, height: 0, aspectRatio: '9:16', thumb: null }) }
-    video.preload    = 'metadata'
-    video.src        = url
+    video.onseeked = finish
+    // Fallback: if seeked never fires (e.g. unsupported codec), draw whatever is loaded
+    video.onloadeddata = () => setTimeout(() => { if (!settled) finish() }, 200)
+    video.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve({ duration: 0, width: 0, height: 0, aspectRatio: '9:16', thumb: null })
+    }
+    video.src = url
   })
 }
 

@@ -47,9 +47,9 @@
 /* ── 2-row responsive grid ─────────────────────────────────────────────── */
 .grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   grid-template-rows: auto auto;
-  gap: 12px;
+  gap: 14px;
 }
 
 /* PosterCard fills the column — overrides its internal fixed width */
@@ -102,23 +102,18 @@
   margin-top: 2px;
 }
 
-/* ── Large tablet / small laptop ──────────────────────────────────────── */
-@media (max-width: 1200px) {
-  .grid { grid-template-columns: repeat(4, 1fr); }
-}
-
 /* ── Tablet ────────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .section  { padding: 0 20px; }
   .title    { font-size: 20px; }
-  .grid     { grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .grid     { grid-template-columns: repeat(3, 1fr); gap: 10px; }
 }
 
 /* ── Mobile landscape / large phone ───────────────────────────────────── */
 @media (max-width: 768px) {
   .section  { padding: 0 16px; }
   .title    { font-size: 18px; }
-  .grid     { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .grid     { gap: 8px; }
   .moreCount { font-size: 22px; }
   .seeAll   { font-size: 12px; }
 }
@@ -140,7 +135,7 @@
   .section  { padding: 0 72px; }
   .title    { font-size: 28px; }
   .eyebrow  { font-size: 13px; }
-  .grid     { grid-template-columns: repeat(7, 1fr); gap: 16px; }
+  .grid     { grid-template-columns: repeat(5, 1fr); gap: 18px; }
   .moreCount { font-size: 36px; }
   .moreLabel { font-size: 14px; }
 }
