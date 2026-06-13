@@ -3,7 +3,7 @@ import { ChevronRight, ChevronLeft } from 'lucide-react'
 import PosterCard from './PosterCard'
 import styles from './ContentRow.module.css'
 
-export default function ContentRow({ title, items, onCardClick, isSubscribed = false, onSeeAll, eventSource }) {
+export default function ContentRow({ title, eyebrow, items, onCardClick, isSubscribed = false, onSeeAll, eventSource, ranked = false }) {
   const rowRef = useRef(null)
 
   const scroll = (dir) => {
@@ -13,9 +13,11 @@ export default function ContentRow({ title, items, onCardClick, isSubscribed = f
 
   return (
     <section className={styles.section} aria-label={title}>
-      {/* Row header */}
       <div className={styles.header}>
-        <h2 className={styles.title}>{title}</h2>
+        <div>
+          {eyebrow && <p className={styles.eyebrow}>{eyebrow}</p>}
+          <h2 className={styles.title}>{title}</h2>
+        </div>
         {onSeeAll && (
           <button className={styles.seeAll} onClick={onSeeAll}>
             See all <ChevronRight size={14} />
@@ -23,7 +25,6 @@ export default function ContentRow({ title, items, onCardClick, isSubscribed = f
         )}
       </div>
 
-      {/* Scrollable row */}
       <div className={styles.wrapper}>
         <button
           className={`${styles.scrollBtn} ${styles.scrollLeft}`}
@@ -33,15 +34,27 @@ export default function ContentRow({ title, items, onCardClick, isSubscribed = f
           <ChevronLeft size={20} />
         </button>
 
-        <div ref={rowRef} className={styles.row}>
+        <div ref={rowRef} className={`${styles.row} ${ranked ? styles.rankedRow : ''}`}>
           {items.map((item) => (
-            <PosterCard
-              key={item.id}
-              item={item}
-              onClick={onCardClick}
-              isSubscribed={isSubscribed}
-              source={eventSource || title}
-            />
+            ranked && item._rank != null ? (
+              <div key={item.id} className={styles.rankedItem}>
+                <span className={styles.rankNum}>{item._rank}</span>
+                <PosterCard
+                  item={item}
+                  onClick={onCardClick}
+                  isSubscribed={isSubscribed}
+                  source={eventSource || title}
+                />
+              </div>
+            ) : (
+              <PosterCard
+                key={item.id}
+                item={item}
+                onClick={onCardClick}
+                isSubscribed={isSubscribed}
+                source={eventSource || title}
+              />
+            )
           ))}
         </div>
 

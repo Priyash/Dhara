@@ -23,7 +23,7 @@
   font-family: var(--font-display);
   font-size: 26px;
   font-weight: 900;
-  background: linear-gradient(135deg, var(--color-accent), #fde68a);
+  background: linear-gradient(135deg, var(--color-accent), #f59e0b);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -116,14 +116,14 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
+  background: var(--color-accent));
   border: none;
   border-radius: var(--radius-sm);
   padding: 9px 18px;
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 600;
-  color: #000;
+  color: #fff;
   cursor: pointer;
   transition: opacity var(--transition), transform var(--transition);
 }
@@ -137,8 +137,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: rgba(219, 39, 119, 0.1);
+  border: 1px solid rgba(219, 39, 119, 0.3);
   border-radius: var(--radius-sm);
   padding: 8px 14px;
   font-family: var(--font-body);
@@ -150,8 +150,8 @@
 }
 
 .adminBtn:hover:not(:disabled) {
-  background: rgba(245, 158, 11, 0.18);
-  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(219, 39, 119, 0.18);
+  border-color: rgba(219, 39, 119, 0.5);
 }
 
 .adminBtnActive,
@@ -234,14 +234,14 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
+  background: var(--color-accent));
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 700;
-  color: #000;
+  color: #fff;
   flex-shrink: 0;
   cursor: default;
   user-select: none;
@@ -345,5 +345,35 @@
   .signInBtn {
     padding: 7px 12px;
     font-size: 12px;
+  }
+}
+
+/* TV / 4K: larger nav targets, more breathing room */
+@media (min-width: 1920px) {
+  .nav {
+    padding: 0 72px;
+    gap: 48px;
+  }
+
+  .logo {
+    font-size: 32px;
+  }
+
+  .links {
+    gap: 36px;
+  }
+
+  .link {
+    font-size: 17px;
+  }
+
+  .iconBtn {
+    width: 48px;
+    height: 48px;
+  }
+
+  .subscribeBtn {
+    padding: 12px 24px;
+    font-size: 15px;
   }
 }

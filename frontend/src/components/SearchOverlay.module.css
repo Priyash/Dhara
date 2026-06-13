@@ -21,6 +21,32 @@
   padding: calc(var(--nav-height, 64px) + 32px) 24px 60px;
 }
 
+@media (min-width: 1920px) {
+  .inner {
+    max-width: 900px;
+    padding: calc(var(--nav-height, 80px) + 48px) 32px 80px;
+  }
+
+  .input {
+    font-size: 20px;
+  }
+
+  .tag,
+  .recentTag {
+    font-size: 15px;
+    padding: 10px 20px;
+  }
+
+  .resultTitle {
+    font-size: 17px;
+  }
+
+  .resultPoster {
+    width: 64px;
+    height: 64px;
+  }
+}
+
 /* ── Search bar ──────────────────────────────────────────────────────────────*/
 .searchBar {
   display: flex;
@@ -35,8 +61,7 @@
 }
 
 .searchBar:focus-within {
-  border-color: rgba(245,158,11,0.4);
-  box-shadow: 0 0 0 3px rgba(245,158,11,0.07);
+  border-color: rgba(255,255,255,0.18);
 }
 
 .searchIcon {
@@ -66,6 +91,12 @@
   font-family: var(--font-body);
   font-size: 17px;
   letter-spacing: 0.1px;
+}
+
+.input:focus,
+.input:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .input::placeholder {
@@ -178,8 +209,8 @@
 }
 
 .tag:hover {
-  background: rgba(245,158,11,0.1);
-  border-color: rgba(245,158,11,0.3);
+  background: rgba(219,39,119,0.1);
+  border-color: rgba(219,39,119,0.3);
   color: var(--color-accent);
 }
 

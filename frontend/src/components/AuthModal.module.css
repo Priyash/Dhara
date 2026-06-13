@@ -51,7 +51,7 @@
   font-family: var(--font-display);
   font-size: 32px;
   font-weight: 900;
-  background: linear-gradient(135deg, var(--color-accent), #fde68a);
+  background: linear-gradient(135deg, var(--color-accent), #f59e0b);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -159,6 +159,8 @@
   color: var(--color-text);
   transition: border-color var(--transition);
   outline: none;
+  /* Prevent iOS zoom on focus */
+  font-size: max(16px, 14px);
 }
 
 .input::placeholder {
@@ -166,7 +168,22 @@
 }
 
 .input:focus {
-  border-color: rgba(245, 158, 11, 0.5);
+  border-color: rgba(219, 39, 119, 0.5);
+}
+
+/* ── Browser autofill override ───────────────────────────────────────────── */
+/* Chrome/Safari force-apply a light background via :-webkit-autofill.
+   The box-shadow trick paints over it with our dark surface colour
+   without fighting the browser's !important flag. */
+.input:-webkit-autofill,
+.input:-webkit-autofill:hover,
+.input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--color-surface-2) inset !important;
+  box-shadow:         0 0 0 1000px var(--color-surface-2) inset !important;
+  -webkit-text-fill-color: var(--color-text) !important;
+  caret-color: var(--color-text);
+  border-color: rgba(219, 39, 119, 0.35);
+  transition: background-color 5000s ease-in-out 0s; /* delay keeps colour stable */
 }
 
 .eyeBtn {
@@ -180,6 +197,10 @@
   display: flex;
   align-items: center;
   transition: color var(--transition);
+  z-index: 2; /* stay above autofill overlay */
+  min-width: 32px;
+  min-height: 32px;
+  justify-content: center;
 }
 
 .eyeBtn:hover {
@@ -200,14 +221,14 @@
 /* Submit */
 .submit {
   width: 100%;
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
+  background: var(--color-accent));
   border: none;
   border-radius: var(--radius-md);
   padding: 14px;
   font-family: var(--font-body);
   font-size: 15px;
   font-weight: 600;
-  color: #000;
+  color: #fff;
   cursor: pointer;
   transition: opacity var(--transition), transform var(--transition);
   margin-top: 4px;
@@ -249,6 +270,19 @@
 }
 
 @media (max-width: 480px) {
+  .backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal {
+    max-width: 100%;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    /* Use dvh so the modal doesn't overlap the iOS URL bar */
+    max-height: 92dvh;
+    overflow-y: auto;
+  }
+
   .header {
     padding: 28px 20px 20px;
   }
@@ -256,6 +290,8 @@
   .body {
     padding: 20px;
     gap: 14px;
+    /* Extra bottom padding so the submit button clears the iOS home indicator */
+    padding-bottom: max(20px, env(safe-area-inset-bottom, 20px));
   }
 
   .logo {
@@ -263,6 +299,31 @@
   }
 
   .heading {
+    font-size: 18px;
+  }
+
+  .input {
+    font-size: 16px; /* prevents iOS auto-zoom on focus */
+  }
+}
+
+/* TV / 4K */
+@media (min-width: 1920px) {
+  .modal {
+    max-width: 540px;
+  }
+
+  .heading {
+    font-size: 28px;
+  }
+
+  .input {
+    font-size: 17px;
+    padding: 16px 52px 16px 50px;
+  }
+
+  .submit {
+    padding: 18px;
     font-size: 18px;
   }
 }

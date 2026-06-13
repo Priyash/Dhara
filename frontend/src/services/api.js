@@ -194,11 +194,25 @@ export async function fetchRecommendations(params = {}) {
   }
 }
 
+export async function fetchRecommendationShelves() {
+  const qs = new URLSearchParams({ sessionId: getRecommendationSessionId() }).toString()
+  const data = await request(`/api/recommendations/shelves?${qs}`)
+  return (data.shelves || []).map(shelf => ({
+    ...shelf,
+    items: Array.isArray(shelf.items) ? shelf.items.map(normalizeItem) : [],
+  }))
+}
+
 // ── Search ────────────────────────────────────────────────────────────────────
 
 export async function searchContent(q) {
   const data = await request(`/api/search?q=${encodeURIComponent(q)}`)
   return data.map(normalizeItem)
+}
+
+export async function fetchPopularSearches() {
+  const data = await request('/api/search/popular')
+  return Array.isArray(data) ? data : []
 }
 
 // ── Payments ──────────────────────────────────────────────────────────────────

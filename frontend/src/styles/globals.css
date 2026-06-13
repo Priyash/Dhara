@@ -12,8 +12,8 @@
   --color-text:       #ffffff;
   --color-text-muted: rgba(255, 255, 255, 0.55);
   --color-text-dim:   rgba(255, 255, 255, 0.3);
-  --color-accent:     #f59e0b;
-  --color-accent-dark:#d97706;
+  --color-accent:     #db2777;
+  --color-accent-dark:#9d174d;
   --color-danger:     #e11d48;
   --font-display:     'Playfair Display', Georgia, serif;
   --font-body:        'DM Sans', system-ui, sans-serif;
@@ -27,6 +27,9 @@
 
 html {
   scroll-behavior: smooth;
+  color-scheme: dark;
+  /* Prevent pull-to-refresh interfering with the video player on mobile */
+  overscroll-behavior-y: contain;
 }
 
 body {
@@ -38,6 +41,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  /* Prevent double-tap zoom on interactive elements on mobile */
+  touch-action: manipulation;
 }
 
 /* Hide scrollbar globally */
@@ -49,20 +54,40 @@ body {
   -ms-overflow-style: none;
 }
 
-/* Focus styles */
+/* Focus styles — visible for keyboard and TV remote navigation */
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 
+/* ── Global autofill override ────────────────────────────────────────────────
+   Chrome/Safari apply a light background via :-webkit-autofill.
+   The box-shadow trick paints a dark surface over it without fighting
+   the browser's !important. Applied globally so every input benefits. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #18181f inset !important;
+  box-shadow:         0 0 0 1000px #18181f inset !important;
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
 button {
   font-family: var(--font-body);
   cursor: pointer;
+  /* Remove tap highlight on mobile */
+  -webkit-tap-highlight-color: transparent;
 }
 
 a {
   text-decoration: none;
   color: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
 
 img {
@@ -84,15 +109,34 @@ img {
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, var(--color-accent), #fde68a);
+  background: linear-gradient(135deg, var(--color-accent), #f59e0b);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
+/* ── Breakpoints ─────────────────────────────────────────────────────────────
+   Mobile:  < 480px  (phones)
+   Tablet:  480–900px
+   Desktop: 900–1440px
+   Wide:    1440–1920px
+   TV/4K:   1920px+           (Chromecast, AirPlay, smart TV browser)
+   ───────────────────────────────────────────────────────────────────────── */
+
 /* Mobile: navbar grows to two rows (top bar 64px + links strip 40px) */
 @media (max-width: 900px) {
   :root {
     --nav-height: 104px;
+  }
+}
+
+/* TV / large screen: scale up baseline text and touch targets */
+@media (min-width: 1920px) {
+  :root {
+    --nav-height: 80px;
+  }
+
+  body {
+    font-size: 18px;
   }
 }

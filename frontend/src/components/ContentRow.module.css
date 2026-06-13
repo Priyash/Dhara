@@ -10,6 +10,16 @@
   margin-bottom: 16px;
 }
 
+.eyebrow {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin: 0 0 5px;
+}
+
 .title {
   font-family: var(--font-display);
   font-size: 22px;
@@ -45,6 +55,11 @@
   overflow-x: auto;
   padding: 8px 40px 12px;
   scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+
+.row::-webkit-scrollbar {
+  display: none;
 }
 
 /* Scroll buttons */
@@ -70,6 +85,13 @@
   opacity: 1;
 }
 
+/* Touch / TV: no hover — always show scroll buttons */
+@media (hover: none) {
+  .scrollBtn {
+    opacity: 0.7;
+  }
+}
+
 .scrollLeft {
   left: 0;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
@@ -82,6 +104,34 @@
 
 .scrollBtn:hover {
   background: rgba(9, 9, 11, 0.97);
+}
+
+/* ── Ranked (Top 10) rows ─────────────────────────────────────────────────── */
+.rankedRow {
+  gap: 0;
+  padding-bottom: 28px; /* room for rank numbers that hang below the card */
+}
+
+.rankedItem {
+  position: relative;
+  flex-shrink: 0;
+  padding-left: 52px;
+}
+
+.rankNum {
+  position: absolute;
+  bottom: -6px;
+  left: -4px;
+  font-family: var(--font-display);
+  font-size: 96px;
+  font-weight: 900;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 2px rgba(255, 255, 255, 0.18);
+  text-stroke: 2px rgba(255, 255, 255, 0.18);
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
 }
 
 @media (max-width: 768px) {
@@ -100,5 +150,48 @@
 
   .title {
     font-size: 18px;
+  }
+
+  .rankedItem {
+    padding-left: 36px;
+  }
+
+  .rankNum {
+    font-size: 72px;
+    left: -2px;
+  }
+}
+
+/* TV / 4K: wider padding, larger headings */
+@media (min-width: 1920px) {
+  .header {
+    padding: 0 72px;
+  }
+
+  .row {
+    padding: 8px 72px 16px;
+    gap: 20px;
+  }
+
+  .title {
+    font-size: 28px;
+  }
+
+  .eyebrow {
+    font-size: 13px;
+  }
+
+  .rankNum {
+    font-size: 120px;
+  }
+
+  .rankedItem {
+    padding-left: 68px;
+  }
+
+  .scrollBtn {
+    width: 56px;
+    height: 110px;
+    opacity: 0.85;
   }
 }

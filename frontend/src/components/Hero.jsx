@@ -107,6 +107,7 @@ export default function Hero() {
       <div className={styles.radialOverlay} />
       <div className={styles.sideOverlay} />
       <div className={styles.bottomFade} />
+      <div className={styles.breathOverlay} aria-hidden="true" />
       <div className={styles.ring1} aria-hidden="true" />
       <div className={styles.ring2} aria-hidden="true" />
       <div className={styles.dot}   aria-hidden="true" />
@@ -135,8 +136,8 @@ export default function Hero() {
                 <Star
                   key={i}
                   size={14}
-                  color="#f59e0b"
-                  fill={filled ? '#f59e0b' : half ? 'rgba(245,158,11,0.5)' : 'rgba(245,158,11,0.15)'}
+                  color="#db2777"
+                  fill={filled ? '#db2777' : half ? 'rgba(219,39,119,0.5)' : 'rgba(219,39,119,0.15)'}
                 />
               )
             })}

@@ -1,5 +1,31 @@
 .rows {
   padding-top: 24px;
+  position: relative;
+}
+
+/* Faint rose ambient pulse that sits between content rows */
+.ambientPulse {
+  position: relative;
+  height: 1px;
+  margin: -20px 0;
+  pointer-events: none;
+}
+
+.ambientPulse::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 70%;
+  height: 300px;
+  background: radial-gradient(ellipse at center, rgba(219, 39, 119, 0.07) 0%, transparent 70%);
+  animation: ambientPulse 9s ease-in-out infinite;
+}
+
+@keyframes ambientPulse {
+  0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(0.95); }
+  50%       { opacity: 1;   transform: translate(-50%, -50%) scale(1.05); }
 }
 
 /* Promo banner */
@@ -69,14 +95,14 @@
   position: relative;
   z-index: 1;
   flex-shrink: 0;
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
+  background: var(--color-accent));
   border: none;
   border-radius: var(--radius-md);
   padding: 13px 24px;
   font-family: var(--font-body);
   font-size: 14px;
   font-weight: 600;
-  color: #000;
+  color: #fff;
   cursor: pointer;
   transition: transform var(--transition), opacity var(--transition);
 }
@@ -90,6 +116,8 @@
 .footer {
   border-top: 1px solid var(--color-border);
   padding: 32px 40px;
+  /* Safe area inset so content doesn't sit behind iOS home indicator */
+  padding-bottom: max(32px, calc(32px + env(safe-area-inset-bottom, 0px)));
   margin-top: 20px;
   display: flex;
   align-items: center;
@@ -101,7 +129,7 @@
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: 900;
-  background: linear-gradient(135deg, var(--color-accent), #fde68a);
+  background: linear-gradient(135deg, var(--color-accent), #f59e0b);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

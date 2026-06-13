@@ -7,6 +7,21 @@ import { ViewEvent } from '../models/ViewEvent.js'
 import { StreamCollection } from '../models/StreamCollection.js'
 import { UploadJob } from '../models/UploadJob.js'
 import { requireAuth } from '../middleware/auth.js'
+
+// Optional auth — attaches req.user when a valid token is present, proceeds without it if not.
+async function optionalAuth(req, _res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '')
+  if (!token) return next()
+  try {
+    const { admin: fbAdmin } = await import('../config/firebase.js')
+    const { User: UserModel }  = await import('../models/User.js')
+    const decoded = await fbAdmin.auth().verifyIdToken(token, true)
+    req.firebaseUser = decoded
+    req.user = await UserModel.findOne({ firebaseUid: decoded.uid })
+      .select('_id firebaseUid email isCreator creatorStatus subscriptionStatus')
+  } catch { /* stale or missing token — continue as anonymous */ }
+  next()
+}
 import { buildHlsUrl } from './reels.helpers.js'
 import { processUploadJob } from '../services/bunnyUpload.js'
 
@@ -39,7 +54,7 @@ const PUBLIC_FIELDS = '-bunnyVideoId'
 
 // ── Feed ─────────────────────────────────────────────────────────────────────
 
-router.get('/', requireAuth, async (req, res, next) => {
+router.get('/', optionalAuth, async (req, res, next) => {
   try {
     const page    = Math.max(1, parseInt(req.query.page,  10) || 1)
     const limit   = Math.min(40, Math.max(1, parseInt(req.query.limit, 10) || 20))
@@ -73,7 +88,7 @@ router.get('/', requireAuth, async (req, res, next) => {
  * Auth required. Searches published approved reels by title and hashtags.
  * A '#' prefix targets hashtags only (e.g. ?q=#comedy).
  */
-router.get('/search', requireAuth, async (req, res, next) => {
+router.get('/search', optionalAuth, async (req, res, next) => {
   try {
     const raw = (req.query.q || '').trim()
     if (raw.length < 2) return res.json([])
@@ -108,7 +123,7 @@ router.get('/search', requireAuth, async (req, res, next) => {
 
 // ── Single reel ───────────────────────────────────────────────────────────────
 
-router.get('/:id', requireAuth, async (req, res, next) => {
+router.get('/:id', optionalAuth, async (req, res, next) => {
   try {
     const reel = await Reel.findOne({
       _id: req.params.id, isPublished: true, isDeleted: { $ne: true }, submissionStatus: 'approved',

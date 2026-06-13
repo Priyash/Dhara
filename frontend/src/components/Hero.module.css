@@ -80,9 +80,24 @@
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background: rgba(245, 158, 11, 0.15);
+  background: rgba(219, 39, 119, 0.15);
   pointer-events: none;
   z-index: 1;
+}
+
+/* Slow-breathing rose radial that pulses behind the content */
+.breathOverlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 65% 42%, rgba(219, 39, 119, 0.2) 0%, transparent 58%);
+  pointer-events: none;
+  z-index: 2;
+  animation: heroBreath 7s ease-in-out infinite;
+}
+
+@keyframes heroBreath {
+  0%, 100% { opacity: 0.45; transform: scale(1);    }
+  50%       { opacity: 1;    transform: scale(1.12); }
 }
 
 /* ── Content ─────────────────────────────────────────────────────────── */
@@ -92,13 +107,20 @@
   padding: 0 60px;
   padding-top: var(--nav-height);
   max-width: 640px;
-  animation: contentIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes contentIn {
-  from { opacity: 0; transform: translateY(16px); }
+  from { opacity: 0; transform: translateY(18px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* Staggered entrance for each content element */
+.eyebrow  { animation: contentIn 0.55s 0.05s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.heading  { animation: contentIn 0.6s  0.16s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.genre    { animation: contentIn 0.55s 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.rating   { animation: contentIn 0.55s 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.desc     { animation: contentIn 0.55s 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.actions  { animation: contentIn 0.55s 0.48s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 .eyebrow {
   display: flex;
@@ -137,6 +159,13 @@
 
 .hero:hover .heading {
   transform: scale(1);
+}
+
+/* Touch / TV: no hover — heading always full size */
+@media (hover: none) {
+  .heading {
+    transform: scale(1) !important;
+  }
 }
 
 .genre {
@@ -203,22 +232,22 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(219, 39, 119, 0.12);
+  border: 1px solid rgba(219, 39, 119, 0.35);
   border-radius: var(--radius-md);
   padding: 14px 24px;
   font-family: var(--font-body);
   font-size: 15px;
   font-weight: 600;
-  color: #f59e0b;
+  color: #db2777;
   cursor: pointer;
   backdrop-filter: blur(10px);
   transition: background var(--transition), border-color var(--transition);
 }
 
 .infoBtn:hover {
-  background: rgba(245, 158, 11, 0.2);
-  border-color: rgba(245, 158, 11, 0.55);
+  background: rgba(219, 39, 119, 0.2);
+  border-color: rgba(219, 39, 119, 0.55);
 }
 
 .muteBtn {
@@ -263,6 +292,13 @@
 
 .hero:hover .navBtn {
   opacity: 1;
+}
+
+/* Touch / TV: always show nav arrows */
+@media (hover: none) {
+  .navBtn {
+    opacity: 0.75;
+  }
 }
 
 .navBtn:hover {
@@ -383,5 +419,43 @@
 
   .navBtn {
     display: none;
+  }
+}
+
+/* TV / 4K */
+@media (min-width: 1920px) {
+  .hero {
+    height: 85vh;
+  }
+
+  .content {
+    padding: 0 100px;
+    padding-top: var(--nav-height);
+    max-width: 860px;
+  }
+
+  .watchBtn {
+    padding: 18px 40px;
+    font-size: 18px;
+  }
+
+  .infoBtn {
+    padding: 18px 32px;
+    font-size: 18px;
+  }
+
+  .muteBtn {
+    width: 56px;
+    height: 56px;
+  }
+
+  .navBtn {
+    width: 64px;
+    height: 64px;
+  }
+
+  .indicators {
+    left: 100px;
+    bottom: 40px;
   }
 }

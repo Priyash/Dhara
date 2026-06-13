@@ -20,6 +20,13 @@ const EVENT_WEIGHTS = {
   skip:      -4,
 }
 
+// Half-life ≈ 14 days: an event from 2 weeks ago carries 50% of its original weight.
+const DECAY_LAMBDA = 0.05
+function decayedWeight(baseWeight, createdAt) {
+  const daysAgo = (Date.now() - new Date(createdAt).getTime()) / 86_400_000
+  return baseWeight * Math.exp(-DECAY_LAMBDA * daysAgo)
+}
+
 async function optionalAuth(req, _res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '')
   if (!token) return next()
@@ -166,10 +173,11 @@ router.get('/', optionalAuth, async (req, res, next) => {
     const watchedMap = new Map(watched.map((item) => [String(item._id), item]))
 
     for (const event of recentEvents) {
-      const weight = EVENT_WEIGHTS[event.eventType] ?? 0
-      if (weight === 0) continue
+      const base = EVENT_WEIGHTS[event.eventType] ?? 0
+      if (base === 0) continue
       const item = watchedMap.get(String(event.itemId))
       if (!item) continue
+      const weight = decayedWeight(base, event.createdAt)
 
       if (item.type) typeWeights.set(item.type, (typeWeights.get(item.type) || 0) + weight)
       for (const genre of item.genre || []) {
@@ -250,6 +258,245 @@ router.get('/', optionalAuth, async (req, res, next) => {
       .lean()
 
     res.json({ items: fallback, strategy: 'fallback' })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ── Shelf helpers ─────────────────────────────────────────────────────────────
+
+async function buildContinueWatching(identity) {
+  const events = await InteractionEvent.find({
+    ...identity,
+    itemType:  'content',
+    eventType: { $in: ['play', 'view_3s', 'view_50', 'completion'] },
+  }).sort({ createdAt: -1 }).limit(500).lean()
+
+  const completedIds  = new Set()
+  const progressByItem = new Map()
+
+  for (const event of events) {
+    const id = String(event.itemId)
+    if (event.eventType === 'completion') {
+      completedIds.add(id)
+    } else if (!progressByItem.has(id) && event.durationSecs > 30) {
+      progressByItem.set(id, {
+        positionSecs:  event.positionSecs,
+        durationSecs:  event.durationSecs,
+        episodeNumber: event.episodeNumber,
+        lastWatched:   event.createdAt,
+      })
+    }
+  }
+
+  const inProgress = [...progressByItem.entries()]
+    .filter(([id]) => !completedIds.has(id))
+    .sort((a, b) => new Date(b[1].lastWatched) - new Date(a[1].lastWatched))
+    .slice(0, 10)
+
+  if (!inProgress.length) return { id: 'continue_watching', title: 'Continue Watching', type: 'progress', items: [] }
+
+  const ids      = inProgress.map(([id]) => parseObjectId(id)).filter(Boolean)
+  const contents = await Content.find({ _id: { $in: ids }, ...publicContentFilter() })
+    .select(PUBLIC_FIELDS).lean()
+
+  const contentsMap = new Map(contents.map(c => [String(c._id), c]))
+  const items = inProgress
+    .map(([id, progress]) => {
+      const content = contentsMap.get(id)
+      if (!content) return null
+      return { ...content, _progress: progress }
+    })
+    .filter(Boolean)
+
+  return { id: 'continue_watching', title: 'Continue Watching', type: 'progress', items }
+}
+
+async function buildBecauseYouWatched(identity, usedIds) {
+  const events = await InteractionEvent.find({
+    ...identity,
+    itemType:  'content',
+    eventType: { $in: ['completion', 'like', 'view_50'] },
+  }).sort({ createdAt: -1 }).limit(100).lean()
+
+  if (!events.length) return []
+
+  const seedId = parseObjectId(String(events[0].itemId))
+  if (!seedId) return []
+
+  const seed = await Content.findOne({ _id: seedId, ...publicContentFilter() })
+    .select('title type genre moodTags').lean()
+  if (!seed || !seed.genre?.length) return []
+
+  const excludeOids = [
+    ...[...new Set(events.map(e => String(e.itemId)))].map(id => parseObjectId(id)),
+    ...[...usedIds].map(id => parseObjectId(id)),
+    seedId,
+  ].filter(Boolean)
+
+  const similar = await Content.find({
+    ...publicContentFilter(),
+    _id: { $nin: excludeOids },
+    genre: { $in: seed.genre },
+  }).sort({ rating: -1, viewCount: -1 }).limit(12).select(PUBLIC_FIELDS).lean()
+
+  if (similar.length < 3) return []
+
+  return [{
+    id:    `because_${seedId}`,
+    title: `Because you watched ${seed.title}`,
+    type:  'affinity',
+    seed:  { title: seed.title },
+    items: similar,
+  }]
+}
+
+async function buildTop10ThisWeek(usedIds) {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000)
+
+  const trending = await InteractionEvent.aggregate([
+    {
+      $match: {
+        itemType:  'content',
+        eventType: { $in: ['play', 'view_50', 'completion'] },
+        createdAt: { $gte: sevenDaysAgo },
+      },
+    },
+    { $group: { _id: '$itemId', score: { $sum: 1 } } },
+    { $sort:  { score: -1 } },
+    { $limit: 20 },
+  ])
+
+  const excludeOids = [...usedIds].map(id => parseObjectId(id)).filter(Boolean)
+
+  if (!trending.length) {
+    const fallback = await Content.find({ ...publicContentFilter(), _id: { $nin: excludeOids } })
+      .sort({ viewCount: -1, rating: -1 }).limit(10).select(PUBLIC_FIELDS).lean()
+    return {
+      id: 'top10', title: 'Top 10 in Bengali OTT', type: 'top10',
+      items: fallback.map((item, i) => ({ ...item, _rank: i + 1 })),
+    }
+  }
+
+  const trendingIds = trending.map(t => t._id)
+  const contents    = await Content.find({
+    _id: { $in: trendingIds, $nin: excludeOids },
+    ...publicContentFilter(),
+  }).select(PUBLIC_FIELDS).lean()
+
+  const orderMap = new Map(trending.map((t, i) => [String(t._id), i]))
+  const items    = contents
+    .sort((a, b) => (orderMap.get(String(a._id)) ?? 99) - (orderMap.get(String(b._id)) ?? 99))
+    .slice(0, 10)
+    .map((item, i) => ({ ...item, _rank: i + 1 }))
+
+  return { id: 'top10', title: 'Top 10 in Bengali OTT', type: 'top10', items }
+}
+
+const GENRE_LABELS = {
+  Thriller:   'Bengali Thrillers',
+  Romance:    'Romance Picks',
+  Drama:      'Critically Acclaimed Dramas',
+  Comedy:     'Feel Good Comedies',
+  Crime:      'Crime & Mystery',
+  Historical: 'Historical Epics',
+  Action:     'Action & Adventure',
+  Family:     'Family Favourites',
+  Mystery:    'Mystery & Suspense',
+  Social:     'Social Dramas',
+}
+
+async function buildGenreRows(identity, usedIds) {
+  const genreWeights = new Map()
+  const watchedIds   = new Set()
+
+  if (identity) {
+    const events = await InteractionEvent.find({
+      ...identity, itemType: 'content',
+    }).sort({ createdAt: -1 }).limit(300).lean()
+
+    if (events.length) {
+      const itemIds = [...new Set(events.map(e => String(e.itemId)))]
+        .map(id => parseObjectId(id)).filter(Boolean)
+      const itemMap = new Map(
+        (await Content.find({ _id: { $in: itemIds } }).select('genre').lean())
+          .map(c => [String(c._id), c])
+      )
+      for (const event of events) {
+        const base = EVENT_WEIGHTS[event.eventType] ?? 0
+        if (base <= 0) continue
+        const item = itemMap.get(String(event.itemId))
+        if (!item) continue
+        watchedIds.add(String(event.itemId))
+        const w = decayedWeight(base, event.createdAt)
+        for (const genre of item.genre || []) {
+          genreWeights.set(genre, (genreWeights.get(genre) || 0) + w)
+        }
+      }
+    }
+  }
+
+  let topGenres = [...genreWeights.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([genre]) => genre)
+
+  if (!topGenres.length) topGenres = ['Thriller', 'Drama']
+
+  const excludeOids = [
+    ...[...watchedIds].map(id => parseObjectId(id)),
+    ...[...usedIds].map(id => parseObjectId(id)),
+  ].filter(Boolean)
+
+  const rows = []
+  for (const genre of topGenres) {
+    const items = await Content.find({
+      ...publicContentFilter(),
+      _id:   { $nin: excludeOids },
+      genre,
+    }).sort({ rating: -1, viewCount: -1 }).limit(12).select(PUBLIC_FIELDS).lean()
+
+    if (items.length >= 3) {
+      rows.push({
+        id:    `genre_${genre.toLowerCase().replace(/\s+/g, '_')}`,
+        title: GENRE_LABELS[genre] || `${genre} Picks`,
+        type:  'genre',
+        genre,
+        items,
+      })
+    }
+  }
+  return rows
+}
+
+// ── GET /api/recommendations/shelves ─────────────────────────────────────────
+router.get('/shelves', optionalAuth, async (req, res, next) => {
+  try {
+    const sessionId = String(req.query.sessionId || '').slice(0, 120)
+    const identity  = req.user?._id
+      ? { userId: req.user._id }
+      : sessionId ? { sessionId } : null
+
+    const shelves = []
+    const usedIds = new Set()
+
+    const track = (items) => items.forEach(i => usedIds.add(String(i._id)))
+
+    if (identity) {
+      const cw = await buildContinueWatching(identity)
+      if (cw.items.length) { track(cw.items); shelves.push(cw) }
+
+      const because = await buildBecauseYouWatched(identity, usedIds)
+      for (const row of because) { track(row.items); shelves.push(row) }
+    }
+
+    const top10 = await buildTop10ThisWeek(usedIds)
+    if (top10.items.length >= 5) { track(top10.items); shelves.push(top10) }
+
+    const genreRows = await buildGenreRows(identity, usedIds)
+    for (const row of genreRows) { track(row.items); shelves.push(row) }
+
+    res.json({ shelves })
   } catch (err) {
     next(err)
   }

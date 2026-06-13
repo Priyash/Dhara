@@ -109,7 +109,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: linear-gradient(135deg, #f59e0b, #d97706);
+  background: #db2777;
   border-radius: 4px;
   padding: 2px 8px;
   font-size: 10px;
@@ -210,11 +210,11 @@
 }
 
 .circleBtnSaved {
-  background: rgba(245, 158, 11, 0.15);
-  border-color: #f59e0b;
-  color: #f59e0b;
+  background: rgba(219, 39, 119, 0.15);
+  border-color: #db2777;
+  color: #db2777;
 }
-.circleBtnSaved:hover { background: rgba(245, 158, 11, 0.25); }
+.circleBtnSaved:hover { background: rgba(219, 39, 119, 0.25); }
 
 .circleBtnLiked {
   background: rgba(74, 222, 128, 0.12);
@@ -516,6 +516,44 @@
   }
 
   .epThumb { width: 90px; height: 52px; }
+}
+
+/* ── TV / large screen ───────────────────────────────────────────────────────*/
+@media (min-width: 1920px) {
+  .modal {
+    width: min(1100px, 100%);
+  }
+
+  .playBtn {
+    padding: 14px 36px;
+    font-size: 18px;
+  }
+
+  .circleBtn {
+    width: 52px;
+    height: 52px;
+  }
+
+  .title {
+    font-size: clamp(28px, 3vw, 56px);
+  }
+
+  .desc {
+    font-size: 16px;
+  }
+
+  .episode {
+    padding: 18px 20px;
+  }
+
+  .epTitle {
+    font-size: 17px;
+  }
+
+  .epThumb {
+    width: 160px;
+    height: 90px;
+  }
 }
 
 /* ── Trailer ──────────────────────────────────────────────────────────────── */

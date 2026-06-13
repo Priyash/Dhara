@@ -39,7 +39,7 @@
   align-items: center;
   gap: 7px;
   border-radius: 999px;
-  border: 1px solid rgba(251, 191, 36, 0.34);
+  border: 1px solid rgba(240, 122, 78, 0.34);
   background: rgba(234, 179, 8, 0.12);
   color: rgba(254, 240, 138, 0.96);
   font-size: 11px;
@@ -119,8 +119,8 @@
 }
 
 .primaryBtn {
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
-  color: #141414;
+  background: var(--color-accent));
+  color: #fff;
 }
 
 .ghostBtn:disabled,

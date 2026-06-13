@@ -140,7 +140,7 @@
   height: 56px;
   border-radius: 50%;
   background: var(--color-accent);
-  color: #000;
+  color: #fff;
   font-size: 26px;
   font-weight: 700;
   display: flex;
@@ -191,7 +191,7 @@
 
 .planSelected {
   border-color: var(--color-accent) !important;
-  background: rgba(245, 158, 11, 0.07);
+  background: rgba(219, 39, 119, 0.07);
 }
 
 .planLeft {
@@ -250,7 +250,7 @@
 
 .planBadge {
   background: var(--color-accent);
-  color: #000;
+  color: #fff;
   font-size: 10px;
   font-weight: 700;
   font-family: var(--font-body);
@@ -312,7 +312,7 @@
   font-family: var(--font-body);
   font-size: 16px;
   font-weight: 600;
-  color: #000;
+  color: #fff;
   cursor: pointer;
   letter-spacing: 0.3px;
   display: flex;

@@ -493,8 +493,8 @@ export default function Profile() {
           {/* ── Applied: under review ── */}
           {creatorStatus === 'applied' && (
             <>
-              <span className={styles.creatorStatusPill} style={{ color: '#fbbf24', background: 'rgba(251,191,36,0.1)', borderColor: 'rgba(251,191,36,0.25)' }}>
-                <span className={styles.statusDotPulse} style={{ background: '#fbbf24' }} />
+              <span className={styles.creatorStatusPill} style={{ color: '#f472b6', background: 'rgba(244,114,182,0.1)', borderColor: 'rgba(244,114,182,0.25)' }}>
+                <span className={styles.statusDotPulse} style={{ background: '#f472b6' }} />
                 Application under review
               </span>
               <p className={styles.creatorCardDesc}>
@@ -698,7 +698,7 @@ export default function Profile() {
               <div className={styles.applyFieldLabel}>
                 Content you plan to upload *
                 <div className={styles.contentTypeRow}>
-                  {['Film', 'Series', 'Documentary'].map((type) => (
+                  {['Film', 'Series', 'Serial Drama', 'Documentary'].map((type) => (
                     <button
                       key={type}
                       type="button"

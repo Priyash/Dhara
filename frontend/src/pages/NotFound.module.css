@@ -13,7 +13,7 @@
   font-family: var(--font-display, 'Playfair Display', serif);
   font-size: 96px;
   font-weight: 900;
-  background: linear-gradient(135deg, #f59e0b, #fde68a);
+  background: linear-gradient(135deg, #db2777, #f59e0b);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

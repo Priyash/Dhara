@@ -137,10 +137,10 @@
 
 .retryBtn {
   margin-top: 8px;
-  border: 1px solid rgba(245,158,11,0.4);
+  border: 1px solid rgba(219,39,119,0.4);
   border-radius: 8px;
-  background: rgba(245,158,11,0.14);
-  color: #fcd38d;
+  background: rgba(219,39,119,0.14);
+  color: #f9a8d4;
   padding: 9px 16px;
   display: inline-flex;
   align-items: center;
@@ -152,7 +152,7 @@
 }
 
 .retryBtn:hover {
-  background: rgba(245,158,11,0.22);
+  background: rgba(219,39,119,0.22);
 }
 
 /* ── Controls bar — overlaid at bottom of video ──────────────────────────────*/
@@ -237,7 +237,7 @@
 .progressFill {
   position: absolute;
   top: 0; left: 0; bottom: 0;
-  background: linear-gradient(90deg, #f59e0b, #fbbf24 72%, #fde68a);
+  background: linear-gradient(90deg, #db2777, #f472b6 72%, #f59e0b);
   border-radius: 2px;
   /* no transition — direct DOM updates during drag must be instant */
 }
@@ -248,9 +248,9 @@
   transform: translate(-50%, -50%) scale(0);
   width: 14px;
   height: 14px;
-  background: #fbbf24;
+  background: #f472b6;
   border-radius: 50%;
-  box-shadow: 0 0 0 3px rgba(245,158,11,0.22), 0 2px 8px rgba(0,0,0,0.35);
+  box-shadow: 0 0 0 3px rgba(219,39,119,0.22), 0 2px 8px rgba(0,0,0,0.35);
   transition: transform 0.15s ease; /* only scale, not position */
   pointer-events: none;
 }
@@ -262,7 +262,7 @@
 
 .progressThumbDragging {
   transform: translate(-50%, -50%) scale(1.35) !important;
-  box-shadow: 0 0 0 6px rgba(245,158,11,0.2);
+  box-shadow: 0 0 0 6px rgba(219,39,119,0.2);
 }
 
 /* Hover tooltip — now contains canvas + time */
@@ -358,21 +358,21 @@
 .ctrlBtnPrimary:focus-visible,
 .chipBtn:focus-visible,
 .retryBtn:focus-visible {
-  outline: 2px solid rgba(251,191,36,0.75);
+  outline: 2px solid rgba(244,114,182,0.75);
   outline-offset: 2px;
 }
 
 /* Play / pause — larger, accent coloured */
 .ctrlBtnPrimary {
-  background: rgba(245,158,11,0.12);
-  border: 1px solid rgba(245,158,11,0.2);
+  background: rgba(219,39,119,0.12);
+  border: 1px solid rgba(219,39,119,0.2);
   border-radius: 50%;
   width: 44px;
   height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #f59e0b;
+  color: #db2777;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, transform 0.1s;
   flex-shrink: 0;
@@ -380,8 +380,8 @@
 }
 
 .ctrlBtnPrimary:hover {
-  background: rgba(245,158,11,0.2);
-  border-color: rgba(245,158,11,0.4);
+  background: rgba(219,39,119,0.2);
+  border-color: rgba(219,39,119,0.4);
   transform: scale(1.06);
 }
 
@@ -396,7 +396,7 @@
 .volumeSlider {
   width: 82px;
   height: 3px;
-  accent-color: #f59e0b;
+  accent-color: #db2777;
   cursor: pointer;
 }
 
@@ -440,9 +440,9 @@
   min-height: 22px;
   padding: 3px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(251,191,36,0.28);
-  background: rgba(245,158,11,0.12);
-  color: #fcd38d;
+  border: 1px solid rgba(244,114,182,0.28);
+  background: rgba(219,39,119,0.12);
+  color: #f9a8d4;
   font-size: 10px;
   font-weight: 800;
   line-height: 1;
@@ -524,9 +524,9 @@
 }
 
 .chipBtnActive {
-  border-color: rgba(245,158,11,0.55);
-  background: rgba(245,158,11,0.14);
-  color: #fcd38d;
+  border-color: rgba(219,39,119,0.55);
+  background: rgba(219,39,119,0.14);
+  color: #f9a8d4;
 }
 
 @media (max-width: 720px) {
@@ -591,5 +591,68 @@
   .progressTooltip {
     transform: translateX(-50%) scale(0.86);
     transform-origin: bottom center;
+  }
+}
+
+/* Touch devices: progress thumb always visible (no hover) */
+@media (hover: none) {
+  .progressThumb {
+    transform: translate(-50%, -50%) scale(1) !important;
+  }
+
+  .progressTrack {
+    height: 5px;
+  }
+
+  .ctrlBtn,
+  .ctrlBtnPrimary {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* TV / 4K: much larger controls */
+@media (min-width: 1920px) {
+  .controlsBar {
+    padding: 80px 48px 32px;
+    gap: 16px;
+  }
+
+  .ctrlBtn {
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+  }
+
+  .ctrlBtnPrimary {
+    width: 60px;
+    height: 60px;
+  }
+
+  .progressTrack {
+    height: 6px;
+  }
+
+  .progressThumb {
+    width: 18px;
+    height: 18px;
+  }
+
+  .timeElapsed,
+  .timeRemaining {
+    font-size: 15px;
+  }
+
+  .volumeSlider {
+    width: 120px;
+  }
+
+  .titleOverlayText {
+    font-size: 18px;
+  }
+
+  .settingsPanel {
+    width: 380px;
+    right: 48px;
   }
 }

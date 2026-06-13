@@ -52,6 +52,11 @@ if (isProd) {
 const app  = express()
 const PORT = process.env.PORT || 4000
 
+// Render (and most PaaS hosts) sit behind a reverse proxy that sets X-Forwarded-For.
+// Without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR and
+// crashes every rate-limited route (including /api/auth) in production.
+app.set('trust proxy', 1)
+
 // Attach a unique ID to every request — surfaced in error logs and X-Request-Id header.
 app.use((req, res, next) => {
   req.id = randomUUID()

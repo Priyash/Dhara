@@ -2,28 +2,31 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Hero from '../components/Hero'
 import ContentRow from '../components/ContentRow'
+import CinematicRow from '../components/CinematicRow'
+import GenreMosaic from '../components/GenreMosaic'
+import WideResumeCard from '../components/WideResumeCard'
+import CategoryGrid from '../components/CategoryGrid'
 import CuratedShelfRow from '../components/CuratedShelfRow'
 import { useStore } from '../store/useStore'
-import { fetchContent, fetchShelves, fetchContinueWatching, fetchRecommendations } from '../services/api'
+import { fetchContent, fetchShelves, fetchContinueWatching, fetchRecommendationShelves } from '../services/api'
 import styles from './Home.module.css'
 
 export default function Home() {
   const { openItem, isSubscribed, isLoggedIn } = useStore()
   const navigate = useNavigate()
-  const [content,          setContent]          = useState([])
-  const [shelves,          setShelves]          = useState([])
-  const [continueWatching, setContinueWatching] = useState([])
-  const [recommended,      setRecommended]      = useState([])
-  const [contentLoading,   setContentLoading]   = useState(true)
+  const [content,               setContent]               = useState([])
+  const [shelves,               setShelves]               = useState([])
+  const [continueWatching,      setContinueWatching]      = useState([])
+  const [recommendationShelves, setRecommendationShelves] = useState([])
+  const [contentLoading,        setContentLoading]        = useState(true)
 
   useEffect(() => {
-    // Cap at 48 — enough for all Home rows. Browse handles full paginated exploration.
     fetchContent({ sort: 'rating', page: 1, limit: 48 })
       .then((res) => setContent(Array.isArray(res) ? res : (res.items ?? [])))
       .catch(() => {})
       .finally(() => setContentLoading(false))
     fetchShelves().then(setShelves).catch(() => {})
-    fetchRecommendations({ limit: 12 }).then((res) => setRecommended(res.items || [])).catch(() => {})
+    fetchRecommendationShelves().then(setRecommendationShelves).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -40,10 +43,17 @@ export default function Home() {
   const newReleases = content.filter(c => c.badge === 'NEW')
   const movies      = content.filter(c => c.type === 'Film')
   const series      = content.filter(c => c.type === 'Series')
+  const serialDrama = content.filter(c => c.type === 'Serial Drama')
   const originals   = content.filter(c => c.type === 'Documentary')
   const live        = content.filter(c => c.badge === 'LIVE')
 
   const rowProps = { onCardClick: openItem, isSubscribed }
+
+  // Continue watching click — go directly to watch page (respects paywall via openItem fallback)
+  const handleContinueClick = (item) => {
+    if (item.isPremium && !isSubscribed) { openItem(item); return }
+    navigate(`/watch/${item.id || item._id}`)
+  }
 
   return (
     <main>
@@ -51,33 +61,36 @@ export default function Home() {
 
       <div className={styles.rows}>
 
+        {/* ── Continue Watching — wide resume card ── */}
         {continueWatching.length > 0 && (
-          <ContentRow
-            title="Continue Watching"
+          <WideResumeCard
             items={continueWatching}
-            onSeeAll={null}
-            isSubscribed={isSubscribed}
-            onCardClick={(item) => {
-              // Premium gate: open paywall modal instead of navigating
-              if (item.isPremium && !isSubscribed) {
-                openItem(item)
-                return
+            onCardClick={handleContinueClick}
+          />
+        )}
+
+        {/* ── Recommendation shelves (affinity / top10 / genre) ── */}
+        {recommendationShelves
+          .filter(shelf => shelf.type !== 'progress')
+          .map(shelf => (
+            <ContentRow
+              key={shelf.id}
+              title={shelf.type === 'affinity' && shelf.seed?.title ? shelf.seed.title : shelf.title}
+              eyebrow={
+                shelf.type === 'affinity' ? 'Because you watched' :
+                shelf.type === 'top10'    ? 'This week' :
+                undefined
               }
-              navigate(`/watch/${item.id || item._id}`)
-            }}
-          />
-        )}
+              items={shelf.items}
+              ranked={shelf.type === 'top10'}
+              onSeeAll={shelf.type === 'top10' ? () => navigate('/browse') : undefined}
+              eventSource={`shelf_${shelf.type}`}
+              {...rowProps}
+            />
+          ))
+        }
 
-        {recommended.length > 0 && (
-          <ContentRow
-            title="Recommended For You"
-            items={recommended}
-            onSeeAll={() => navigate('/browse')}
-            eventSource="recommendations"
-            {...rowProps}
-          />
-        )}
-
+        {/* ── Trending ── */}
         {contentLoading ? (
           <div className={styles.skeletonRows}>
             {[1, 2, 3].map((r) => (
@@ -100,25 +113,27 @@ export default function Home() {
           />
         )}
 
+        {/* ── New Releases — cinematic 16:9 row ── */}
         {newReleases.length > 0 && (
-          <ContentRow
+          <CinematicRow
             title="New Releases"
+            eyebrow="Just dropped"
             items={newReleases}
+            onCardClick={openItem}
             onSeeAll={() => navigate('/browse?filter=New')}
-            {...rowProps}
           />
         )}
 
+        {/* ── Live ── */}
         {live.length > 0 && (
-          <ContentRow
-            title="Live Now"
-            items={live}
-            {...rowProps}
-          />
+          <ContentRow title="Live Now" items={live} {...rowProps} />
         )}
 
+        {/* ── Movies — editorial mosaic (5+ items) → grid overflow ── */}
         {movies.length > 0 && (
           <>
+            <div className={styles.ambientPulse} aria-hidden="true" />
+
             <div className={styles.promo}>
               <div className={styles.promoRing1} aria-hidden="true" />
               <div className={styles.promoRing2} aria-hidden="true" />
@@ -132,34 +147,68 @@ export default function Home() {
               </button>
             </div>
 
-            <ContentRow
-              title="Movies"
-              items={movies}
+            {/* Mosaic only when there are 5+ films; else fall straight to grid */}
+            {movies.length >= 5 && (
+              <GenreMosaic
+                title="Movies"
+                items={movies.slice(0, 5)}
+                onCardClick={openItem}
+              />
+            )}
+
+            <CategoryGrid
+              title={movies.length >= 5 ? 'More Films' : 'Movies'}
+              eyebrow={movies.length >= 5 ? undefined : 'Now streaming'}
+              items={movies.length >= 5 ? movies.slice(5) : movies}
+              onCardClick={openItem}
+              isSubscribed={isSubscribed}
               onSeeAll={() => navigate('/browse?type=Film')}
-              {...rowProps}
+              totalCount={movies.length}
+              eventSource="grid_films"
             />
           </>
         )}
 
+        {/* ── Series — grid layout ── */}
         {series.length > 0 && (
-          <ContentRow
+          <CategoryGrid
             title="Series"
+            eyebrow="Binge-worthy"
             items={series}
+            onCardClick={openItem}
+            isSubscribed={isSubscribed}
             onSeeAll={() => navigate('/browse?type=Series')}
-            {...rowProps}
+            totalCount={series.length}
+            eventSource="grid_series"
           />
         )}
 
+        {/* ── ধারাবাহিক (Serial Drama) — cinematic row ── */}
+        {serialDrama.length > 0 && (
+          <CinematicRow
+            title="ধারাবাহিক"
+            eyebrow="Serial Drama"
+            items={serialDrama}
+            onCardClick={openItem}
+            onSeeAll={() => navigate('/browse?type=Serial+Drama')}
+          />
+        )}
+
+        {/* ── Originals — grid layout ── */}
         {originals.length > 0 && (
-          <ContentRow
+          <CategoryGrid
             title="Originals"
+            eyebrow="Dhara exclusive"
             items={originals}
+            onCardClick={openItem}
+            isSubscribed={isSubscribed}
             onSeeAll={() => navigate('/browse?type=Documentary')}
-            {...rowProps}
+            totalCount={originals.length}
+            eventSource="grid_originals"
           />
         )}
 
-        {/* ── Curated Shelves ── */}
+        {/* ── Curated shelves ── */}
         {shelves.map((shelf) => (
           <CuratedShelfRow
             key={shelf._id}
@@ -178,7 +227,7 @@ export default function Home() {
             <a key={l} href="#" className={styles.footerLink}>{l}</a>
           ))}
         </div>
-        <span className={styles.copyright}>© 2025 Dhara Streaming</span>
+        <span className={styles.copyright}>© {new Date().getFullYear()} Dhara Streaming</span>
       </footer>
     </main>
   )

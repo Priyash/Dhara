@@ -7,13 +7,15 @@
   cursor: pointer;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.07);
-  transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.2s ease;
+  transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.22s ease;
 }
 
 .card:hover {
   transform: scale(1.04);
-  box-shadow: 0 24px 52px rgba(0, 0, 0, 0.7);
-  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    0 0 0 1.5px rgba(219, 39, 119, 0.45),
+    0 20px 48px rgba(0, 0, 0, 0.72);
+  border-color: transparent;
 }
 
 /* Size variants — used in horizontal scroll (ContentRow) */
@@ -76,102 +78,105 @@
 
 .progressFill {
   height: 100%;
-  background: #f59e0b;
+  background: #db2777;
   border-radius: inherit;
   transition: width 0.3s ease;
 }
 
-/* Gradient deepens slightly on hover to keep revealed text readable */
+/* Always-on gradient so text is readable even before hover */
 .gradient {
   position: absolute;
   inset: 0;
   background: linear-gradient(
     to top,
-    rgba(0, 0, 0, 0.93) 0%,
-    rgba(0, 0, 0, 0.55) 38%,
-    transparent 65%
+    rgba(9, 9, 11, 0.95) 0%,
+    rgba(9, 9, 11, 0.45) 40%,
+    transparent          68%
   );
   z-index: 1;
   transition: opacity 0.28s ease;
 }
 
-.card:hover .gradient {
-  opacity: 1.0;
-  background: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.97) 0%,
-    rgba(0, 0, 0, 0.7) 45%,
-    transparent 72%
-  );
-}
-
-/* ── Info container (always at bottom) ──────────────────────────────── */
+/* ── Frosted glass info panel at bottom ─────────────────────────────── */
 .info {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 0 12px 12px;
   z-index: 2;
+  /* frosted base — always visible */
+  background: rgba(9, 9, 11, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 8px 11px 10px;
+  transform: translateY(0);
+  transition: background 0.22s ease, border-color 0.22s ease;
 }
 
-/* ── Strip — genre + year chips that slide in above title ────────────── */
+.card:hover .info {
+  background: rgba(9, 9, 11, 0.85);
+  border-color: rgba(219, 39, 119, 0.25);
+}
+
+/* ── Strip — chips that slide in above title on hover ───────────────── */
 .infoStrip {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex-wrap: wrap;
-  margin-bottom: 8px;
+  margin-bottom: 5px;
+  max-height: 0;
+  overflow: hidden;
   opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 0.22s ease 0.04s, transform 0.22s ease 0.04s;
+  transition: max-height 0.22s ease, opacity 0.18s ease 0.04s;
 }
 
 .card:hover .infoStrip {
+  max-height: 32px;
   opacity: 1;
-  transform: translateY(0);
 }
 
 .genreChip {
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
-  background: rgba(255, 255, 255, 0.13);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 4px;
-  padding: 2px 7px;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(219, 39, 119, 0.18);
+  border: 1px solid rgba(219, 39, 119, 0.3);
+  border-radius: 3px;
+  padding: 2px 6px;
   white-space: nowrap;
   letter-spacing: 0.2px;
 }
 
 .metaChip {
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.4);
   white-space: nowrap;
 }
 
-/* ── Title + type (always visible) ──────────────────────────────────── */
+/* ── Title + type ────────────────────────────────────────────────────── */
 .meta {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .type {
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.7px;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.38);
+  color: rgba(255, 255, 255, 0.32);
 }
 
 .title {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: #fff;
   line-height: 1.3;
@@ -186,16 +191,16 @@
   position: absolute;
   top: 8px;
   right: 8px;
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  border-radius: 5px;
-  padding: 3px 8px;
+  background: var(--color-accent);
+  border-radius: 4px;
+  padding: 3px 7px;
   display: flex;
   align-items: center;
   gap: 3px;
   font-family: var(--font-body);
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
   color: #fff;
   z-index: 3;
 }
@@ -204,25 +209,26 @@
   position: absolute;
   top: 8px;
   left: 8px;
-  border-radius: 5px;
-  padding: 3px 8px;
+  border-radius: 4px;
+  padding: 3px 7px;
   font-family: var(--font-body);
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.7px;
   color: #fff;
   z-index: 3;
   display: flex;
   align-items: center;
   gap: 5px;
+  backdrop-filter: blur(4px);
 }
 
-.newBadge  { background: #e11d48; }
-.liveBadge { background: #16a34a; }
+.newBadge  { background: rgba(225, 29, 72, 0.9);  border: 1px solid rgba(255,255,255,0.15); }
+.liveBadge { background: rgba(22, 163, 74, 0.9);  border: 1px solid rgba(255,255,255,0.15); }
 
 .liveDot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: #fff;
   flex-shrink: 0;
@@ -231,17 +237,19 @@
 
 @keyframes livePulse {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.35; }
+  50%       { opacity: 0.3; }
 }
 
+/* Rating pill — always visible top-right when no other badge */
 .ratingBadge {
   position: absolute;
   top: 8px;
   right: 8px;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(4px);
-  border-radius: 5px;
-  padding: 3px 8px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 3px 7px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -254,11 +262,11 @@
 
 /* ── Premium card amber edge ─────────────────────────────────────────── */
 .premiumCard {
-  box-shadow: inset 0 0 0 1.5px rgba(245, 158, 11, 0.3);
+  box-shadow: inset 0 0 0 1.5px rgba(219, 39, 119, 0.3);
 }
 
 .premiumCard:hover {
   box-shadow:
-    inset 0 0 0 1.5px rgba(245, 158, 11, 0.55),
+    inset 0 0 0 1.5px rgba(219, 39, 119, 0.55),
     0 24px 52px rgba(0, 0, 0, 0.7);
 }
