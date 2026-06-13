@@ -461,6 +461,49 @@ const TABS = [
 
 const NEW_CONTENT_ID = '__new__'
 
+// ── Video frame extraction helpers (shared with reel upload) ─────────────────
+
+function analyseVideoFrame(file) {
+  return new Promise((resolve) => {
+    const video  = document.createElement('video')
+    const canvas = document.createElement('canvas')
+    const url    = URL.createObjectURL(file)
+    let   settled = false
+
+    const finish = () => {
+      if (settled) return
+      settled = true
+      const { videoWidth: w, videoHeight: h } = video
+      let thumb = null
+      try {
+        const scale = w > 0 ? Math.min(1, 480 / w) : 1
+        canvas.width  = Math.round(w * scale) || 480
+        canvas.height = Math.round(h * scale) || 270
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+        thumb = canvas.toDataURL('image/jpeg', 0.85)
+      } catch {}
+      URL.revokeObjectURL(url)
+      resolve(thumb)
+    }
+
+    video.preload = 'auto'
+    video.onloadedmetadata = () => { video.currentTime = Math.min(1e-5, video.duration) }
+    video.onseeked      = finish
+    video.onloadeddata  = () => setTimeout(() => { if (!settled) finish() }, 200)
+    video.onerror       = () => { URL.revokeObjectURL(url); resolve(null) }
+    video.src = url
+  })
+}
+
+function dataUrlToFile(dataUrl, filename) {
+  const [header, data] = dataUrl.split(',')
+  const mime  = header.match(/:(.*?);/)[1]
+  const bytes = atob(data)
+  const arr   = new Uint8Array(bytes.length)
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+  return new File([arr], filename, { type: mime })
+}
+
 const EMPTY_EDIT_FORM = {
   title: '', subtitle: '', desc: '', type: 'Film', duration: '',
   genre: '', cast: '', director: '', releaseYear: '', rating: '',
@@ -532,6 +575,7 @@ export default function Admin() {
   const [notice, setNotice]                   = useState('')
   const [error, setError]                     = useState('')
   const [dragOver, setDragOver]               = useState(false)
+  const [autoThumbUploading, setAutoThumbUploading] = useState(false)
   const [toast, setToast]                     = useState(null)
   const [jobsLastRefreshed, setJobsLastRefreshed] = useState(null)
 
@@ -1072,6 +1116,26 @@ export default function Admin() {
     const err = validateVideoFile(f)
     if (err) { setError(err); return }
     setError(''); setFile(f)
+
+    // Auto-extract a poster from the first video frame if the selected content has none
+    if (selectedContentId) {
+      const selected = contentItems.find((c) => c._id === selectedContentId)
+      if (selected && !selected.posterUrl) {
+        setAutoThumbUploading(true)
+        analyseVideoFrame(f).then(async (thumb) => {
+          if (!thumb) return
+          try {
+            const thumbFile = dataUrlToFile(thumb, 'auto-poster.jpg')
+            const url = await uploadToCloudinary(thumbFile, { folder: 'dhara/content/posters' })
+            await updateAdminContent(selectedContentId, { posterUrl: url })
+            setContentItems((prev) => prev.map((c) => c._id === selectedContentId ? { ...c, posterUrl: url } : c))
+            setNotice('Auto-poster set from video frame — you can change it in the edit panel.')
+          } catch {
+            // non-fatal; poster can be added manually later
+          }
+        }).catch(() => {}).finally(() => setAutoThumbUploading(false))
+      }
+    }
   }
 
   // When a Series content item is selected, fetch its existing episodes
@@ -1920,6 +1984,12 @@ export default function Admin() {
                     <input className={styles.fileInput} type="file" accept=".mp4,.mov,.mkv,video/mp4,video/quicktime,video/x-matroska" onChange={(e) => handleFileChange(e.target.files?.[0] || null)} required />
                   </div>
                 </div>
+
+                {autoThumbUploading && (
+                  <p style={{ fontSize: 11, color: 'var(--color-accent)', margin: '0 0 8px' }}>
+                    ⟳ Extracting poster from video frame…
+                  </p>
+                )}
 
                 {uploadMode === 'single' && (
                   <button className={styles.primaryBtn} type="submit" disabled={busy || !selectedCollection}>

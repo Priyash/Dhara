@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -619,6 +619,49 @@ function EpisodeDropoff({ episodes }) {
   )
 }
 
+// ── Video frame extraction helpers ───────────────────────────────────────────
+
+function analyseVideoFrame(file) {
+  return new Promise((resolve) => {
+    const video  = document.createElement('video')
+    const canvas = document.createElement('canvas')
+    const url    = URL.createObjectURL(file)
+    let   settled = false
+
+    const finish = () => {
+      if (settled) return
+      settled = true
+      const { videoWidth: w, videoHeight: h } = video
+      let thumb = null
+      try {
+        const scale = w > 0 ? Math.min(1, 480 / w) : 1
+        canvas.width  = Math.round(w * scale) || 480
+        canvas.height = Math.round(h * scale) || 720
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+        thumb = canvas.toDataURL('image/jpeg', 0.85)
+      } catch {}
+      URL.revokeObjectURL(url)
+      resolve(thumb)
+    }
+
+    video.preload = 'auto'
+    video.onloadedmetadata = () => { video.currentTime = Math.min(1e-5, video.duration) }
+    video.onseeked      = finish
+    video.onloadeddata  = () => setTimeout(() => { if (!settled) finish() }, 200)
+    video.onerror       = () => { URL.revokeObjectURL(url); resolve(null) }
+    video.src = url
+  })
+}
+
+function dataUrlToFile(dataUrl, filename) {
+  const [header, data] = dataUrl.split(',')
+  const mime  = header.match(/:(.*?);/)[1]
+  const bytes = atob(data)
+  const arr   = new Uint8Array(bytes.length)
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+  return new File([arr], filename, { type: mime })
+}
+
 const STEPS_BASE = [
   { id: 'basics',   label: 'Basics'   },
   { id: 'media',    label: 'Media'    },
@@ -693,6 +736,8 @@ export default function CreatorStudio() {
   const [toast, setToast]               = useState(null)
   const [imgUploading, setImgUploading] = useState({ poster: false, backdrop: false })
   const [imgProgress,  setImgProgress]  = useState({ poster: 0,     backdrop: 0     })
+  const [vidThumbUploading, setVidThumbUploading] = useState(false)
+  const vidThumbInputRef = useRef(null)
   const [dragEpIdx,    setDragEpIdx]    = useState(null)
 
   const showToast = useCallback((t) => {
@@ -819,6 +864,23 @@ export default function CreatorStudio() {
       showToast({ type: 'error', message: err?.message || 'Image upload failed.' })
     } finally {
       setImgUploading((p) => ({ ...p, [key]: false }))
+    }
+  }
+
+  const handleExtractPosterFromVideo = async (file) => {
+    if (!file) return
+    setVidThumbUploading(true)
+    try {
+      const thumb = await analyseVideoFrame(file)
+      if (!thumb) throw new Error('Could not extract frame')
+      const thumbFile = dataUrlToFile(thumb, 'poster-frame.jpg')
+      const url = await uploadToCloudinary(thumbFile, { folder: 'dhara/creator' })
+      setForm((prev) => ({ ...prev, posterUrl: url }))
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Could not extract thumbnail from video.' })
+    } finally {
+      setVidThumbUploading(false)
+      if (vidThumbInputRef.current) vidThumbInputRef.current.value = ''
     }
   }
 
@@ -2262,6 +2324,27 @@ export default function CreatorStudio() {
                         <input type="file" accept="image/*" style={{ display: 'none' }} disabled={imgUploading[key]}
                           onChange={(e) => handleImageUpload(field, e.target.files?.[0])} />
                       </label>
+                      {/* Poster-only: extract a frame from a video file as fallback */}
+                      {field === 'posterUrl' && (
+                        <>
+                          <input
+                            ref={vidThumbInputRef}
+                            type="file"
+                            accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
+                            style={{ display: 'none' }}
+                            onChange={(e) => handleExtractPosterFromVideo(e.target.files?.[0])}
+                          />
+                          <button
+                            type="button"
+                            className={styles.imageUploadBtn}
+                            style={{ marginTop: 4, opacity: vidThumbUploading ? 0.6 : 1 }}
+                            disabled={vidThumbUploading || imgUploading.poster}
+                            onClick={() => vidThumbInputRef.current?.click()}
+                          >
+                            {vidThumbUploading ? '⟳ Extracting frame…' : 'Extract from video'}
+                          </button>
+                        </>
+                      )}
                       <input className={styles.input} value={form[field]} onChange={ff(field)} placeholder="Or paste URL…" />
                     </div>
                   ))}
