@@ -237,18 +237,23 @@ function ReelGrid() {
 
 // ── Individual grid card ──────────────────────────────────────────────────────
 
+const ASPECT_RATIO_MAP = { '16:9': '16/9', '1:1': '1/1', '9:16': '9/16' }
+
 function ReelCard({ reel, onClick, showGate = false }) {
   const creator    = reel.creatorId
   const studioName = creator?.creatorProfile?.studioName || creator?.displayName || 'Creator'
+  const aspectRatio = ASPECT_RATIO_MAP[reel.aspectRatio] || '9/16'
 
   return (
     <article className={styles.card} onClick={onClick} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}>
       <div
         className={styles.cardPoster}
-        style={reel.thumbnailUrl
-          ? { backgroundImage: `url(${reel.thumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-          : { background: 'linear-gradient(160deg,#1e1b4b 0%,#4c1d95 50%,#7c3aed 100%)' }
-        }
+        style={{
+          aspectRatio,
+          ...(reel.thumbnailUrl
+            ? { backgroundImage: `url(${reel.thumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+            : { background: 'linear-gradient(160deg,#1e1b4b 0%,#4c1d95 50%,#7c3aed 100%)' }),
+        }}
       >
         <div className={styles.cardScrim} />
 

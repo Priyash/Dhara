@@ -469,10 +469,12 @@
 }
 
 /* ── Settings panel ──────────────────────────────────────────────────────────*/
+/* Positioned relative to videoArea (not controlsBar) so it stays in the same
+   spot regardless of screen aspect ratio, orientation, or controls bar height. */
 .settingsPanel {
   position: absolute;
   right: 24px;
-  bottom: calc(100% + 8px);
+  bottom: 110px;
   z-index: 9;
   width: min(320px, calc(100% - 48px));
   border: 1px solid rgba(255,255,255,0.1);
@@ -571,6 +573,7 @@
 
   .settingsPanel {
     right: 12px;
+    bottom: 88px;
     width: min(300px, calc(100% - 24px));
   }
 }
@@ -654,5 +657,6 @@
   .settingsPanel {
     width: 380px;
     right: 48px;
+    bottom: 140px;
   }
 }

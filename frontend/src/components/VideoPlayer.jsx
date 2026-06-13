@@ -72,7 +72,7 @@ function qualityLabel(level) {
   return kbps ? `${h} · ${kbps}kbps` : h
 }
 
-export default function VideoPlayer({ src, title, poster, storageKey, maxQualityHeight = null }) {
+export default function VideoPlayer({ src, title, poster, storageKey, maxQualityHeight = null, onPlayingChange }) {
   const videoRef    = useRef(null)
   const containerRef= useRef(null)
   const progressRef = useRef(null)
@@ -753,6 +753,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
   const handleEnded = () => {
     setPlaying(false)
+    onPlayingChange?.(false)
     clearBuffering()
     if (STORAGE_KEY) {
       localStorage.removeItem(STORAGE_KEY)
@@ -1056,8 +1057,8 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
             setCurrentTime(e.target.currentTime)
             if (e.target.buffered.length) setBuffered(e.target.buffered.end(e.target.buffered.length - 1))
           }}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
+          onPlay={() => { setPlaying(true); onPlayingChange?.(true) }}
+          onPause={() => { setPlaying(false); onPlayingChange?.(false) }}
           onEnded={handleEnded}
           playsInline
         />
@@ -1186,9 +1187,12 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
           </div>
         </div>
 
-        {/* Settings panel */}
-        {showSettings && (
-          <div className={styles.settingsPanel}>
+        </div>{/* end controlsBar */}
+
+        {/* Settings panel — anchored to videoArea, not controlsBar, so
+            position stays consistent across all aspect ratios and screen sizes */}
+        {showSettings && controlsVisible && (
+          <div className={styles.settingsPanel} onClick={(e) => e.stopPropagation()}>
             <div className={styles.settingsGroup}>
               <p className={styles.settingsLabel}>Speed</p>
               <div className={styles.settingsChips}>
@@ -1223,7 +1227,6 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
             )}
           </div>
         )}
-        </div>{/* end controlsBar */}
       </div>{/* end videoArea */}
     </div>
   )
