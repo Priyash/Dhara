@@ -1597,28 +1597,15 @@ export default function CreatorStudio() {
               <>
                 {/* ── Tier advancement banner ── */}
                 {revenue.tierAdvanced && !tierAdvancedDismissed && (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    gap: 12, padding: '14px 18px', marginBottom: 16, borderRadius: 12,
-                    background: 'linear-gradient(135deg,rgba(167,139,250,0.12),rgba(99,102,241,0.08))',
-                    border: '1px solid rgba(167,139,250,0.25)',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <Trophy size={18} style={{ color: '#a78bfa', flexShrink: 0 }} />
+                  <div className={styles.tierBanner}>
+                    <div className={styles.tierBannerLeft}>
+                      <Trophy size={18} />
                       <div>
-                        <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text)', margin: 0, fontFamily: 'var(--font-display)' }}>
-                          You've reached {revenue.newTierName}!
-                        </p>
-                        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0, fontFamily: 'var(--font-body)' }}>
-                          Your revenue share has increased. A confirmation email has been sent.
-                        </p>
+                        <p className={styles.tierBannerTitle}>You've reached {revenue.newTierName}!</p>
+                        <p className={styles.tierBannerSub}>Your revenue share has increased. A confirmation email has been sent.</p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => setTierAdvancedDismissed(true)}
-                      style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: 4 }}
-                      aria-label="Dismiss"
-                    >
+                    <button className={styles.tierBannerDismiss} onClick={() => setTierAdvancedDismissed(true)} aria-label="Dismiss">
                       <X size={14} />
                     </button>
                   </div>

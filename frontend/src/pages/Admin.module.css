@@ -2587,7 +2587,7 @@
 .revDashboard {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 8px 32px 64px;
+  padding: 8px 40px 64px;
   display: flex;
   flex-direction: column;
 }
@@ -2659,8 +2659,8 @@
 }
 
 .revKpiCardIcon {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   background: rgba(219,39,119,0.12);
   border: 1px solid rgba(219,39,119,0.2);
@@ -2762,7 +2762,7 @@
 .monDashboard {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 24px 32px 64px;
+  padding: 24px 40px 64px;
   display: flex;
   flex-direction: column;
   gap: 16px;
