@@ -47,7 +47,7 @@
   font-family: var(--font-display);
   font-size: clamp(18px, 2.5vw, 28px);
   font-weight: 700;
-  color: var(--shelf-accent, #e85d26);
+  color: var(--shelf-accent, #4f46e5);
   margin: 0 0 3px;
   line-height: 1.1;
 }
