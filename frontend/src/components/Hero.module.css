@@ -296,10 +296,10 @@
   opacity: 1;
 }
 
-/* Touch / TV: always show nav arrows */
-@media (hover: none) {
+/* Touch devices (mobile, tablet, TV remote) — hide arrows, use swipe instead */
+@media (hover: none), (pointer: coarse) {
   .navBtn {
-    opacity: 0.75;
+    display: none;
   }
 }
 
@@ -388,6 +388,17 @@
   .indicators {
     left: 20px;
     bottom: 16px;
+    gap: 6px;
+  }
+
+  .indicatorDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 3px;
+  }
+
+  .indicatorDotActive {
+    width: 20px;
   }
 
   .ring1, .ring2, .dot {
@@ -419,20 +430,20 @@
     display: none;
   }
 
-  /* Smaller arrows on phone — visible, not hidden */
-  .navBtn {
-    width: 34px;
-    height: 34px;
-    opacity: 0.8;
+  .indicators {
+    bottom: 12px;
+    left: 16px;
+    gap: 5px;
   }
 
-  .navPrev { left: 8px; }
-  .navNext { right: 8px; }
-
-  /* Larger tap targets for dot indicators on touch */
   .indicatorDot {
-    padding: 8px 4px;
-    margin: -8px -4px;
+    width: 5px;
+    height: 5px;
+    border-radius: 3px;
+  }
+
+  .indicatorDotActive {
+    width: 16px;
   }
 }
 
