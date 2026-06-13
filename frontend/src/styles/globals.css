@@ -12,8 +12,8 @@
   --color-text:       #ffffff;
   --color-text-muted: rgba(255, 255, 255, 0.55);
   --color-text-dim:   rgba(255, 255, 255, 0.3);
-  --color-accent:     #4f46e5;
-  --color-accent-dark:#4338ca;
+  --color-accent:     #db2777;
+  --color-accent-dark:#9d174d;
   --color-danger:     #e11d48;
   --font-display:     'Playfair Display', Georgia, serif;
   --font-body:        'DM Sans', system-ui, sans-serif;
@@ -109,7 +109,7 @@ img {
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, var(--color-accent), #c7d2fe);
+  background: linear-gradient(135deg, var(--color-accent), #f59e0b);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

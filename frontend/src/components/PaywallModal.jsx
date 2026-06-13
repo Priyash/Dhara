@@ -86,7 +86,7 @@ export default function PaywallModal() {
               subscription_id: sub.subscriptionId,
               name:            'ধারা',
               description:     'Monthly Plan — auto-renews every month',
-              theme:           { color: '#4f46e5' },
+              theme:           { color: '#db2777' },
               modal: {
                 ondismiss: () => reject(new Error('dismissed')),
               },
@@ -127,7 +127,7 @@ export default function PaywallModal() {
             order_id:    order.orderId,
             name:        'ধারা',
             description: `${selected.charAt(0).toUpperCase() + selected.slice(1)} Plan`,
-            theme:       { color: '#4f46e5' },
+            theme:       { color: '#db2777' },
             modal: {
               ondismiss: () => reject(new Error('dismissed')),
             },
@@ -219,7 +219,7 @@ export default function PaywallModal() {
           ) : isSubscribed ? (
             <>
               <div className={styles.eyebrow}>
-                <Crown size={16} color="#4f46e5" />
+                <Crown size={16} color="#db2777" />
                 <span>Manage Plan</span>
               </div>
               <h2 className={styles.heading}>Change Your Plan</h2>
@@ -232,7 +232,7 @@ export default function PaywallModal() {
           ) : isOnTrial ? (
             <>
               <div className={styles.eyebrow}>
-                <Clock size={16} color="#4f46e5" />
+                <Clock size={16} color="#db2777" />
                 <span>Free Trial Active</span>
               </div>
               <h2 className={styles.heading}>
@@ -245,7 +245,7 @@ export default function PaywallModal() {
           ) : (
             <>
               <div className={styles.eyebrow}>
-                <Crown size={16} color="#4f46e5" />
+                <Crown size={16} color="#db2777" />
                 <span>Upgrade to Pro</span>
               </div>
               <h2 className={styles.heading}>Unlock All Content</h2>

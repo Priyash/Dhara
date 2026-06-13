@@ -119,8 +119,8 @@
 }
 
 .primaryBtn {
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dark));
-  color: #141414;
+  background: var(--color-accent));
+  color: #fff;
 }
 
 .ghostBtn:disabled,

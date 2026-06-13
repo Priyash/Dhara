@@ -177,7 +177,7 @@ function Sparkline({ values }) {
 function ApprovalArc({ rate }) {
   const r = 36, cx = 46, cy = 46, C = 2 * Math.PI * r
   const filled  = (rate / 100) * C
-  const color   = rate >= 70 ? '#4ade80' : rate >= 40 ? '#818cf8' : '#f87171'
+  const color   = rate >= 70 ? '#4ade80' : rate >= 40 ? '#f472b6' : '#f87171'
   return (
     <svg viewBox="0 0 92 92" width="92" height="92" className={styles.approvalArc}>
       <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="8" />
@@ -200,7 +200,7 @@ function ApprovalArc({ rate }) {
 function StatusDonut({ counts }) {
   const segs = [
     { label: 'Live',      value: counts.approved || 0, color: '#4ade80' },
-    { label: 'In Review', value: counts.pending  || 0, color: '#818cf8' },
+    { label: 'In Review', value: counts.pending  || 0, color: '#f472b6' },
     { label: 'Rejected',  value: counts.rejected || 0, color: '#f87171' },
   ].filter((s) => s.value > 0)
   const total = segs.reduce((s, x) => s + x.value, 0) || 1
@@ -252,7 +252,7 @@ function PipelineFlow({ counts, content }) {
     { label: 'Submitted', value: counts.total    || 0, color: '#a78bfa', bg: 'rgba(167,139,250,0.08)' },
     { label: 'Approved',  value: counts.approved || 0, color: '#4ade80', bg: 'rgba(74,222,128,0.08)'  },
     { label: 'Has Views', value: withViews,            color: '#38bdf8', bg: 'rgba(56,189,248,0.08)'  },
-    { label: 'Has Likes', value: withLikes,            color: '#4f46e5', bg: 'rgba(79,70,229,0.08)'  },
+    { label: 'Has Likes', value: withLikes,            color: '#db2777', bg: 'rgba(219,39,119,0.08)'  },
   ]
   return (
     <div className={styles.pipelineFlow}>
@@ -291,14 +291,14 @@ function RankingBars({ items }) {
   const sorted = [...items].sort((a, b) => b.viewCount - a.viewCount)
   const maxV   = Math.max(...sorted.map((i) => i.viewCount), 1)
   const fmtV   = (v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)
-  const GRAD   = { Film: ['#4c1d95','#a78bfa'], Series: ['#78350f','#4f46e5'], Documentary: ['#064e3b','#34d399'] }
+  const GRAD   = { Film: ['#4c1d95','#a78bfa'], Series: ['#78350f','#db2777'], Documentary: ['#064e3b','#34d399'] }
   return (
     <div className={styles.rankingBars}>
       {sorted.map((item, i) => {
         const pct    = Math.max((item.viewCount / maxV) * 100, 1)
         const [f, t] = GRAD[item.type] || ['#1e1b4b','#a78bfa']
         const eng    = item.viewCount > 0 ? ((item.likeCount / item.viewCount) * 100).toFixed(1) : '0'
-        const eColor = Number(eng) >= 10 ? '#4ade80' : Number(eng) >= 4 ? '#818cf8' : 'rgba(255,255,255,0.25)'
+        const eColor = Number(eng) >= 10 ? '#4ade80' : Number(eng) >= 4 ? '#f472b6' : 'rgba(255,255,255,0.25)'
         return (
           <div key={item._id} className={styles.rankingBarRow}>
             <div className={styles.rankingBarLeft}>
@@ -330,7 +330,7 @@ function EngagementScatter({ items }) {
   const iW = W - P * 2, iH = H - P * 2
   const maxV = Math.max(...pts.map((i) => i.viewCount), 1)
   const maxL = Math.max(...pts.map((i) => i.likeCount), 1)
-  const TC   = { Film: '#a78bfa', Series: '#4f46e5', Documentary: '#34d399' }
+  const TC   = { Film: '#a78bfa', Series: '#db2777', Documentary: '#34d399' }
   if (!pts.length) return (
     <div className={styles.scatterEmpty}><p>No approved content with activity yet.</p></div>
   )
@@ -380,7 +380,7 @@ function calcHealth(item, avgViews) {
   const viewRatio = Math.min(item.viewCount / Math.max(avgViews, 1), 2) / 2
   const engRatio  = Math.min((item.likeCount / item.viewCount) / 0.15, 1)
   const score     = viewRatio * 60 + engRatio * 40
-  if (score >= 70) return { label: 'Hot',     color: '#4f46e5', Icon: Flame        }
+  if (score >= 70) return { label: 'Hot',     color: '#db2777', Icon: Flame        }
   if (score >= 45) return { label: 'Rising',  color: '#4ade80', Icon: TrendingUp   }
   if (score >= 25) return { label: 'Steady',  color: '#a78bfa', Icon: Minus        }
   return              { label: 'Cooling', color: '#94a3b8', Icon: TrendingDown }
@@ -402,7 +402,7 @@ function InsightsRow({ overview, content }) {
   if (ov.topContent && ov.avgViewsPerTitle > 0) {
     const mult = (ov.topContent.viewCount / ov.avgViewsPerTitle).toFixed(1)
     if (Number(mult) >= 1.5)
-      cards.push({ color: '#4f46e5', text: `"${ov.topContent.title}" pulls ${mult}× more views than your average title` })
+      cards.push({ color: '#db2777', text: `"${ov.topContent.title}" pulls ${mult}× more views than your average title` })
   }
 
   const films  = content.filter((c) => c.type === 'Film'   && c.viewCount > 0)
@@ -520,11 +520,11 @@ function HourHistogram({ data }) {
           return (
             <g key={d.hour}>
               <rect x={x} y={y} width={barW} height={barH} rx="2"
-                fill={isPk ? '#4f46e5' : hasAny && d.views > 0 ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.07)'}
-                style={isPk ? { filter: 'drop-shadow(0 0 4px rgba(79,70,229,0.55))' } : undefined} />
+                fill={isPk ? '#db2777' : hasAny && d.views > 0 ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.07)'}
+                style={isPk ? { filter: 'drop-shadow(0 0 4px rgba(219,39,119,0.55))' } : undefined} />
               {show && (
                 <text x={cx} y={H - 1} textAnchor="middle" fontSize="8"
-                  fill={isPk ? 'rgba(79,70,229,0.9)' : 'rgba(255,255,255,0.22)'}
+                  fill={isPk ? 'rgba(219,39,119,0.9)' : 'rgba(255,255,255,0.22)'}
                   fontWeight={isPk ? '700' : '400'} fontFamily="system-ui,sans-serif">
                   {fmtH(d.hour)}
                 </text>
@@ -643,7 +643,7 @@ const EMPTY_FORM = {
 }
 
 const STATUS_META = {
-  pending:  { label: 'In Review',  color: '#818cf8', bg: 'rgba(129,140,248,0.12)'  },
+  pending:  { label: 'In Review',  color: '#f472b6', bg: 'rgba(244,114,182,0.12)'  },
   approved: { label: 'Live',       color: '#4ade80', bg: 'rgba(74,222,128,0.12)'  },
   rejected: { label: 'Rejected',   color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
 }
@@ -1060,7 +1060,7 @@ export default function CreatorStudio() {
                     )}
                   </div>
                   <div className={styles.analyticsStatCard}>
-                    <div className={styles.analyticsStatIcon} style={{ color: '#4f46e5', background: 'rgba(79,70,229,0.1)' }}>
+                    <div className={styles.analyticsStatIcon} style={{ color: '#db2777', background: 'rgba(219,39,119,0.1)' }}>
                       <ThumbsUp size={16} />
                     </div>
                     <p className={styles.analyticsStatValue}>{fmtN(ov.totalLikes)}</p>
@@ -1182,7 +1182,7 @@ export default function CreatorStudio() {
                           const hasEpisodes = (item.type === 'Series' || item.type === 'Serial Drama') && item.episodes.length > 0
                           const epMax       = hasEpisodes
                             ? Math.max(...item.episodes.map((e) => e.viewCount), 1) : 1
-                          const eColor      = likePct >= 10 ? '#4ade80' : likePct >= 4 ? '#818cf8' : 'rgba(255,255,255,0.28)'
+                          const eColor      = likePct >= 10 ? '#4ade80' : likePct >= 4 ? '#f472b6' : 'rgba(255,255,255,0.28)'
                           const health      = calcHealth(item, ov.avgViewsPerTitle)
                           const delta       = analytics?.rankingDeltas?.[String(item._id)] ?? null
                           return (
@@ -1227,7 +1227,7 @@ export default function CreatorStudio() {
                                 </div>
 
                                 <div className={styles.analyticsDualBarRow}>
-                                  <ThumbsUp size={10} style={{ color: '#4f46e5', flexShrink: 0, opacity: 0.7 }} />
+                                  <ThumbsUp size={10} style={{ color: '#db2777', flexShrink: 0, opacity: 0.7 }} />
                                   <div className={styles.analyticsDualBarTrack}>
                                     <div className={styles.analyticsDualBarFillLikes}
                                       style={{ width: `${item.viewCount > 0 ? Math.round((item.likeCount / maxViews) * 100) : 0}%` }} />
@@ -1311,7 +1311,7 @@ export default function CreatorStudio() {
 
                   {/* Total Likes */}
                   <div className={styles.analyticsStatCard}>
-                    <div className={styles.analyticsStatIcon} style={{ color: '#4f46e5', background: 'rgba(79,70,229,0.1)' }}>
+                    <div className={styles.analyticsStatIcon} style={{ color: '#db2777', background: 'rgba(219,39,119,0.1)' }}>
                       <Heart size={16} />
                     </div>
                     <p className={styles.analyticsStatValue}>{fmtReel(reelOv.totalLikes)}</p>
@@ -1360,7 +1360,7 @@ export default function CreatorStudio() {
                     const avgV = (totalViews || 0) / Math.max(reels.filter(r => r.submissionStatus === 'approved').length, 1)
                     const mult = (topReel.viewCount / avgV).toFixed(1)
                     if (Number(mult) >= 1.5)
-                      cards.push({ color: '#4f46e5', text: `"${topReel.title || 'Your top reel'}" gets ${mult}× more views than your average reel` })
+                      cards.push({ color: '#db2777', text: `"${topReel.title || 'Your top reel'}" gets ${mult}× more views than your average reel` })
                   }
                   if (peakHour != null) {
                     const amPm = peakHour === 0 ? '12 AM' : peakHour < 12 ? `${peakHour} AM` : peakHour === 12 ? '12 PM' : `${peakHour - 12} PM`
@@ -1427,7 +1427,7 @@ export default function CreatorStudio() {
                           const vRat  = Math.min(reel.viewCount / Math.max(avgViews, 1), 2) / 2
                           const score = vRat * 60 + Math.min(eng / 0.15, 1) * 40
                           const health = score >= 70
-                            ? { label: 'Hot',     color: '#4f46e5', bg: 'rgba(79,70,229,0.1)',  Icon: Flame }
+                            ? { label: 'Hot',     color: '#db2777', bg: 'rgba(219,39,119,0.1)',  Icon: Flame }
                             : score >= 45
                             ? { label: 'Rising',  color: '#4ade80', bg: 'rgba(74,222,128,0.1)', Icon: TrendingUp }
                             : score >= 25
@@ -1460,7 +1460,7 @@ export default function CreatorStudio() {
                     .slice(0, 5)
                   if (!top.length) return null
                   const maxV = Math.max(...top.map((r) => r.viewCount || 0), 1)
-                  const GRAD = ['#7c3aed','#a78bfa','#c4b5fd','#6366f1','#818cf8']
+                  const GRAD = ['#7c3aed','#a78bfa','#c4b5fd','#6366f1','#f472b6']
                   return (
                     <div className={styles.reelChartFull} style={{ marginTop: 12 }}>
                       <p className={styles.analyticsChartTitle}><TrendingUp size={12} /> TOP REELS BY VIEWS</p>
@@ -1509,7 +1509,7 @@ export default function CreatorStudio() {
                           </div>
                           <div><StatusChip status={reel.submissionStatus} /></div>
                           <span className={styles.reelAnalyticsStat} style={{ color: '#a78bfa' }}>{fmtReel(views)}</span>
-                          <span className={styles.reelAnalyticsStat} style={{ color: '#4f46e5' }}>{fmtReel(likes)}</span>
+                          <span className={styles.reelAnalyticsStat} style={{ color: '#db2777' }}>{fmtReel(likes)}</span>
                           <span className={styles.reelAnalyticsStat} style={{ color: '#c084fc' }}>{fmtReel(comments)}</span>
                           <span className={styles.reelAnalyticsStat} style={{ color: eng !== '—' ? '#4ade80' : 'rgba(255,255,255,0.2)' }}>{eng}</span>
                         </div>
@@ -1842,9 +1842,9 @@ export default function CreatorStudio() {
                             </p>
                           </div>
                           <span className={styles.revenuePayoutStatus} style={{
-                            color:       payout.status === 'paid' ? '#4ade80' : '#818cf8',
-                            background:  payout.status === 'paid' ? 'rgba(74,222,128,0.1)' : 'rgba(129,140,248,0.1)',
-                            borderColor: payout.status === 'paid' ? 'rgba(74,222,128,0.25)' : 'rgba(129,140,248,0.25)',
+                            color:       payout.status === 'paid' ? '#4ade80' : '#f472b6',
+                            background:  payout.status === 'paid' ? 'rgba(74,222,128,0.1)' : 'rgba(244,114,182,0.1)',
+                            borderColor: payout.status === 'paid' ? 'rgba(74,222,128,0.25)' : 'rgba(244,114,182,0.25)',
                           }}>
                             {payout.status === 'paid' ? <CheckCircle2 size={10} /> : <Clock size={10} />}
                             {payout.status === 'paid' ? 'Paid' : 'Processing'}
@@ -1930,9 +1930,9 @@ export default function CreatorStudio() {
                     {item.revisionCount > 0 && (
                       <span style={{
                         fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999,
-                        background: item.revisionCount >= 4 ? 'rgba(248,113,113,0.12)' : 'rgba(129,140,248,0.10)',
-                        color:      item.revisionCount >= 4 ? '#f87171' : '#818cf8',
-                        border:     `1px solid ${item.revisionCount >= 4 ? 'rgba(248,113,113,0.25)' : 'rgba(129,140,248,0.2)'}`,
+                        background: item.revisionCount >= 4 ? 'rgba(248,113,113,0.12)' : 'rgba(244,114,182,0.10)',
+                        color:      item.revisionCount >= 4 ? '#f87171' : '#f472b6',
+                        border:     `1px solid ${item.revisionCount >= 4 ? 'rgba(248,113,113,0.25)' : 'rgba(244,114,182,0.2)'}`,
                         flexShrink: 0,
                       }}>
                         {item.revisionCount}/5 revisions

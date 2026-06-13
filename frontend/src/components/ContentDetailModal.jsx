@@ -267,7 +267,7 @@ export default function ContentDetailModal() {
                 <>
                   <span className={styles.metaDot}>·</span>
                   <span className={styles.metaRating}>
-                    <Star size={11} fill="#4f46e5" color="#4f46e5" />
+                    <Star size={11} fill="#db2777" color="#db2777" />
                     {rating.toFixed(1)}
                     {reviewCount && <span className={styles.metaReviewCount}> ({reviewCount})</span>}
                   </span>

@@ -48,8 +48,8 @@ function StarRating({ contentId, initialScore, communityRating, communityRatingC
           >
             <Star
               size={18}
-              fill={n <= display ? '#4f46e5' : 'none'}
-              color={n <= display ? '#4f46e5' : 'rgba(255,255,255,0.25)'}
+              fill={n <= display ? '#db2777' : 'none'}
+              color={n <= display ? '#db2777' : 'rgba(255,255,255,0.25)'}
               strokeWidth={1.5}
             />
           </button>
@@ -323,7 +323,7 @@ export default function Watch() {
               <div className={styles.gateMovieMeta}>
                 {content.releaseYear && <span>{content.releaseYear}</span>}
                 {content.type        && <><span className={styles.gateMetaDot}>·</span><span>{content.type}</span></>}
-                {content.rating > 0  && <><span className={styles.gateMetaDot}>·</span><span className={styles.gateRating}><Star size={11} fill="#4f46e5" color="#4f46e5" /> {content.rating.toFixed(1)}</span></>}
+                {content.rating > 0  && <><span className={styles.gateMetaDot}>·</span><span className={styles.gateRating}><Star size={11} fill="#db2777" color="#db2777" /> {content.rating.toFixed(1)}</span></>}
               </div>
             </div>
           )}
@@ -412,7 +412,7 @@ export default function Watch() {
             <div className={styles.gateMovieMeta}>
               {content.releaseYear && <span>{content.releaseYear}</span>}
               {content.type        && <><span className={styles.gateMetaDot}>·</span><span>{content.type}</span></>}
-              {hasRating           && <><span className={styles.gateMetaDot}>·</span><span className={styles.gateRating}><Star size={11} fill="#4f46e5" color="#4f46e5" /> {content.rating.toFixed(1)}</span></>}
+              {hasRating           && <><span className={styles.gateMetaDot}>·</span><span className={styles.gateRating}><Star size={11} fill="#db2777" color="#db2777" /> {content.rating.toFixed(1)}</span></>}
             </div>
           </div>
 
@@ -439,7 +439,7 @@ export default function Watch() {
 
             {gateState === 'unverified' && (
               <>
-                <div className={styles.gatePanelIcon} style={{ color: '#818cf8' }}><MailCheck size={22} /></div>
+                <div className={styles.gatePanelIcon} style={{ color: '#f472b6' }}><MailCheck size={22} /></div>
                 <h2 className={styles.gatePanelTitle}>Verify your email</h2>
                 <p className={styles.gatePanelDesc}>
                   Check your inbox and verify your email address to start watching.
@@ -457,7 +457,7 @@ export default function Watch() {
 
             {gateState === 'premium' && (
               <>
-                <div className={styles.gatePanelIcon} style={{ color: '#4f46e5' }}><Crown size={22} /></div>
+                <div className={styles.gatePanelIcon} style={{ color: '#db2777' }}><Crown size={22} /></div>
                 <h2 className={styles.gatePanelTitle}>Premium content</h2>
                 <p className={styles.gatePanelDesc}>
                   Subscribe to Dhara Pro to unlock this title and all premium content.
@@ -577,7 +577,7 @@ export default function Watch() {
                 )}
                 {hasRating && (
                   <span className={styles.factRating}>
-                    <Star size={11} fill="#4f46e5" color="#4f46e5" />
+                    <Star size={11} fill="#db2777" color="#db2777" />
                     {content.rating.toFixed(1)}
                   </span>
                 )}
@@ -601,7 +601,7 @@ export default function Watch() {
                   })()}
                   <em>likes</em>
                 </span>
-                <span className={styles.engagementStat} style={{ color: '#4f46e5' }}>
+                <span className={styles.engagementStat} style={{ color: '#db2777' }}>
                   <MessageSquare size={13} />
                   {content.communityRatingCount > 0
                     ? `${content.communityRating?.toFixed(1) ?? '0.0'}`

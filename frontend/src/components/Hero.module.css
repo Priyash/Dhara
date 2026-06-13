@@ -80,7 +80,7 @@
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background: rgba(79, 70, 229, 0.15);
+  background: rgba(219, 39, 119, 0.15);
   pointer-events: none;
   z-index: 1;
 }
@@ -210,22 +210,22 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(79, 70, 229, 0.12);
-  border: 1px solid rgba(79, 70, 229, 0.35);
+  background: rgba(219, 39, 119, 0.12);
+  border: 1px solid rgba(219, 39, 119, 0.35);
   border-radius: var(--radius-md);
   padding: 14px 24px;
   font-family: var(--font-body);
   font-size: 15px;
   font-weight: 600;
-  color: #4f46e5;
+  color: #db2777;
   cursor: pointer;
   backdrop-filter: blur(10px);
   transition: background var(--transition), border-color var(--transition);
 }
 
 .infoBtn:hover {
-  background: rgba(79, 70, 229, 0.2);
-  border-color: rgba(79, 70, 229, 0.55);
+  background: rgba(219, 39, 119, 0.2);
+  border-color: rgba(219, 39, 119, 0.55);
 }
 
 .muteBtn {
