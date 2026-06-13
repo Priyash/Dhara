@@ -1,5 +1,31 @@
 .rows {
   padding-top: 24px;
+  position: relative;
+}
+
+/* Faint rose ambient pulse that sits between content rows */
+.ambientPulse {
+  position: relative;
+  height: 1px;
+  margin: -20px 0;
+  pointer-events: none;
+}
+
+.ambientPulse::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 70%;
+  height: 300px;
+  background: radial-gradient(ellipse at center, rgba(219, 39, 119, 0.07) 0%, transparent 70%);
+  animation: ambientPulse 9s ease-in-out infinite;
+}
+
+@keyframes ambientPulse {
+  0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(0.95); }
+  50%       { opacity: 1;   transform: translate(-50%, -50%) scale(1.05); }
 }
 
 /* Promo banner */

@@ -1,0 +1,183 @@
+.wrap {
+  padding: 0 40px;
+  margin-bottom: 40px;
+}
+
+.eyebrow {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin: 0 0 12px;
+}
+
+.card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  height: 230px;
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 52px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(219, 39, 119, 0.18);
+}
+
+/* ── Backdrop ──────────────────────────────────────────────────────────── */
+.backdrop {
+  position: relative;
+  overflow: hidden;
+}
+
+.backdropImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.4s ease;
+}
+
+.card:hover .backdropImg {
+  transform: scale(1.04);
+}
+
+.backdropFallback {
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse at 30% 50%, rgba(219, 39, 119, 0.15), rgba(17, 17, 21, 0.96));
+}
+
+/* Horizontal fade to black so info panel blends in */
+.backdropFade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 55%, var(--color-surface) 100%);
+}
+
+/* ── Info panel ────────────────────────────────────────────────────────── */
+.info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 24px 32px;
+  gap: 10px;
+}
+
+.genre {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1.15;
+}
+
+.progressWrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.progressTrack {
+  flex: 1;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 2px;
+}
+
+.progressLabel {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.resumeBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 20px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  width: fit-content;
+  transition: opacity 0.15s;
+}
+
+.resumeBtn:hover { opacity: 0.86; }
+
+.moreBadge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* ── Mobile ────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .wrap { padding: 0 16px; }
+
+  .card {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .backdrop { height: 190px; }
+
+  .backdropFade {
+    background: linear-gradient(to top, var(--color-surface) 0%, transparent 55%);
+  }
+
+  .info {
+    padding: 16px 18px;
+    gap: 8px;
+  }
+
+  .title { font-size: 20px; }
+}
+
+/* ── TV / 4K ───────────────────────────────────────────────────────────── */
+@media (min-width: 1920px) {
+  .wrap { padding: 0 72px; }
+
+  .card { height: 300px; }
+
+  .title { font-size: 34px; }
+
+  .info { padding: 32px 48px; }
+
+  .resumeBtn { font-size: 16px; padding: 13px 26px; }
+}

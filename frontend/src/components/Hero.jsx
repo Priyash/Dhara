@@ -107,6 +107,7 @@ export default function Hero() {
       <div className={styles.radialOverlay} />
       <div className={styles.sideOverlay} />
       <div className={styles.bottomFade} />
+      <div className={styles.breathOverlay} aria-hidden="true" />
       <div className={styles.ring1} aria-hidden="true" />
       <div className={styles.ring2} aria-hidden="true" />
       <div className={styles.dot}   aria-hidden="true" />

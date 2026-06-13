@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Hero from '../components/Hero'
 import ContentRow from '../components/ContentRow'
+import CinematicRow from '../components/CinematicRow'
+import GenreMosaic from '../components/GenreMosaic'
+import WideResumeCard from '../components/WideResumeCard'
 import CuratedShelfRow from '../components/CuratedShelfRow'
 import { useStore } from '../store/useStore'
 import { fetchContent, fetchShelves, fetchContinueWatching, fetchRecommendationShelves } from '../services/api'
@@ -10,14 +13,13 @@ import styles from './Home.module.css'
 export default function Home() {
   const { openItem, isSubscribed, isLoggedIn } = useStore()
   const navigate = useNavigate()
-  const [content,          setContent]          = useState([])
-  const [shelves,              setShelves]              = useState([])
-  const [continueWatching,     setContinueWatching]     = useState([])
+  const [content,               setContent]               = useState([])
+  const [shelves,               setShelves]               = useState([])
+  const [continueWatching,      setContinueWatching]      = useState([])
   const [recommendationShelves, setRecommendationShelves] = useState([])
-  const [contentLoading,       setContentLoading]       = useState(true)
+  const [contentLoading,        setContentLoading]        = useState(true)
 
   useEffect(() => {
-    // Cap at 48 — enough for all Home rows. Browse handles full paginated exploration.
     fetchContent({ sort: 'rating', page: 1, limit: 48 })
       .then((res) => setContent(Array.isArray(res) ? res : (res.items ?? [])))
       .catch(() => {})
@@ -46,29 +48,27 @@ export default function Home() {
 
   const rowProps = { onCardClick: openItem, isSubscribed }
 
+  // Continue watching click — go directly to watch page (respects paywall via openItem fallback)
+  const handleContinueClick = (item) => {
+    if (item.isPremium && !isSubscribed) { openItem(item); return }
+    navigate(`/watch/${item.id || item._id}`)
+  }
+
   return (
     <main>
       <Hero />
 
       <div className={styles.rows}>
 
+        {/* ── Continue Watching — wide resume card ── */}
         {continueWatching.length > 0 && (
-          <ContentRow
-            title="Continue Watching"
+          <WideResumeCard
             items={continueWatching}
-            onSeeAll={null}
-            isSubscribed={isSubscribed}
-            onCardClick={(item) => {
-              // Premium gate: open paywall modal instead of navigating
-              if (item.isPremium && !isSubscribed) {
-                openItem(item)
-                return
-              }
-              navigate(`/watch/${item.id || item._id}`)
-            }}
+            onCardClick={handleContinueClick}
           />
         )}
 
+        {/* ── Recommendation shelves (affinity / top10 / genre) ── */}
         {recommendationShelves
           .filter(shelf => shelf.type !== 'progress')
           .map(shelf => (
@@ -89,6 +89,7 @@ export default function Home() {
           ))
         }
 
+        {/* ── Trending ── */}
         {contentLoading ? (
           <div className={styles.skeletonRows}>
             {[1, 2, 3].map((r) => (
@@ -111,25 +112,27 @@ export default function Home() {
           />
         )}
 
+        {/* ── New Releases — cinematic 16:9 row ── */}
         {newReleases.length > 0 && (
-          <ContentRow
+          <CinematicRow
             title="New Releases"
+            eyebrow="Just dropped"
             items={newReleases}
+            onCardClick={openItem}
             onSeeAll={() => navigate('/browse?filter=New')}
-            {...rowProps}
           />
         )}
 
+        {/* ── Live ── */}
         {live.length > 0 && (
-          <ContentRow
-            title="Live Now"
-            items={live}
-            {...rowProps}
-          />
+          <ContentRow title="Live Now" items={live} {...rowProps} />
         )}
 
+        {/* ── Movies — editorial mosaic + overflow row ── */}
         {movies.length > 0 && (
           <>
+            <div className={styles.ambientPulse} aria-hidden="true" />
+
             <div className={styles.promo}>
               <div className={styles.promoRing1} aria-hidden="true" />
               <div className={styles.promoRing2} aria-hidden="true" />
@@ -143,15 +146,27 @@ export default function Home() {
               </button>
             </div>
 
-            <ContentRow
+            {/* First 5 as magazine mosaic */}
+            <GenreMosaic
               title="Movies"
               items={movies}
+              onCardClick={openItem}
               onSeeAll={() => navigate('/browse?type=Film')}
-              {...rowProps}
             />
+
+            {/* Overflow items (6+) as a standard row */}
+            {movies.length > 5 && (
+              <ContentRow
+                title="More Films"
+                items={movies.slice(5)}
+                onSeeAll={() => navigate('/browse?type=Film')}
+                {...rowProps}
+              />
+            )}
           </>
         )}
 
+        {/* ── Series ── */}
         {series.length > 0 && (
           <ContentRow
             title="Series"
@@ -161,15 +176,18 @@ export default function Home() {
           />
         )}
 
+        {/* ── ধারাবাহিক (Serial Drama) — cinematic row ── */}
         {serialDrama.length > 0 && (
-          <ContentRow
+          <CinematicRow
             title="ধারাবাহিক"
+            eyebrow="Serial Drama"
             items={serialDrama}
+            onCardClick={openItem}
             onSeeAll={() => navigate('/browse?type=Serial+Drama')}
-            {...rowProps}
           />
         )}
 
+        {/* ── Originals ── */}
         {originals.length > 0 && (
           <ContentRow
             title="Originals"
@@ -179,7 +197,7 @@ export default function Home() {
           />
         )}
 
-        {/* ── Curated Shelves ── */}
+        {/* ── Curated shelves ── */}
         {shelves.map((shelf) => (
           <CuratedShelfRow
             key={shelf._id}
