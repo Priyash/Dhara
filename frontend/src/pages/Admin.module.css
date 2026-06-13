@@ -755,7 +755,7 @@
   gap: 8px;
   border: none;
   border-radius: var(--radius-md);
-  background: var(--color-accent));
+  background: var(--color-accent);
   color: #111;
   font-family: var(--font-body);
   font-weight: 700;
@@ -2413,9 +2413,67 @@
   background: rgba(255,255,255,0.015);
 }
 
+.shelfSelectedChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.shelfSelectedChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(219,39,119,0.08);
+  border: 1px solid rgba(219,39,119,0.3);
+  border-radius: 6px;
+  padding: 3px 8px 3px 3px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--color-text);
+  max-width: 160px;
+}
+
+.shelfChipThumb {
+  width: 20px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.shelfChipLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.shelfChipRemove {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+  transition: color 0.12s;
+}
+.shelfChipRemove:hover { color: var(--color-accent); }
+
+.shelfContentThumb {
+  width: 28px;
+  height: 40px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.06) center/cover no-repeat;
+  flex-shrink: 0;
+}
+
 .shelfContentRow {
   display: grid;
-  grid-template-columns: 20px 1fr auto;
+  grid-template-columns: 20px 28px 1fr auto;
   gap: 10px;
   align-items: center;
   padding: 9px 12px;

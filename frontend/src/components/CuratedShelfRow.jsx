@@ -31,6 +31,7 @@ export default function CuratedShelfRow({ shelf, onCardClick, isSubscribed = fal
         }}
       >
         <div className={styles.bannerOverlay} />
+        <div className={styles.bannerAccentTint} />
         <div className={styles.bannerContent}>
           <span className={styles.bannerEyebrow}>Curated Collection</span>
           <h3 className={styles.bannerName} style={{ color: accent }}>{shelf.name}</h3>

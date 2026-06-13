@@ -95,7 +95,7 @@
   position: relative;
   z-index: 1;
   flex-shrink: 0;
-  background: var(--color-accent));
+  background: var(--color-accent);
   border: none;
   border-radius: var(--radius-md);
   padding: 13px 24px;
@@ -250,4 +250,23 @@
     justify-content: center;
     gap: 12px 16px;
   }
+}
+
+@media (max-width: 480px) {
+  .skeletonRow { padding: 0 12px; }
+  .promo { margin: 6px 12px 24px; padding: 18px 14px; }
+  .promoHeading { font-size: 19px; }
+  .footer { padding: 20px 12px; }
+}
+
+/* ── TV / 4K ──────────────────────────────────────────────────────────────── */
+@media (min-width: 1920px) {
+  .skeletonRow { padding: 0 72px; }
+  .promo { margin: 12px 72px 56px; padding: 48px 64px; }
+  .promoHeading { font-size: 38px; }
+  .promoSub { font-size: 18px; max-width: 480px; }
+  .promoBtn { padding: 17px 36px; font-size: 17px; }
+  .footer { padding: 48px 72px; }
+  .footerLogo { font-size: 28px; }
+  .footerLink { font-size: 15px; }
 }

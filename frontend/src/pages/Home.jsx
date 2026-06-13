@@ -21,7 +21,7 @@ export default function Home() {
   const [contentLoading,        setContentLoading]        = useState(true)
 
   useEffect(() => {
-    fetchContent({ sort: 'rating', page: 1, limit: 48 })
+    fetchContent({ sort: 'popular', page: 1, limit: 48 })
       .then((res) => setContent(Array.isArray(res) ? res : (res.items ?? [])))
       .catch(() => {})
       .finally(() => setContentLoading(false))
@@ -39,13 +39,25 @@ export default function Home() {
     if (!isLoggedIn) setContinueWatching([])
   }, [isLoggedIn])
 
-  const trending    = content.slice(0, 8)
-  const newReleases = content.filter(c => c.badge === 'NEW')
   const movies      = content.filter(c => c.type === 'Film')
   const series      = content.filter(c => c.type === 'Series')
   const serialDrama = content.filter(c => c.type === 'Serial Drama')
   const originals   = content.filter(c => c.type === 'Documentary')
+  const newReleases = content.filter(c => c.badge === 'NEW')
   const live        = content.filter(c => c.badge === 'LIVE')
+
+  // Pick top 2 from each category so all types are represented; backfill to 8 if any category is thin
+  const trendingPick = [
+    ...movies.slice(0, 2),
+    ...series.slice(0, 2),
+    ...serialDrama.slice(0, 2),
+    ...originals.slice(0, 2),
+  ]
+  const trendingIds  = new Set(trendingPick.map(c => c._id || c.id))
+  const trending     = [
+    ...trendingPick,
+    ...content.filter(c => !trendingIds.has(c._id || c.id)),
+  ].slice(0, 8)
 
   const rowProps = { onCardClick: openItem, isSubscribed }
 
@@ -105,8 +117,9 @@ export default function Home() {
             ))}
           </div>
         ) : trending.length > 0 && (
-          <ContentRow
+          <CategoryGrid
             title="Trending Now"
+            eyebrow="Right now"
             items={trending}
             onSeeAll={() => navigate('/browse')}
             {...rowProps}

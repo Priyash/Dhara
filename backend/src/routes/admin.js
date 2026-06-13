@@ -399,7 +399,7 @@ router.get('/content', async (req, res, next) => {
     const items = await Content.find()
       .sort({ updatedAt: -1 })
       .limit(100)
-      .select('title type bunnyVideoId isPremium isFeatured isPublished releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount')
+      .select('title type bunnyVideoId isPremium isFeatured isPublished releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount posterUrl')
       .lean()
     res.json(items)
   } catch (err) {

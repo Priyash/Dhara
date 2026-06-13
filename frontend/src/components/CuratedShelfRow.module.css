@@ -1,34 +1,59 @@
 .shelf {
   margin-bottom: 8px;
+  position: relative;
+}
+
+/* Ambient glow behind the whole section */
+.shelf::before {
+  content: '';
+  position: absolute;
+  inset: -40px -60px;
+  background: radial-gradient(ellipse at 20% 50%, var(--shelf-accent, #db2777) 0%, transparent 65%);
+  opacity: 0.06;
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* ── Cinematic banner header ───────────────────────────────────────────────── */
 .banner {
   position: relative;
-  height: 110px;
+  height: 180px;
   display: flex;
   align-items: flex-end;
   overflow: hidden;
   background-size: cover;
   background-position: center 30%;
-  margin: 0 0 0;
+  z-index: 1;
 }
 
+/* Layer 1: dark horizontal gradient (always) */
 .bannerOverlay {
   position: absolute;
   inset: 0;
   background: linear-gradient(
     to right,
-    rgba(0,0,0,0.82) 0%,
-    rgba(0,0,0,0.55) 50%,
-    rgba(0,0,0,0.15) 100%
+    rgba(9,9,11,0.92) 0%,
+    rgba(9,9,11,0.60) 50%,
+    rgba(9,9,11,0.18) 100%
   );
+}
+
+/* Layer 2: accent color tint — driven by --shelf-accent */
+.bannerAccentTint {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    var(--shelf-accent, #db2777) 0%,
+    transparent 55%
+  );
+  opacity: 0.14;
 }
 
 .bannerContent {
   position: relative;
-  z-index: 1;
-  padding: 0 48px 18px;
+  z-index: 2;
+  padding: 0 48px 22px;
   flex: 1;
 }
 
@@ -37,65 +62,74 @@
   font-family: var(--font-body);
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 1.6px;
+  letter-spacing: 1.8px;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.45);
-  margin-bottom: 4px;
+  color: var(--shelf-accent, #db2777);
+  opacity: 0.8;
+  margin-bottom: 6px;
 }
 
 .bannerName {
   font-family: var(--font-display);
-  font-size: clamp(18px, 2.5vw, 28px);
+  font-size: clamp(20px, 2.8vw, 34px);
   font-weight: 700;
-  color: var(--shelf-accent, #db2777);
-  margin: 0 0 3px;
+  color: #fff;
+  margin: 0 0 5px;
   line-height: 1.1;
 }
 
 .bannerTagline {
   font-family: var(--font-body);
   font-size: 13px;
-  color: rgba(255,255,255,0.55);
+  color: rgba(255,255,255,0.5);
   margin: 0;
   line-height: 1.4;
+  max-width: 480px;
 }
 
 .bannerSeeAll {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 14px;
-  margin: 0 48px 18px auto;
+  padding: 7px 16px;
+  margin: 0 48px 22px auto;
   font-family: var(--font-body);
   font-size: 12px;
   font-weight: 600;
   border-radius: 999px;
-  border: 1px solid;
-  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--shelf-accent, #db2777);
+  background: rgba(0,0,0,0.35);
+  color: var(--shelf-accent, #db2777);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.15s, opacity 0.15s;
+  transition: background 0.15s, box-shadow 0.15s;
   white-space: nowrap;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px);
 }
-.bannerSeeAll:hover { background: rgba(0,0,0,0.55); opacity: 0.85; }
+.bannerSeeAll:hover {
+  background: rgba(0,0,0,0.6);
+  box-shadow: 0 0 0 1px var(--shelf-accent, #db2777);
+}
 
+/* Accent underline at banner bottom */
 .bannerAccentLine {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   height: 2px;
-  z-index: 2;
+  z-index: 3;
+  background: linear-gradient(90deg, var(--shelf-accent, #db2777), transparent);
 }
 
 /* ── Scroll row ────────────────────────────────────────────────────────────── */
 .rowWrapper {
   position: relative;
-  padding: 16px 48px 24px;
-  background: linear-gradient(180deg, rgba(0,0,0,0.18) 0%, transparent 60%);
+  padding: 16px 48px 28px;
+  background: linear-gradient(180deg, rgba(9,9,11,0.22) 0%, transparent 70%);
+  z-index: 1;
 }
 
 .row {
@@ -113,33 +147,63 @@
   flex-shrink: 0;
 }
 
-/* Scroll buttons */
+/* Scroll buttons — accent-tinted */
 .scrollBtn {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(0,0,0,0.6);
-  color: rgba(255,255,255,0.75);
+  border: 1px solid var(--shelf-accent, #db2777);
+  background: rgba(9,9,11,0.7);
+  color: var(--shelf-accent, #db2777);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 5;
-  transition: background 0.15s, opacity 0.15s;
-  backdrop-filter: blur(4px);
+  transition: background 0.15s, box-shadow 0.15s;
+  backdrop-filter: blur(6px);
+  opacity: 0;
 }
-.scrollBtn:hover  { background: rgba(0,0,0,0.8); color: #fff; }
+.rowWrapper:hover .scrollBtn { opacity: 1; }
+.scrollBtn:hover {
+  background: rgba(9,9,11,0.9);
+  box-shadow: 0 0 0 1px var(--shelf-accent, #db2777), 0 4px 16px rgba(0,0,0,0.5);
+}
 
 .scrollLeft  { left: 8px;  }
 .scrollRight { right: 8px; }
 
+@media (hover: none) { .scrollBtn { opacity: 0.7; } }
+
+/* ── Tablet ──────────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .banner         { height: 150px; }
+  .bannerContent  { padding: 0 28px 18px; }
+  .bannerSeeAll   { margin: 0 28px 18px auto; }
+  .rowWrapper     { padding: 14px 28px 22px; }
+}
+
+/* ── Mobile ──────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .bannerContent  { padding: 0 20px 16px; }
-  .bannerSeeAll   { margin: 0 20px 16px auto; }
-  .rowWrapper     { padding: 12px 20px 20px; }
+  .banner         { height: 120px; }
+  .bannerContent  { padding: 0 16px 14px; }
+  .bannerSeeAll   { margin: 0 16px 14px auto; padding: 6px 12px; font-size: 11px; }
+  .rowWrapper     { padding: 12px 16px 18px; }
   .scrollBtn      { display: none; }
+  .bannerName     { font-size: 18px; }
+  .bannerTagline  { display: none; }
+}
+
+/* ── TV / 4K ──────────────────────────────────────────────────────────────── */
+@media (min-width: 1920px) {
+  .banner         { height: 240px; }
+  .bannerContent  { padding: 0 72px 30px; }
+  .bannerSeeAll   { margin: 0 72px 30px auto; padding: 9px 20px; font-size: 13px; }
+  .rowWrapper     { padding: 20px 72px 36px; gap: 18px; }
+  .bannerName     { font-size: 42px; }
+  .bannerTagline  { font-size: 16px; }
+  .scrollBtn      { width: 48px; height: 48px; opacity: 0.8; }
 }

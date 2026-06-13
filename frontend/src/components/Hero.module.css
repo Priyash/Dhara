@@ -5,6 +5,8 @@
   overflow: hidden;
   display: flex;
   align-items: center;
+  /* Let browser handle vertical page scroll; JS owns horizontal swipe */
+  touch-action: pan-y;
 }
 
 /* ── Background slides ───────────────────────────────────────────────── */
@@ -417,8 +419,20 @@
     display: none;
   }
 
+  /* Smaller arrows on phone — visible, not hidden */
   .navBtn {
-    display: none;
+    width: 34px;
+    height: 34px;
+    opacity: 0.8;
+  }
+
+  .navPrev { left: 8px; }
+  .navNext { right: 8px; }
+
+  /* Larger tap targets for dot indicators on touch */
+  .indicatorDot {
+    padding: 8px 4px;
+    margin: -8px -4px;
   }
 }
 
