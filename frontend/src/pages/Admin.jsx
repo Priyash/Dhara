@@ -1103,12 +1103,12 @@ export default function Admin() {
   }
 
   const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'video/webm']
-  const MAX_FILE_SIZE = 1024 * 1024 * 1024 // 1 GB — server limit
+  const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2 GB
 
   const validateVideoFile = (f) => {
     if (!f) return 'Please choose a video file.'
     if (!ALLOWED_VIDEO_TYPES.includes(f.type)) return `Unsupported file type "${f.type}". Use MP4, MOV, or MKV.`
-    if (f.size > MAX_FILE_SIZE) return `File is too large (${(f.size / 1024 / 1024).toFixed(0)} MB). Maximum is 1 GB.`
+    if (f.size > MAX_FILE_SIZE) return `File is too large (${(f.size / 1024 / 1024).toFixed(0)} MB). Maximum is 2 GB.`
     return null
   }
 

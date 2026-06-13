@@ -664,12 +664,12 @@ router.put('/upload-jobs/:id/file', async (req, res, next) => {
     }
 
     const contentLength = Number(req.headers['content-length'] || 0)
-    const maxBytes = 1024 * 1024 * 1024
+    const maxBytes = 2 * 1024 * 1024 * 1024
     if (!contentLength) {
       return res.status(411).json({ error: 'Content-Length is required for video uploads' })
     }
     if (contentLength > maxBytes) {
-      return res.status(413).json({ error: 'Upload exceeds the 1GB limit' })
+      return res.status(413).json({ error: 'Upload exceeds the 2 GB limit' })
     }
 
     const fileName = String(req.headers['x-file-name'] || '').slice(0, 240)
