@@ -28,6 +28,11 @@
 html {
   scroll-behavior: smooth;
   color-scheme: dark;
+  font-size: 16px;
+  /* Prevent mobile browsers from auto-scaling text in landscape or after layout changes */
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   /* Prevent pull-to-refresh interfering with the video player on mobile */
   overscroll-behavior-y: contain;
 }
