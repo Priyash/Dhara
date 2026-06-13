@@ -20,6 +20,7 @@ const interactionEventSchema = new mongoose.Schema(
     itemId:    { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
     eventType: { type: String, enum: INTERACTION_EVENT_TYPES, required: true, index: true },
 
+    seasonNumber:  { type: Number, default: null },
     episodeNumber: { type: Number, default: null },
     source:       { type: String, default: '' },
     positionSecs: { type: Number, min: 0, default: 0 },

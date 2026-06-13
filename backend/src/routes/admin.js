@@ -98,25 +98,46 @@ async function syncProcessingJob(job) {
       // Reel upload — link directly to Reel.bunnyVideoId
       await Reel.findByIdAndUpdate(updated.reelId, { $set: { bunnyVideoId: updated.bunnyVideoId } })
     } else if (isReady && updated?.contentId) {
-      if (updated.episodeNumber) {
-        // Try to update an existing episode entry first
+      if (updated.episodeNumber && updated.seasonNumber) {
+        // Link bunnyVideoId to the correct season→episode using array filters
         const linked = await Content.findOneAndUpdate(
-          { _id: updated.contentId, 'episodes.number': updated.episodeNumber },
-          { $set: { 'episodes.$.bunnyVideoId': updated.bunnyVideoId } },
-          { new: true }
+          { _id: updated.contentId, 'seasons.number': updated.seasonNumber, 'seasons.episodes.number': updated.episodeNumber },
+          { $set: { 'seasons.$[s].episodes.$[e].bunnyVideoId': updated.bunnyVideoId } },
+          { arrayFilters: [{ 's.number': updated.seasonNumber }, { 'e.number': updated.episodeNumber }], new: true }
         )
-        // Episode didn't exist yet — push a new one
+        // Season/episode didn't exist yet — push into the correct season, creating if needed
         if (!linked) {
-          await Content.findByIdAndUpdate(updated.contentId, {
-            $push: {
-              episodes: {
-                number:       updated.episodeNumber,
-                title:        updated.episodeTitle    || `Episode ${updated.episodeNumber}`,
-                duration:     updated.episodeDuration || '',
-                bunnyVideoId: updated.bunnyVideoId,
+          const hasSeason = await Content.exists({ _id: updated.contentId, 'seasons.number': updated.seasonNumber })
+          if (hasSeason) {
+            await Content.findOneAndUpdate(
+              { _id: updated.contentId, 'seasons.number': updated.seasonNumber },
+              {
+                $push: {
+                  'seasons.$.episodes': {
+                    number:       updated.episodeNumber,
+                    title:        updated.episodeTitle    || `Episode ${updated.episodeNumber}`,
+                    duration:     updated.episodeDuration || '',
+                    bunnyVideoId: updated.bunnyVideoId,
+                  },
+                },
+              }
+            )
+          } else {
+            await Content.findByIdAndUpdate(updated.contentId, {
+              $push: {
+                seasons: {
+                  number:   updated.seasonNumber,
+                  title:    '',
+                  episodes: [{
+                    number:       updated.episodeNumber,
+                    title:        updated.episodeTitle    || `Episode ${updated.episodeNumber}`,
+                    duration:     updated.episodeDuration || '',
+                    bunnyVideoId: updated.bunnyVideoId,
+                  }],
+                },
               },
-            },
-          })
+            })
+          }
         }
       } else {
         // Film / Documentary — link to root bunnyVideoId
@@ -414,7 +435,7 @@ router.post('/content', async (req, res, next) => {
       releaseYear, rating = 0, desc = '', posterUrl = '', backdropUrl = '',
       contentLanguage = 'Bengali', certification = null,
       contentWarnings = '', moodTags = [], badge = null,
-      isPremium = false, isFeatured = false, episodes = [],
+      isPremium = false, isFeatured = false, seasons = [],
     } = req.body
 
     if (!title?.trim()) return res.status(400).json({ error: 'Title is required' })
@@ -443,14 +464,23 @@ router.post('/content', async (req, res, next) => {
       isFeatured:      Boolean(isFeatured),
       isPublished:     false,
       submissionStatus: 'approved',
-      episodes: (type === 'Series' || type === 'Serial Drama') && Array.isArray(episodes)
-        ? episodes
-            .filter((ep) => ep.number && ep.title)
-            .map((ep) => ({
-              number:      Number(ep.number),
-              title:       String(ep.title).trim(),
-              duration:    String(ep.duration || '').trim(),
-              bunnyVideoId: '',
+      seasons: (type === 'Series' || type === 'Serial Drama') && Array.isArray(seasons)
+        ? seasons
+            .filter((s) => s.number)
+            .map((s) => ({
+              number:   Number(s.number),
+              title:    String(s.title || '').trim(),
+              episodes: Array.isArray(s.episodes)
+                ? s.episodes
+                    .filter((ep) => ep.number && ep.title)
+                    .map((ep) => ({
+                      number:       Number(ep.number),
+                      title:        String(ep.title).trim(),
+                      desc:         String(ep.desc  || '').trim(),
+                      duration:     String(ep.duration || '').trim(),
+                      bunnyVideoId: '',
+                    }))
+                : [],
             }))
         : [],
     })
@@ -476,7 +506,7 @@ const ALLOWED_METADATA_FIELDS = [
   'releaseYear', 'rating', 'isPremium', 'isFeatured', 'badge',
   'posterUrl', 'backdropUrl', 'palette',
   'contentLanguage', 'certification', 'contentWarnings', 'moodTags', 'reviewCount',
-  'episodes',
+  'seasons',
 ]
 
 router.patch('/content/:id', async (req, res, next) => {
@@ -511,12 +541,12 @@ router.patch('/content/:id/publish', async (req, res, next) => {
       return res.status(400).json({ error: '`publish` must be a boolean' })
     }
 
-    const item = await Content.findById(req.params.id).select('bunnyVideoId type episodes isPublished').lean()
+    const item = await Content.findById(req.params.id).select('bunnyVideoId type seasons isPublished').lean()
     if (!item) return res.status(404).json({ error: 'Content not found' })
 
     if (publish) {
       const hasVideo = (item.type === 'Series' || item.type === 'Serial Drama')
-        ? item.episodes?.length > 0 && item.episodes.some((ep) => ep.bunnyVideoId)
+        ? item.seasons?.some((s) => s.episodes?.some((ep) => ep.bunnyVideoId))
         : Boolean(item.bunnyVideoId)
       if (!hasVideo) {
         return res.status(400).json({ error: 'Cannot publish: video is not ready yet. Wait for transcoding to complete.' })
@@ -584,6 +614,7 @@ router.post('/upload-jobs', async (req, res, next) => {
       title, collectionId,
       contentId       = null,
       reelId          = null,
+      seasonNumber    = null,
       episodeNumber   = null,
       episodeTitle    = '',
       episodeDuration = '',
@@ -609,6 +640,7 @@ router.post('/upload-jobs', async (req, res, next) => {
       bunnyCollectionId: collection.bunnyCollectionId,
       contentId,
       reelId,
+      seasonNumber:      seasonNumber    ? Number(seasonNumber)       : null,
       episodeNumber:     episodeNumber   ? Number(episodeNumber)      : null,
       episodeTitle:      episodeTitle    ? String(episodeTitle).trim() : '',
       episodeDuration:   episodeDuration ? String(episodeDuration).trim() : '',
@@ -1304,11 +1336,11 @@ router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
 
       UploadJob.find({ status: 'failed' })
         .sort({ updatedAt: -1 }).limit(5)
-        .select('title episodeNumber error updatedAt').lean(),
+        .select('title seasonNumber episodeNumber error updatedAt').lean(),
 
       UploadJob.find({ status: { $in: ['uploading', 'processing'] } })
         .sort({ updatedAt: -1 }).limit(10)
-        .select('title episodeNumber status progress updatedAt').lean(),
+        .select('title seasonNumber episodeNumber status progress updatedAt').lean(),
 
       User.aggregate([
         { $match: { lastLoginAt: { $gte: sevenDaysAgo } } },
@@ -1439,12 +1471,12 @@ router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
         byStatus: jobHealth,
         activeJobs,
         recentFailed: recentFailedJobs.map(j => ({
-          title: j.episodeNumber ? `Ep ${j.episodeNumber} — ${j.title}` : j.title,
+          title: j.episodeNumber ? `S${j.seasonNumber ?? 1}E${j.episodeNumber} — ${j.title}` : j.title,
           error: j.error || 'Unknown error',
           ago:   j.updatedAt,
         })),
         processing: processingJobs.map(j => ({
-          title:    j.episodeNumber ? `Ep ${j.episodeNumber} — ${j.title}` : j.title,
+          title:    j.episodeNumber ? `S${j.seasonNumber ?? 1}E${j.episodeNumber} — ${j.title}` : j.title,
           status:   j.status,
           progress: j.progress,
         })),

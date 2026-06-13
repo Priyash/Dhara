@@ -78,7 +78,8 @@ export default function Watch() {
   const [hlsUrl,           setHlsUrl]          = useState(null)
   const [sessionId,        setSessionId]        = useState(null)
   const [maxQualityHeight, setMaxQualityHeight] = useState(null)
-  const [activeEp,         setActiveEp]         = useState(0)
+  const [activeSeason,     setActiveSeason]     = useState(0)  // index into content.seasons[]
+  const [activeEp,         setActiveEp]         = useState(0)  // index into current season's episodes[]
   const [streamTier,       setStreamTier]       = useState(null)
   const [showList,         setShowList]         = useState(false)
   const [loading,          setLoading]          = useState(true)
@@ -100,7 +101,7 @@ export default function Watch() {
   const stickyReleasedRef  = useRef(false)
   const [playerPlaying,    setPlayerPlaying] = useState(false)
 
-  // Reset when a new video loads (hlsUrl changes)
+  // Reset sticky lock when a new video loads (hlsUrl changes) or user switches season/ep
   useEffect(() => {
     stickyReleasedRef.current = false
     setPlayerPlaying(false)
@@ -160,11 +161,12 @@ export default function Watch() {
   // Pre-populate localStorage from server-side watch progress for cross-device resume
   useEffect(() => {
     if (!content || !user?.watchProgress) return
-    const epNum = content.episodes?.length > 0
-      ? (content.episodes[activeEp]?.number ?? null)
-      : null
+    const seasons    = content.seasons || []
+    const curSeason  = seasons[activeSeason] ?? null
+    const epNum      = curSeason?.episodes?.length > 0 ? (curSeason.episodes[activeEp]?.number ?? null) : null
+    const seNum      = curSeason?.number ?? null
     const saved = user.watchProgress.find(
-      (p) => String(p.contentId) === id && (p.episodeNumber ?? null) === epNum
+      (p) => String(p.contentId) === id && (p.seasonNumber ?? null) === seNum && (p.episodeNumber ?? null) === epNum
     )
     if (!saved || saved.positionSecs < 30) return
 
@@ -181,18 +183,19 @@ export default function Watch() {
     if (!content || !isLoggedIn) return
     if (!user?.emailVerified) return
 
-    const episodes      = content.episodes || []
-    const isFirstEpFree = content.isPremium && episodes.length > 0 && activeEp === 0
+    const seasons       = content.seasons || []
+    const curSeason     = seasons[activeSeason] ?? null
+    const episodes      = curSeason?.episodes || []
+    const isFirstEpFree = content.isPremium && seasons.length > 0 && activeSeason === 0 && activeEp === 0
     if (content.isPremium && !isSubscribed && !isFirstEpFree) return
 
-    const epNumber = episodes.length > 0
-      ? (episodes[activeEp]?.number ?? null)
-      : null
+    const seNumber = curSeason?.number ?? null
+    const epNumber = episodes.length > 0 ? (episodes[activeEp]?.number ?? null) : null
 
     setHlsUrl(null)
     setSessionId(null)
     setStreamError(null)
-    fetchStreamUrl(id, epNumber)
+    fetchStreamUrl(id, epNumber, seNumber)
       .then(({ hlsUrl, sessionId: sid, maxQualityHeight: mqh, tier: t }) => {
         setHlsUrl(hlsUrl)
         setSessionId(sid ?? null)
@@ -206,7 +209,7 @@ export default function Watch() {
           setStreamError('Video temporarily unavailable · We\'re working on it')
         }
       })
-  }, [content, id, activeEp, isLoggedIn, isSubscribed, user?.emailVerified])
+  }, [content, id, activeSeason, activeEp, isLoggedIn, isSubscribed, user?.emailVerified])
 
   // Heartbeat: keeps the stream session alive while the player is open.
   // Cleans up the session immediately when the component unmounts or the stream changes.
@@ -226,12 +229,13 @@ export default function Watch() {
     if (!hlsUrl || !isLoggedIn) return
 
     const STORAGE_KEY = `dhara_progress_${id}`
-    const sessionKey = `${id}-${activeEp}`
+    const sessionKey = `${id}-${activeSeason}-${activeEp}`
     const milestones = milestoneRef.current
     const eventKey = (name) => `${sessionKey}:${name}`
-    const epNumber = content?.episodes?.length > 0
-      ? (content.episodes[activeEp]?.number ?? null)
-      : null
+    const seasons   = content?.seasons || []
+    const curSeason = seasons[activeSeason] ?? null
+    const seNumber  = curSeason?.number ?? null
+    const epNumber  = curSeason?.episodes?.length > 0 ? (curSeason.episodes[activeEp]?.number ?? null) : null
 
     const send = (eventType, extra = {}) => {
       const key = eventKey(eventType)
@@ -241,6 +245,7 @@ export default function Watch() {
         itemId: id,
         eventType,
         source: 'watch',
+        seasonNumber:  seNumber,
         episodeNumber: epNumber,
         ...extra,
       }).catch(() => {})
@@ -273,7 +278,7 @@ export default function Watch() {
       )
       if (!completed && earlyExit) send('skip', progress)
     }
-  }, [hlsUrl, isLoggedIn, id, activeEp, content])
+  }, [hlsUrl, isLoggedIn, id, activeSeason, activeEp, content])
 
   // Record a view only after the user has genuinely watched 30 seconds.
   // Polls localStorage position (written by the player) every 5 s so we don't
@@ -283,7 +288,7 @@ export default function Watch() {
     if (!hlsUrl || !isLoggedIn) return
 
     const STORAGE_KEY = `dhara_progress_${id}`
-    const sessionKey  = `${id}-${activeEp}`
+    const sessionKey  = `${id}-${activeSeason}-${activeEp}`
     const VIEW_THRESHOLD_SECS = 30
 
     if (viewRecordedRef.current.has(sessionKey)) return
@@ -296,14 +301,15 @@ export default function Watch() {
       if (viewRecordedRef.current.has(sessionKey)) return
       viewRecordedRef.current.add(sessionKey)
 
-      const epNumber = content?.episodes?.length > 0
-        ? (content.episodes[activeEp]?.number ?? null)
-        : null
-      recordView(id, epNumber, Math.floor(pos)).catch(() => {})
+      const seasons   = content?.seasons || []
+      const curSeason = seasons[activeSeason] ?? null
+      const seNumber  = curSeason?.number ?? null
+      const epNumber  = curSeason?.episodes?.length > 0 ? (curSeason.episodes[activeEp]?.number ?? null) : null
+      recordView(id, epNumber, Math.floor(pos), seNumber).catch(() => {})
     }, 5_000)
 
     return () => clearInterval(poll)
-  }, [hlsUrl, isLoggedIn, id, activeEp, content])
+  }, [hlsUrl, isLoggedIn, id, activeSeason, activeEp, content])
 
   // Persist watch progress to backend every 30 s while playing
   useEffect(() => {
@@ -316,9 +322,12 @@ export default function Watch() {
       if (pos < 10) return
       // Don't save if within last 45 s — treat as finished, remove from continue-watching
       if (dur > 0 && pos > dur - 45) return
+      const seasons   = content?.seasons || []
+      const curSeason = seasons[activeSeason] ?? null
       saveWatchProgress({
         contentId:     id,
-        episodeNumber: content?.episodes?.length > 0 ? (content.episodes[activeEp]?.number ?? null) : null,
+        seasonNumber:  curSeason?.number ?? null,
+        episodeNumber: curSeason?.episodes?.length > 0 ? (curSeason.episodes[activeEp]?.number ?? null) : null,
         positionSecs:  Math.floor(pos),
         durationSecs:  Math.floor(dur),
       }).catch(() => {})
@@ -326,7 +335,7 @@ export default function Watch() {
 
     const timer = setInterval(tick, 30_000)
     return () => { clearInterval(timer); tick() }  // flush final position on navigate-away
-  }, [hlsUrl, isLoggedIn, id, activeEp, content])
+  }, [hlsUrl, isLoggedIn, id, activeSeason, activeEp, content])
 
   const dismissResume = useCallback((startOver) => {
     if (startOver) {
@@ -404,10 +413,15 @@ export default function Watch() {
   if (contentError)           return <div className={styles.state}>{contentError}</div>
 
   const cleanTitle    = stripExtension(content.title)
-  const episodes      = content?.episodes || []
+  const seasons       = content?.seasons || []
+  const curSeason     = seasons[activeSeason] ?? null
+  const episodes      = curSeason?.episodes || []
   const activeEpisode = episodes[activeEp]
-  const playerTitle   = activeEpisode ? `${cleanTitle} — ${activeEpisode.title}` : cleanTitle
-  const hasNextEp     = episodes.length > 0 && activeEp < episodes.length - 1
+  const playerTitle   = activeEpisode
+    ? `${cleanTitle} — S${curSeason.number}E${activeEpisode.number}${activeEpisode.title ? ': ' + activeEpisode.title : ''}`
+    : cleanTitle
+  const hasNextEp     = activeEp < episodes.length - 1
+  const hasSeasons    = seasons.length > 0
 
   const hasGenre    = content.genre?.length > 0
   const hasCast     = content.cast?.length > 0
@@ -421,8 +435,8 @@ export default function Watch() {
     ? cloudinaryTransform(backdropRaw, 'w_1920,h_1080,c_fill,g_auto,f_auto,q_auto:low')
     : null
 
-  // Episode 1 of any premium series is always a free preview — no gate
-  const isFirstEpFree = content.isPremium && episodes.length > 0 && activeEp === 0
+  // Season 1, Episode 1 of any premium series is always a free preview — no gate
+  const isFirstEpFree = content.isPremium && seasons.length > 0 && activeSeason === 0 && activeEp === 0
 
   // Determine which gate state we're in
   const gateState = !isLoggedIn
@@ -591,11 +605,13 @@ export default function Watch() {
               className={styles.streamRetryBtn}
               onClick={() => {
                 setStreamError(null)
-                const epNumber = content.episodes?.length > 0
-                  ? (content.episodes[activeEp]?.number ?? null) : null
+                const seasons   = content.seasons || []
+                const curSeason = seasons[activeSeason] ?? null
+                const seNumber  = curSeason?.number ?? null
+                const epNumber  = curSeason?.episodes?.length > 0 ? (curSeason.episodes[activeEp]?.number ?? null) : null
                 setHlsUrl(null)
                 setSessionId(null)
-                fetchStreamUrl(id, epNumber)
+                fetchStreamUrl(id, epNumber, seNumber)
                   .then(({ hlsUrl, sessionId: sid, maxQualityHeight: mqh, tier: t }) => {
                     setHlsUrl(hlsUrl)
                     setSessionId(sid ?? null)
@@ -796,11 +812,11 @@ export default function Watch() {
               onClick={() => { setActiveEp(activeEp + 1); setShowList(false) }}
             >
               <SkipForward size={15} />
-              Next: Ep {episodes[activeEp + 1].number}
+              Next: E{episodes[activeEp + 1].number}
               {episodes[activeEp + 1].title ? ` · ${episodes[activeEp + 1].title}` : ''}
             </button>
           )}
-          {episodes.length > 0 && (
+          {hasSeasons && (
             <button className={styles.listToggle} onClick={() => setShowList((s) => !s)}>
               <List size={16} />
               {showList ? 'Hide Episodes' : 'All Episodes'}
@@ -808,9 +824,26 @@ export default function Watch() {
           )}
         </div>
 
-        {showList && episodes.length > 0 && (
+        {showList && hasSeasons && (
           <div className={styles.episodes}>
             <h2 className={styles.episodesTitle}>Episodes</h2>
+
+            {/* Season tabs — only show if more than one season */}
+            {seasons.length > 1 && (
+              <div className={styles.seasonTabs}>
+                {seasons.map((s, si) => (
+                  <button
+                    key={s.number}
+                    className={`${styles.seasonTab} ${activeSeason === si ? styles.seasonTabActive : ''}`}
+                    onClick={() => { setActiveSeason(si); setActiveEp(0) }}
+                  >
+                    Season {s.number}
+                    {s.title ? ` · ${s.title}` : ''}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className={styles.episodeGrid}>
               {episodes.map((ep, i) => (
                 <button
@@ -818,10 +851,10 @@ export default function Watch() {
                   className={`${styles.episode} ${activeEp === i ? styles.episodeActive : ''}`}
                   onClick={() => setActiveEp(i)}
                 >
-                  <div className={styles.epNumber}>{ep.number}</div>
+                  <div className={styles.epNumber}>E{ep.number}</div>
                   <div className={styles.epInfo}>
                     <span className={styles.epTitle}>{ep.title}</span>
-                    <span className={styles.epDur}>{ep.duration}</span>
+                    {ep.duration && <span className={styles.epDur}>{ep.duration}</span>}
                   </div>
                 </button>
               ))}

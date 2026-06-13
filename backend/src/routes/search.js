@@ -4,7 +4,7 @@ import { SearchLog } from '../models/SearchLog.js'
 
 const router = Router()
 
-const HIDE_STREAM = '-bunnyVideoId -trailerVideoId -episodes.bunnyVideoId'
+const HIDE_STREAM = '-bunnyVideoId -trailerVideoId -seasons.episodes.bunnyVideoId'
 
 // Blend textScore with quality + popularity so well-known titles rank above
 // obscure exact-matches when the query is ambiguous.

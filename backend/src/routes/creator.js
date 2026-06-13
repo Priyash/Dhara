@@ -170,7 +170,7 @@ router.get('/analytics', requireAuth, requireCreator, async (req, res, next) => 
     const creatorId = req.user._id
 
     const items = await Content.find({ creatorId })
-      .select('title type posterUrl submissionStatus viewCount likeCount revisionCount episodes createdAt')
+      .select('title type posterUrl submissionStatus viewCount likeCount revisionCount seasons createdAt')
       .lean()
 
     const approved = items.filter((i) => i.submissionStatus === 'approved')
@@ -182,7 +182,7 @@ router.get('/analytics', requireAuth, requireCreator, async (req, res, next) => 
 
     const totalEpisodes = approved
       .filter((i) => i.type === 'Series' || i.type === 'Serial Drama')
-      .reduce((s, i) => s + (i.episodes?.length || 0), 0)
+      .reduce((s, i) => s + (i.seasons || []).reduce((a, se) => a + (se.episodes?.length || 0), 0), 0)
 
     const settled      = approved.length + rejected.length
     const approvalRate = settled > 0 ? Math.round((approved.length / settled) * 100) : 0
@@ -291,8 +291,12 @@ router.get('/analytics', requireAuth, requireCreator, async (req, res, next) => 
         viewCount:        i.viewCount     || 0,
         likeCount:        i.likeCount     || 0,
         revisionCount:    i.revisionCount || 0,
-        episodes: (i.type === 'Series' || i.type === 'Serial Drama')
-          ? (i.episodes || []).map((ep) => ({ number: ep.number, title: ep.title, viewCount: ep.viewCount || 0 }))
+        seasons: (i.type === 'Series' || i.type === 'Serial Drama')
+          ? (i.seasons || []).map((s) => ({
+              number:   s.number,
+              title:    s.title || '',
+              episodes: (s.episodes || []).map((ep) => ({ number: ep.number, title: ep.title, viewCount: ep.viewCount || 0 })),
+            }))
           : [],
         createdAt: i.createdAt,
       })),
@@ -347,7 +351,7 @@ router.post('/content', requireAuth, requireCreator, async (req, res, next) => {
       releaseYear, rating = 0, desc = '', posterUrl = '', backdropUrl = '',
       contentLanguage = 'Bengali', certification = null, duration = '',
       contentWarnings = '', moodTags = [], badge = null,
-      isPremium = false, episodes = [],
+      isPremium = false, seasons = [],
     } = req.body
 
     if (!title?.trim()) return res.status(400).json({ error: 'Title is required' })
@@ -374,14 +378,23 @@ router.post('/content', requireAuth, requireCreator, async (req, res, next) => {
       moodTags:         Array.isArray(moodTags) ? moodTags : [],
       badge:            badge || null,
       isPremium:        Boolean(isPremium),
-      episodes:         Array.isArray(episodes)
-        ? episodes
-            .filter((ep) => ep.number && ep.title)
-            .map((ep) => ({
-              number:      Number(ep.number),
-              title:       String(ep.title).trim(),
-              duration:    String(ep.duration || '').trim(),
-              bunnyVideoId: '',
+      seasons:          Array.isArray(seasons)
+        ? seasons
+            .filter((s) => s.number)
+            .map((s) => ({
+              number:   Number(s.number),
+              title:    String(s.title || '').trim(),
+              episodes: Array.isArray(s.episodes)
+                ? s.episodes
+                    .filter((ep) => ep.number && ep.title)
+                    .map((ep) => ({
+                      number:       Number(ep.number),
+                      title:        String(ep.title).trim(),
+                      desc:         String(ep.desc  || '').trim(),
+                      duration:     String(ep.duration || '').trim(),
+                      bunnyVideoId: '',
+                    }))
+                : [],
             }))
         : [],
       creatorId:        req.user._id,
@@ -433,7 +446,7 @@ router.patch('/content/:id', requireAuth, requireCreator, async (req, res, next)
       'title', 'subtitle', 'desc', 'type', 'genre', 'cast', 'director',
       'releaseYear', 'posterUrl', 'backdropUrl', 'palette',
       'contentLanguage', 'certification', 'contentWarnings', 'moodTags', 'duration',
-      'isPremium', 'episodes',
+      'isPremium', 'seasons',
     ]
 
     const updates = {}
@@ -441,24 +454,36 @@ router.patch('/content/:id', requireAuth, requireCreator, async (req, res, next)
       if (key in req.body) updates[key] = req.body[key]
     }
 
-    if (Array.isArray(updates.episodes)) {
-      // Build a lookup of existing episodes so we can preserve server-assigned fields
-      // (bunnyVideoId, viewCount) that the creator must never be able to overwrite.
-      const existingByNumber = new Map(
-        (content.episodes || []).map((ep) => [ep.number, ep])
+    if (Array.isArray(updates.seasons)) {
+      // Preserve server-assigned bunnyVideoId and viewCount when creator updates season/episode metadata
+      const existingSeasonMap = new Map(
+        (content.seasons || []).map((s) => [s.number, s])
       )
-      updates.episodes = updates.episodes
-        .filter((ep) => ep.number && ep.title)
-        .map((ep) => {
-          const num  = Number(ep.number)
-          const prev = existingByNumber.get(num)
+      updates.seasons = updates.seasons
+        .filter((s) => s.number)
+        .map((s) => {
+          const sNum   = Number(s.number)
+          const prevS  = existingSeasonMap.get(sNum)
+          const existingEpMap = new Map((prevS?.episodes || []).map((ep) => [ep.number, ep]))
           return {
-            number:       num,
-            title:        String(ep.title).trim(),
-            duration:     String(ep.duration || '').trim(),
-            // Preserve admin-assigned video ID and accumulated analytics
-            bunnyVideoId: prev?.bunnyVideoId || '',
-            viewCount:    prev?.viewCount    || 0,
+            number:   sNum,
+            title:    String(s.title || '').trim(),
+            episodes: Array.isArray(s.episodes)
+              ? s.episodes
+                  .filter((ep) => ep.number && ep.title)
+                  .map((ep) => {
+                    const num  = Number(ep.number)
+                    const prev = existingEpMap.get(num)
+                    return {
+                      number:       num,
+                      title:        String(ep.title).trim(),
+                      desc:         String(ep.desc  || '').trim(),
+                      duration:     String(ep.duration || '').trim(),
+                      bunnyVideoId: prev?.bunnyVideoId || '',
+                      viewCount:    prev?.viewCount    || 0,
+                    }
+                  })
+              : [],
           }
         })
     }

@@ -72,7 +72,7 @@ function buildHlsUrl(videoId, sign = false) {
 }
 
 // Never send video GUIDs to public endpoints
-const PUBLIC_FIELDS = '-bunnyVideoId -trailerVideoId -episodes.bunnyVideoId'
+const PUBLIC_FIELDS = '-bunnyVideoId -trailerVideoId -seasons.episodes.bunnyVideoId'
 
 /**
  * GET /api/content
@@ -315,7 +315,7 @@ router.get('/:id', async (req, res, next) => {
 router.get('/:id/stream', requireAuth, async (req, res, next) => {
   try {
     const item = await Content.findById(req.params.id)
-      .select('isPremium bunnyVideoId submissionStatus isPublished isDeleted creatorId episodes')
+      .select('isPremium bunnyVideoId submissionStatus isPublished isDeleted creatorId seasons')
       .lean()
 
     if (!item) return res.status(404).json({ error: 'Content not found' })
@@ -329,15 +329,23 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'Verified email required', code: 'EMAIL_VERIFICATION_REQUIRED' })
     }
 
-    // For Series, resolve the per-episode bunnyVideoId when ?episode=N is supplied
+    // For Series/Serial Drama, resolve the per-episode bunnyVideoId when ?season=S&episode=E supplied
     let videoId = item.bunnyVideoId
-    const epNum = req.query.episode != null ? Number(req.query.episode) : null
+    const epNum  = req.query.episode != null ? Number(req.query.episode) : null
+    const seNum  = req.query.season  != null ? Number(req.query.season)  : (epNum != null ? 1 : null)
+
     if (epNum != null && (!Number.isInteger(epNum) || epNum < 1)) {
       return res.status(400).json({ error: 'episode must be a positive integer' })
     }
+    if (seNum != null && (!Number.isInteger(seNum) || seNum < 1)) {
+      return res.status(400).json({ error: 'season must be a positive integer' })
+    }
+
     if (epNum != null) {
-      if (!item.episodes?.length) return res.status(404).json({ error: 'Episode not found' })
-      const ep = item.episodes.find((e) => e.number === epNum)
+      if (!item.seasons?.length) return res.status(404).json({ error: 'Season not found' })
+      const season = item.seasons.find((s) => s.number === seNum)
+      if (!season) return res.status(404).json({ error: 'Season not found' })
+      const ep = season.episodes.find((e) => e.number === epNum)
       if (!ep) return res.status(404).json({ error: 'Episode not found' })
       if (!ep.bunnyVideoId) return res.status(404).json({ error: 'Episode video not yet available' })
       videoId = ep.bunnyVideoId
@@ -348,8 +356,8 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
     const limits = getPlanLimits(req.user)
     const tier   = getPlanTier(req.user)
 
-    // Episode 1 of any premium series is a free preview for non-subscribers
-    const isFirstEpPreview = item.isPremium && epNum === 1 && (item.episodes?.length > 0) && !req.user.isSubscriptionActive
+    // Season 1 Episode 1 of any premium series is a free preview for non-subscribers
+    const isFirstEpPreview = item.isPremium && seNum === 1 && epNum === 1 && (item.seasons?.length > 0) && !req.user.isSubscriptionActive
 
     if (item.isPremium && !isFirstEpPreview) {
       if (!req.user.isSubscriptionActive) {
@@ -443,6 +451,7 @@ const VIEW_DEDUP_WINDOW_MS   = 24 * 60 * 60 * 1000  // one counted view per user
 router.post('/:id/view', requireAuth, async (req, res, next) => {
   try {
     const id             = req.params.id
+    const seasonNumber   = req.body.seasonNumber  != null ? Number(req.body.seasonNumber)  : null
     const episodeNumber  = req.body.episodeNumber != null ? Number(req.body.episodeNumber) : null
     const positionSecs   = Number(req.body.positionSecs ?? 0)
 
@@ -467,7 +476,7 @@ router.post('/:id/view', requireAuth, async (req, res, next) => {
       isPublished:      true,
       isDeleted:        { $ne: true },
       submissionStatus: { $nin: ['pending', 'rejected'] },
-    }).select('isPremium creatorId episodes').lean()
+    }).select('isPremium creatorId seasons').lean()
 
     if (!item) return res.status(404).json({ error: 'Content not found' })
 
@@ -478,12 +487,13 @@ router.post('/:id/view', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'Active subscription required', code: 'SUBSCRIPTION_REQUIRED' })
     }
 
-    // 24-hour deduplication — one view per user per content per episode per day
+    // 24-hour deduplication — one view per user per content per season+episode per day
     const dedupSince = new Date(Date.now() - VIEW_DEDUP_WINDOW_MS)
     const recentView = await ViewEvent.exists({
       userId:        req.user._id,
       contentId:     id,
-      episodeNumber: episodeNumber,
+      seasonNumber:  seasonNumber  ?? null,
+      episodeNumber: episodeNumber ?? null,
       viewedAt:      { $gte: dedupSince },
     })
 
@@ -493,14 +503,15 @@ router.post('/:id/view', requireAuth, async (req, res, next) => {
 
     // Increment view count atomically
     let doc
-    if (episodeNumber != null) {
-      if (item.episodes?.length && !item.episodes.some((ep) => ep.number === episodeNumber)) {
+    if (episodeNumber != null && seasonNumber != null) {
+      const season = (item.seasons || []).find((s) => s.number === seasonNumber)
+      if (!season || !season.episodes.some((ep) => ep.number === episodeNumber)) {
         return res.status(404).json({ error: 'Episode not found' })
       }
       doc = await Content.findByIdAndUpdate(
         id,
-        { $inc: { viewCount: 1, 'episodes.$[ep].viewCount': 1 } },
-        { arrayFilters: [{ 'ep.number': episodeNumber }], select: 'creatorId' }
+        { $inc: { viewCount: 1, 'seasons.$[s].episodes.$[ep].viewCount': 1 } },
+        { arrayFilters: [{ 's.number': seasonNumber }, { 'ep.number': episodeNumber }], select: 'creatorId' }
       )
     } else {
       doc = await Content.findByIdAndUpdate(id, { $inc: { viewCount: 1 } }, { select: 'creatorId' })
@@ -521,6 +532,7 @@ router.post('/:id/view', requireAuth, async (req, res, next) => {
 
     ViewEvent.create({
       contentId:     id,
+      seasonNumber:  seasonNumber  ?? null,
       episodeNumber: episodeNumber ?? null,
       creatorId:     doc?.creatorId ?? null,
       userId:        req.user._id,

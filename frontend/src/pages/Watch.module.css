@@ -901,6 +901,45 @@
   margin-bottom: 16px;
 }
 
+/* ── Season tabs ─────────────────────────────────────────────────────────── */
+.seasonTabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+
+.seasonTab {
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.55);
+  font-family: var(--font-body, sans-serif);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
+}
+
+.seasonTab:hover {
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.85);
+}
+
+.seasonTabActive {
+  background: #db2777;
+  border-color: #db2777;
+  color: #fff;
+  font-weight: 600;
+}
+
+.seasonTabActive:hover {
+  background: #be185d;
+}
+
 .episodeGrid {
   display: flex;
   flex-direction: column;

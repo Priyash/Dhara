@@ -10,6 +10,7 @@ const uploadJobSchema = new mongoose.Schema(
     // Exactly one of contentId or reelId must be set — enforced at the route layer.
     contentId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Content', default: null },
     reelId:          { type: mongoose.Schema.Types.ObjectId, ref: 'Reel',    default: null },
+    seasonNumber:    { type: Number,  default: null },  // null = main content video (Film/Documentary)
     episodeNumber:   { type: Number,  default: null },  // null = main content video; ignored for reels
     episodeTitle:    { type: String,  default: '' },
     episodeDuration: { type: String,  default: '' },    // e.g. "42m"
