@@ -30,5 +30,7 @@ const uploadJobSchema = new mongoose.Schema(
 )
 
 uploadJobSchema.index({ status: 1, updatedAt: -1 })
+// Auto-purge jobs older than 90 days — MongoDB TTL reaper runs every ~60 s
+uploadJobSchema.index({ createdAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 })
 
 export const UploadJob = mongoose.model('UploadJob', uploadJobSchema)
