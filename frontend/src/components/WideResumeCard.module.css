@@ -13,6 +13,8 @@
   margin: 0 0 12px;
 }
 
+/* ── Single wide card ──────────────────────────────────────────────────────── */
+
 .card {
   position: relative;
   display: grid;
@@ -31,7 +33,6 @@
   box-shadow: 0 16px 52px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(219, 39, 119, 0.18);
 }
 
-/* ── Backdrop ──────────────────────────────────────────────────────────── */
 .backdrop {
   position: relative;
   overflow: hidden;
@@ -54,14 +55,12 @@
   background: radial-gradient(ellipse at 30% 50%, rgba(219, 39, 119, 0.15), rgba(17, 17, 21, 0.96));
 }
 
-/* Horizontal fade to black so info panel blends in */
 .backdropFade {
   position: absolute;
   inset: 0;
   background: linear-gradient(90deg, transparent 55%, var(--color-surface) 100%);
 }
 
-/* ── Info panel ────────────────────────────────────────────────────────── */
 .info {
   display: flex;
   flex-direction: column;
@@ -132,23 +131,128 @@
 
 .resumeBtn:hover { opacity: 0.86; }
 
-.moreBadge {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(8px);
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-family: var(--font-body);
-  font-size: 12px;
-  color: var(--color-text-muted);
+/* ── Multi-item horizontal scroll rail ─────────────────────────────────────── */
+
+.rail {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* Negative margin trick to let cards peek at the edges */
+  margin-right: -40px;
+  padding-right: 40px;
 }
 
-/* ── Mobile ────────────────────────────────────────────────────────────── */
+.rail::-webkit-scrollbar { display: none; }
+
+.thumb {
+  flex-shrink: 0;
+  width: 260px;
+  cursor: pointer;
+}
+
+.thumbImg {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.thumb:hover .thumbImg {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(219, 39, 119, 0.2);
+}
+
+.thumbPoster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.35s ease;
+}
+
+.thumb:hover .thumbPoster { transform: scale(1.04); }
+
+.thumbFallback {
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse at 30% 50%, rgba(219, 39, 119, 0.12), rgba(17, 17, 21, 0.96));
+}
+
+.thumbScrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.55) 0%, transparent 55%);
+  pointer-events: none;
+}
+
+.thumbPlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(219, 39, 119, 0);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.18s, background 0.18s;
+}
+
+.thumb:hover .thumbPlay {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Progress bar pinned to bottom of thumbnail */
+.thumbBar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.thumbFill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 0 2px 2px 0;
+}
+
+.thumbTitle {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  margin: 8px 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thumbPct {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+/* ── Mobile ────────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .wrap { padding: 0 16px; }
+
+  .rail {
+    margin-right: -16px;
+    padding-right: 16px;
+  }
 
   .card {
     grid-template-columns: 1fr;
@@ -167,9 +271,11 @@
   }
 
   .title { font-size: 20px; }
+
+  .thumb { width: 200px; }
 }
 
-/* ── TV / 4K ───────────────────────────────────────────────────────────── */
+/* ── TV / 4K ───────────────────────────────────────────────────────────────── */
 @media (min-width: 1920px) {
   .wrap { padding: 0 72px; }
 
@@ -180,4 +286,11 @@
   .info { padding: 32px 48px; }
 
   .resumeBtn { font-size: 16px; padding: 13px 26px; }
+
+  .thumb { width: 340px; }
+
+  .rail {
+    margin-right: -72px;
+    padding-right: 72px;
+  }
 }

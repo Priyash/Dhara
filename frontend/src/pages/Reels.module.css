@@ -387,17 +387,19 @@
 .root {
   position: relative;
   width: 100%;
-  min-height: 100dvh;
+  height: 100dvh;
   background: #000;
   display: flex;
   justify-content: center;
+  align-items: center;
+  overflow: hidden;
 }
 
 .stage {
   position: relative;
-  width: 100%;
-  max-width: 430px;
-  height: 100dvh;
+  /* Width is driven by viewport height to maintain 9:16, capped at 430px and 100vw */
+  width: min(430px, calc(100dvh * 9 / 16), 100%);
+  aspect-ratio: 9 / 16;
   overflow: hidden;
   background: #000;
 }
