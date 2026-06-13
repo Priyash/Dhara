@@ -418,7 +418,7 @@ router.post('/content', async (req, res, next) => {
     } = req.body
 
     if (!title?.trim()) return res.status(400).json({ error: 'Title is required' })
-    if (!['Film', 'Series', 'Documentary'].includes(type)) {
+    if (!['Film', 'Series', 'Serial Drama', 'Documentary'].includes(type)) {
       return res.status(400).json({ error: 'Invalid type' })
     }
 
@@ -443,7 +443,7 @@ router.post('/content', async (req, res, next) => {
       isFeatured:      Boolean(isFeatured),
       isPublished:     false,
       submissionStatus: 'approved',
-      episodes: type === 'Series' && Array.isArray(episodes)
+      episodes: (type === 'Series' || type === 'Serial Drama') && Array.isArray(episodes)
         ? episodes
             .filter((ep) => ep.number && ep.title)
             .map((ep) => ({
@@ -515,7 +515,7 @@ router.patch('/content/:id/publish', async (req, res, next) => {
     if (!item) return res.status(404).json({ error: 'Content not found' })
 
     if (publish) {
-      const hasVideo = item.type === 'Series'
+      const hasVideo = (item.type === 'Series' || item.type === 'Serial Drama')
         ? item.episodes?.length > 0 && item.episodes.some((ep) => ep.bunnyVideoId)
         : Boolean(item.bunnyVideoId)
       if (!hasVideo) {

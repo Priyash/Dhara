@@ -4,17 +4,17 @@ import Hero from '../components/Hero'
 import ContentRow from '../components/ContentRow'
 import CuratedShelfRow from '../components/CuratedShelfRow'
 import { useStore } from '../store/useStore'
-import { fetchContent, fetchShelves, fetchContinueWatching, fetchRecommendations } from '../services/api'
+import { fetchContent, fetchShelves, fetchContinueWatching, fetchRecommendationShelves } from '../services/api'
 import styles from './Home.module.css'
 
 export default function Home() {
   const { openItem, isSubscribed, isLoggedIn } = useStore()
   const navigate = useNavigate()
   const [content,          setContent]          = useState([])
-  const [shelves,          setShelves]          = useState([])
-  const [continueWatching, setContinueWatching] = useState([])
-  const [recommended,      setRecommended]      = useState([])
-  const [contentLoading,   setContentLoading]   = useState(true)
+  const [shelves,              setShelves]              = useState([])
+  const [continueWatching,     setContinueWatching]     = useState([])
+  const [recommendationShelves, setRecommendationShelves] = useState([])
+  const [contentLoading,       setContentLoading]       = useState(true)
 
   useEffect(() => {
     // Cap at 48 — enough for all Home rows. Browse handles full paginated exploration.
@@ -23,7 +23,7 @@ export default function Home() {
       .catch(() => {})
       .finally(() => setContentLoading(false))
     fetchShelves().then(setShelves).catch(() => {})
-    fetchRecommendations({ limit: 12 }).then((res) => setRecommended(res.items || [])).catch(() => {})
+    fetchRecommendationShelves().then(setRecommendationShelves).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -40,6 +40,7 @@ export default function Home() {
   const newReleases = content.filter(c => c.badge === 'NEW')
   const movies      = content.filter(c => c.type === 'Film')
   const series      = content.filter(c => c.type === 'Series')
+  const serialDrama = content.filter(c => c.type === 'Serial Drama')
   const originals   = content.filter(c => c.type === 'Documentary')
   const live        = content.filter(c => c.badge === 'LIVE')
 
@@ -68,15 +69,25 @@ export default function Home() {
           />
         )}
 
-        {recommended.length > 0 && (
-          <ContentRow
-            title="Recommended For You"
-            items={recommended}
-            onSeeAll={() => navigate('/browse')}
-            eventSource="recommendations"
-            {...rowProps}
-          />
-        )}
+        {recommendationShelves
+          .filter(shelf => shelf.type !== 'progress')
+          .map(shelf => (
+            <ContentRow
+              key={shelf.id}
+              title={shelf.type === 'affinity' && shelf.seed?.title ? shelf.seed.title : shelf.title}
+              eyebrow={
+                shelf.type === 'affinity' ? 'Because you watched' :
+                shelf.type === 'top10'    ? 'This week' :
+                undefined
+              }
+              items={shelf.items}
+              ranked={shelf.type === 'top10'}
+              onSeeAll={shelf.type === 'top10' ? () => navigate('/browse') : undefined}
+              eventSource={`shelf_${shelf.type}`}
+              {...rowProps}
+            />
+          ))
+        }
 
         {contentLoading ? (
           <div className={styles.skeletonRows}>
@@ -150,6 +161,15 @@ export default function Home() {
           />
         )}
 
+        {serialDrama.length > 0 && (
+          <ContentRow
+            title="ধারাবাহিক"
+            items={serialDrama}
+            onSeeAll={() => navigate('/browse?type=Serial+Drama')}
+            {...rowProps}
+          />
+        )}
+
         {originals.length > 0 && (
           <ContentRow
             title="Originals"
@@ -178,7 +198,7 @@ export default function Home() {
             <a key={l} href="#" className={styles.footerLink}>{l}</a>
           ))}
         </div>
-        <span className={styles.copyright}>© 2025 Dhara Streaming</span>
+        <span className={styles.copyright}>© {new Date().getFullYear()} Dhara Streaming</span>
       </footer>
     </main>
   )

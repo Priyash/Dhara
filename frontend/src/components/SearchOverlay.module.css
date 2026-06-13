@@ -35,8 +35,7 @@
 }
 
 .searchBar:focus-within {
-  border-color: rgba(245,158,11,0.4);
-  box-shadow: 0 0 0 3px rgba(245,158,11,0.07);
+  border-color: rgba(255,255,255,0.18);
 }
 
 .searchIcon {
@@ -66,6 +65,12 @@
   font-family: var(--font-body);
   font-size: 17px;
   letter-spacing: 0.1px;
+}
+
+.input:focus,
+.input:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .input::placeholder {

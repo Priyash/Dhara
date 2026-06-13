@@ -165,7 +165,7 @@ function MonTopContentList({ items }) {
     </p>
   )
   const maxV = Math.max(...items.map(i => i.views), 1)
-  const TYPE_COLOR = { Film:'#f59e0b', Series:'#a78bfa', Documentary:'#34d399' }
+  const TYPE_COLOR = { Film:'#f59e0b', Series:'#a78bfa', 'Serial Drama':'#f472b6', Documentary:'#34d399' }
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:8 }}>
       {items.map(item => {
@@ -865,7 +865,7 @@ export default function Admin() {
         subtitle:        editForm.subtitle.trim(),
         desc:            editForm.desc.trim(),
         type:            editForm.type,
-        duration:        editForm.type !== 'Series' ? (editForm.duration?.trim() || '') : '',
+        duration:        (editForm.type !== 'Series' && editForm.type !== 'Serial Drama') ? (editForm.duration?.trim() || '') : '',
         genre:           editForm.genre.split(',').map((s) => s.trim()).filter(Boolean),
         cast:            editForm.cast.split(',').map((s) => s.trim()).filter(Boolean),
         director:        editForm.director.trim(),
@@ -1082,7 +1082,7 @@ export default function Admin() {
     setUploadMode('single')
     setBulkRows([{ id: bulkRowIdRef.current++, number: '', title: '', duration: '', file: null, status: 'idle', error: '' }])
     const selected = contentItems.find((c) => c._id === contentId)
-    if (selected?.type === 'Series' && contentId) {
+    if ((selected?.type === 'Series' || selected?.type === 'Serial Drama') && contentId) {
       setLoadingSeriesEpisodes(true)
       try {
         const full = await fetchAdminContentById(contentId)
@@ -1301,7 +1301,8 @@ export default function Admin() {
     if (fileErr) return setError(fileErr)
     if (!selectedCollectionId) return setError('Please select a mapped collection.')
 
-    const isSeries = Boolean(selectedContentId && contentItems.find((c) => c._id === selectedContentId)?.type === 'Series')
+    const selectedType = contentItems.find((c) => c._id === selectedContentId)?.type
+    const isSeries = Boolean(selectedContentId && (selectedType === 'Series' || selectedType === 'Serial Drama'))
     if (isSeries && !episodeNumber) return setError('Please enter an episode number for this series.')
     if (isSeries && episodeDuration && !isValidDuration(episodeDuration))
       return setError(`Invalid episode duration "${episodeDuration}". Use "42m", "1h 20m", or "1:20".`)
@@ -1698,19 +1699,19 @@ export default function Admin() {
                       Video uploads to CDN but won't appear in the app until mapped.
                     </span>
                   )}
-                  {selectedContentId && contentItems.find((c) => c._id === selectedContentId)?.type !== 'Series' && (
+                  {selectedContentId && !['Series', 'Serial Drama'].includes(contentItems.find((c) => c._id === selectedContentId)?.type) && (
                     <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.3rem', display: 'block' }}>
-                      Select a <strong style={{ color: 'var(--color-accent)' }}>Series</strong> to enable episode-by-episode upload.
+                      Select a <strong style={{ color: 'var(--color-accent)' }}>Series</strong> or <strong style={{ color: 'var(--color-accent)' }}>Serial Drama</strong> to enable episode-by-episode upload.
                     </span>
                   )}
                 </label>
 
-                {/* ── Episode fields — shown only for Series ── */}
-                {selectedContentId && contentItems.find((c) => c._id === selectedContentId)?.type === 'Series' && (
+                {/* ── Episode fields — shown for Series and Serial Drama ── */}
+                {selectedContentId && ['Series', 'Serial Drama'].includes(contentItems.find((c) => c._id === selectedContentId)?.type) && (
                   <div className={styles.episodeUploadBlock}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                       <p className={styles.episodeUploadTitle}>
-                        <Film size={12} /> Series Episodes
+                        <Film size={12} /> Episodes
                       </p>
                       <div className={styles.uploadModeToggle}>
                         <button
@@ -2875,10 +2876,11 @@ export default function Admin() {
                     <select className={styles.select} value={editForm.type} onChange={ef('type')}>
                       <option value="Film">Film</option>
                       <option value="Series">Series</option>
+                      <option value="Serial Drama">Serial Drama</option>
                       <option value="Documentary">Documentary</option>
                     </select>
                   </label>
-                  {editForm.type !== 'Series' && (
+                  {editForm.type !== 'Series' && editForm.type !== 'Serial Drama' && (
                     <label className={styles.label}>
                       Duration <span className={styles.labelHint}>(e.g. 1h 45m, 105m)</span>
                       <input
@@ -3026,8 +3028,8 @@ export default function Admin() {
                     </label>
                   </div>
 
-                  {/* ── Episodes (Series only) ── */}
-                  {editForm.type === 'Series' && (
+                  {/* ── Episodes (Series and Serial Drama) ── */}
+                  {(editForm.type === 'Series' || editForm.type === 'Serial Drama') && (
                     <div className={`${styles.episodeSection} ${styles.spanFull}`}>
                       <div className={styles.episodeSectionHeader}>
                         <p className={styles.episodeSectionTitle}><ListPlus size={13} /> Episodes</p>

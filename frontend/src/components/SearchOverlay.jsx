@@ -2,10 +2,10 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, X, Clock, TrendingUp, Star, Crown, Loader2, ArrowUpRight, Hash, Zap, Play } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { searchContent, searchReels } from '../services/api'
+import { searchContent, searchReels, fetchPopularSearches } from '../services/api'
 import styles from './SearchOverlay.module.css'
 
-const POPULAR_TAGS  = ['Byomkesh', 'Mystery', 'Thriller', 'Drama', 'Classic', 'Detective']
+const FALLBACK_TAGS = ['Byomkesh', 'Mystery', 'Thriller', 'Drama', 'Classic', 'Detective']
 const RECENT_KEY    = 'dhara_recent_searches'
 const MAX_RECENT    = 6
 
@@ -36,6 +36,7 @@ export default function SearchOverlay() {
   const [reelResults,   setReelResults]   = useState([])
   const [loading,       setLoading]       = useState(false)
   const [recent,        setRecent]        = useState(loadRecent)
+  const [popularTags,   setPopularTags]   = useState(FALLBACK_TAGS)
   const inputRef    = useRef(null)
   const debounceRef = useRef(null)
 
@@ -45,6 +46,9 @@ export default function SearchOverlay() {
     inputRef.current?.focus()
     const onKey = (e) => e.key === 'Escape' && close()
     window.addEventListener('keydown', onKey)
+    fetchPopularSearches()
+      .then((tags) => { if (tags.length >= 3) setPopularTags(tags) })
+      .catch(() => {})
     return () => window.removeEventListener('keydown', onKey)
   }, [close])
 
@@ -278,7 +282,7 @@ export default function SearchOverlay() {
                 <p className={styles.sectionLabel}><TrendingUp size={13} /> Popular</p>
               </div>
               <div className={styles.tags}>
-                {POPULAR_TAGS.map((tag) => (
+                {popularTags.map((tag) => (
                   <button key={tag} className={styles.tag} onClick={() => handleTagClick(tag)}>
                     {tag}
                   </button>

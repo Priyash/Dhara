@@ -73,7 +73,7 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false, sour
 
   const cleanTitle  = stripExtension(item.title)
   const genres      = (item.genre || []).slice(0, 2)
-  const episodeInfo = item.type === 'Series' && item.episodes?.length
+  const episodeInfo = (item.type === 'Series' || item.type === 'Serial Drama') && item.episodes?.length
     ? `${item.episodes.length} Ep`
     : null
 

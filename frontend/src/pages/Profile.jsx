@@ -698,7 +698,7 @@ export default function Profile() {
               <div className={styles.applyFieldLabel}>
                 Content you plan to upload *
                 <div className={styles.contentTypeRow}>
-                  {['Film', 'Series', 'Documentary'].map((type) => (
+                  {['Film', 'Series', 'Serial Drama', 'Documentary'].map((type) => (
                     <button
                       key={type}
                       type="button"

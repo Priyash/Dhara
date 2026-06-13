@@ -6,12 +6,13 @@ import { NAV_LINKS } from '../data/content'
 import styles from './Navbar.module.css'
 
 const NAV_ROUTES = {
-  Home:      '/',
-  Movies:    '/browse?type=Film',
-  Series:    '/browse?type=Series',
-  Originals: '/browse?type=Documentary',
-  Live:      '/browse?type=Live',
-  Reels:     '/reels',
+  Home:           '/',
+  Movies:         '/browse?type=Film',
+  Series:         '/browse?type=Series',
+  'ধারাবাহিক': '/browse?type=Serial+Drama',
+  Originals:      '/browse?type=Documentary',
+  Live:           '/browse?type=Live',
+  Reels:          '/reels',
 }
 
 function getActiveLink(location) {
@@ -20,6 +21,7 @@ function getActiveLink(location) {
   const type = new URLSearchParams(location.search).get('type')
   if (type === 'Film')         return 'Movies'
   if (type === 'Series')       return 'Series'
+  if (type === 'Serial Drama') return 'ধারাবাহিক'
   if (type === 'Documentary')  return 'Originals'
   if (type === 'Live')         return 'Live'
   return null

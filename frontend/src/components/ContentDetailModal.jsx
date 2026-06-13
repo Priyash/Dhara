@@ -46,7 +46,7 @@ export default function ContentDetailModal() {
   const inWatchlist  = user?.watchlist?.includes(item.id)
   const rating       = item.rating ?? 0
   const reviewCount  = formatReviewCount(item.reviewCount)
-  const isSeries     = item.type === 'Series'
+  const isSeries     = item.type === 'Series' || item.type === 'Serial Drama'
   const episodes     = Array.isArray(item.episodes) ? item.episodes : []
   const hasCast      = item.cast?.length > 0
   const hasDirector  = Boolean(item.director)

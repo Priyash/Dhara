@@ -57,7 +57,7 @@ router.post('/apply', requireAuth, async (req, res, next) => {
     if (!Array.isArray(contentTypes) || contentTypes.length === 0)
       return res.status(400).json({ error: 'Select at least one content type you plan to upload' })
 
-    const VALID_TYPES = ['Film', 'Series', 'Documentary']
+    const VALID_TYPES = ['Film', 'Series', 'Serial Drama', 'Documentary']
     const sanitizedTypes = contentTypes.filter((t) => VALID_TYPES.includes(t))
     if (sanitizedTypes.length === 0)
       return res.status(400).json({ error: 'Invalid content type selection' })
@@ -118,7 +118,7 @@ router.patch('/profile', requireAuth, requireCreator, async (req, res, next) => 
     if (portfolioUrl  !== undefined) updates['creatorProfile.portfolioUrl']   = portfolioUrl.trim()
     if (sampleWorkUrl !== undefined) updates['creatorProfile.sampleWorkUrl']  = sampleWorkUrl.trim()
     if (contentTypes  !== undefined && Array.isArray(contentTypes)) {
-      const VALID = ['Film', 'Series', 'Documentary']
+      const VALID = ['Film', 'Series', 'Serial Drama', 'Documentary']
       updates['creatorProfile.contentTypes'] = contentTypes.filter((t) => VALID.includes(t))
     }
 
@@ -178,7 +178,7 @@ router.get('/analytics', requireAuth, requireCreator, async (req, res, next) => 
     const totalLikes = approved.reduce((s, i) => s + (i.likeCount  || 0), 0)
 
     const totalEpisodes = approved
-      .filter((i) => i.type === 'Series')
+      .filter((i) => i.type === 'Series' || i.type === 'Serial Drama')
       .reduce((s, i) => s + (i.episodes?.length || 0), 0)
 
     const settled      = approved.length + rejected.length
@@ -288,7 +288,7 @@ router.get('/analytics', requireAuth, requireCreator, async (req, res, next) => 
         viewCount:        i.viewCount     || 0,
         likeCount:        i.likeCount     || 0,
         revisionCount:    i.revisionCount || 0,
-        episodes: i.type === 'Series'
+        episodes: (i.type === 'Series' || i.type === 'Serial Drama')
           ? (i.episodes || []).map((ep) => ({ number: ep.number, title: ep.title, viewCount: ep.viewCount || 0 }))
           : [],
         createdAt: i.createdAt,
@@ -348,7 +348,7 @@ router.post('/content', requireAuth, requireCreator, async (req, res, next) => {
     } = req.body
 
     if (!title?.trim()) return res.status(400).json({ error: 'Title is required' })
-    if (!['Film', 'Series', 'Documentary'].includes(type)) {
+    if (!['Film', 'Series', 'Serial Drama', 'Documentary'].includes(type)) {
       return res.status(400).json({ error: 'Invalid type' })
     }
 
@@ -366,7 +366,7 @@ router.post('/content', requireAuth, requireCreator, async (req, res, next) => {
       backdropUrl:      backdropUrl?.trim() || '',
       contentLanguage:  contentLanguage || 'Bengali',
       certification:    certification || null,
-      duration:         type !== 'Series' ? (duration?.trim() || '') : '',
+      duration:         (type !== 'Series' && type !== 'Serial Drama') ? (duration?.trim() || '') : '',
       contentWarnings:  contentWarnings?.trim() || '',
       moodTags:         Array.isArray(moodTags) ? moodTags : [],
       badge:            badge || null,

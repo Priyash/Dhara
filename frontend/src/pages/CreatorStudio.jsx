@@ -406,7 +406,7 @@ function InsightsRow({ overview, content }) {
   }
 
   const films  = content.filter((c) => c.type === 'Film'   && c.viewCount > 0)
-  const series = content.filter((c) => c.type === 'Series' && c.viewCount > 0)
+  const series = content.filter((c) => (c.type === 'Series' || c.type === 'Serial Drama') && c.viewCount > 0)
   if (films.length > 0 && series.length > 0) {
     const fEng = films.reduce((s, c) => s + c.likeCount / c.viewCount, 0) / films.length
     const sEng = series.reduce((s, c) => s + c.likeCount / c.viewCount, 0) / series.length
@@ -833,8 +833,8 @@ export default function CreatorStudio() {
         moodTags:    form.moodTags.split(',').map((s) => s.trim()).filter(Boolean),
         releaseYear: form.releaseYear ? Number(form.releaseYear) : null,
         certification: form.certification || null,
-        duration:    form.type !== 'Series' ? (form.duration?.trim() || '') : '',
-        episodes:    form.type === 'Series'
+        duration:    (form.type !== 'Series' && form.type !== 'Serial Drama') ? (form.duration?.trim() || '') : '',
+        episodes:    (form.type === 'Series' || form.type === 'Serial Drama')
           ? form.episodes
               .filter((ep) => ep.number && ep.title.trim())
               .map((ep) => ({ number: Number(ep.number), title: ep.title.trim(), duration: ep.duration.trim() }))
@@ -863,7 +863,7 @@ export default function CreatorStudio() {
 
   // Clamp step index when type changes between Series / non-Series
   useEffect(() => {
-    const maxStep = form.type === 'Series' ? STEPS_SERIES.length - 1 : STEPS_BASE.length - 1
+    const maxStep = (form.type === 'Series' || form.type === 'Serial Drama') ? STEPS_SERIES.length - 1 : STEPS_BASE.length - 1
     if (step > maxStep) setStep(maxStep)
   }, [form.type]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1179,7 +1179,7 @@ export default function CreatorStudio() {
                           const viewPct     = Math.round((item.viewCount / maxViews) * 100)
                           const likePct     = item.viewCount > 0
                             ? Math.round((item.likeCount / item.viewCount) * 100) : 0
-                          const hasEpisodes = item.type === 'Series' && item.episodes.length > 0
+                          const hasEpisodes = (item.type === 'Series' || item.type === 'Serial Drama') && item.episodes.length > 0
                           const epMax       = hasEpisodes
                             ? Math.max(...item.episodes.map((e) => e.viewCount), 1) : 1
                           const eColor      = likePct >= 10 ? '#4ade80' : likePct >= 4 ? '#fbbf24' : 'rgba(255,255,255,0.28)'
@@ -2175,7 +2175,7 @@ export default function CreatorStudio() {
       {/* ── New Submission Modal ── rendered via portal so CSS transforms on
            the animated routePane don't break position:fixed ── */}
       {showModal && (() => {
-        const activeSteps = form.type === 'Series' ? STEPS_SERIES : STEPS_BASE
+        const activeSteps = (form.type === 'Series' || form.type === 'Serial Drama') ? STEPS_SERIES : STEPS_BASE
         const currentStepId = activeSteps[step]?.id ?? 'basics'
         return createPortal(
         <div className={styles.modalBackdrop} onClick={(e) => e.target === e.currentTarget && closeModal()}>
@@ -2220,6 +2220,7 @@ export default function CreatorStudio() {
                     <select className={styles.select} value={form.type} onChange={ff('type')}>
                       <option value="Film">Film</option>
                       <option value="Series">Series</option>
+                      <option value="Serial Drama">Serial Drama</option>
                       <option value="Documentary">Documentary</option>
                     </select>
                   </label>
@@ -2291,7 +2292,7 @@ export default function CreatorStudio() {
                     Director
                     <input className={styles.input} value={form.director} onChange={ff('director')} placeholder="পরিচালকের নাম" />
                   </label>
-                  {form.type !== 'Series' && (
+                  {form.type !== 'Series' && form.type !== 'Serial Drama' && (
                     <label className={styles.label}>
                       Duration <span className={styles.labelHint}>(e.g. 2h, 1h 45m, 105m)</span>
                       <input
@@ -2453,7 +2454,7 @@ export default function CreatorStudio() {
                       <dt>Mood</dt>      <dd>{form.moodTags || '—'}</dd>
                     </dl>
                   </div>
-                  {form.type === 'Series' && (
+                  {(form.type === 'Series' || form.type === 'Serial Drama') && (
                     <div className={styles.reviewSection}>
                       <p className={styles.reviewHead}>Episodes</p>
                       <dl className={styles.reviewDl}>
@@ -2483,7 +2484,7 @@ export default function CreatorStudio() {
               {step < activeSteps.length - 1 ? (
                 <button className={styles.primaryBtn} onClick={() => {
                   if (currentStepId === 'basics' && !form.title.trim()) { setSubmitError('Title is required.'); return }
-                  if (currentStepId === 'details' && form.type !== 'Series' && form.duration && !isValidDuration(form.duration)) {
+                  if (currentStepId === 'details' && form.type !== 'Series' && form.type !== 'Serial Drama' && form.duration && !isValidDuration(form.duration)) {
                     setSubmitError(`Invalid duration "${form.duration}". Use "1h 45m", "105m", or "1:45".`); return
                   }
                   if (currentStepId === 'episodes') {
