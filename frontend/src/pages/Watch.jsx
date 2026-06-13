@@ -89,6 +89,52 @@ export default function Watch() {
   const viewRecordedRef = useRef(new Set())
   const milestoneRef = useRef(new Set())
 
+  // ── Sticky player lock ────────────────────────────────────────────────────────
+  // When playing starts, playerWrap becomes sticky so it stays visible while
+  // the user reads the description / episode list below it.
+  // Scrolling (wheel / touch) or resizing releases the lock permanently until
+  // the next video load.
+  const playerWrapRef      = useRef(null)
+  const stickyReleasedRef  = useRef(false)
+  const [playerPlaying,    setPlayerPlaying] = useState(false)
+
+  // Reset when a new video loads (hlsUrl changes)
+  useEffect(() => {
+    stickyReleasedRef.current = false
+    setPlayerPlaying(false)
+  }, [hlsUrl])
+
+  // Apply / remove sticky on play state change
+  useEffect(() => {
+    const el = playerWrapRef.current
+    if (!el) return
+    if (playerPlaying && !stickyReleasedRef.current) {
+      el.classList.add(styles.playerWrapLocked)
+      // Scroll the player into view if it's not already fully visible
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    } else {
+      el.classList.remove(styles.playerWrapLocked)
+    }
+  }, [playerPlaying])
+
+  // Release lock on user-initiated scroll or resize
+  useEffect(() => {
+    if (!playerPlaying) return
+    const release = () => {
+      if (stickyReleasedRef.current) return
+      stickyReleasedRef.current = true
+      playerWrapRef.current?.classList.remove(styles.playerWrapLocked)
+    }
+    window.addEventListener('wheel',     release, { passive: true })
+    window.addEventListener('touchmove', release, { passive: true })
+    window.addEventListener('resize',    release)
+    return () => {
+      window.removeEventListener('wheel',     release)
+      window.removeEventListener('touchmove', release)
+      window.removeEventListener('resize',    release)
+    }
+  }, [playerPlaying])
+
   useEffect(() => {
     setLoading(true)
     setRelated([])
@@ -483,7 +529,7 @@ export default function Watch() {
         </button>
       </div>
 
-      <div className={styles.playerWrap}>
+      <div ref={playerWrapRef} className={styles.playerWrap}>
         {streamError ? (
           <div className={styles.streamUnavailable}>
             <VideoOff size={32} className={styles.streamUnavailableIcon} />
@@ -523,6 +569,7 @@ export default function Watch() {
               poster={content.posterUrl || null}
               storageKey={id}
               maxQualityHeight={maxQualityHeight}
+              onPlayingChange={setPlayerPlaying}
             />
             {resumePos && (
               <div className={styles.resumePrompt}>

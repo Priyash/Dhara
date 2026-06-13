@@ -206,6 +206,16 @@
   /* Gate states now render as full-screen — playerWrap only shown when streaming */
 }
 
+/* Applied while video is playing and user hasn't manually scrolled.
+   Keeps the player pinned below the navbar so it stays visible while
+   the user reads the description / episode list below. */
+.playerWrapLocked {
+  position: sticky;
+  top: var(--nav-height, 64px);
+  z-index: 50;
+  box-shadow: 0 4px 32px rgba(0, 0, 0, 0.7);
+}
+
 .state {
   min-height: 100vh;
   padding-top: var(--nav-height, 64px);
