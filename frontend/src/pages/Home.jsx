@@ -5,6 +5,7 @@ import ContentRow from '../components/ContentRow'
 import CinematicRow from '../components/CinematicRow'
 import GenreMosaic from '../components/GenreMosaic'
 import WideResumeCard from '../components/WideResumeCard'
+import CategoryGrid from '../components/CategoryGrid'
 import CuratedShelfRow from '../components/CuratedShelfRow'
 import { useStore } from '../store/useStore'
 import { fetchContent, fetchShelves, fetchContinueWatching, fetchRecommendationShelves } from '../services/api'
@@ -149,30 +150,36 @@ export default function Home() {
             {/* First 5 as magazine mosaic */}
             <GenreMosaic
               title="Movies"
-              items={movies}
+              items={movies.slice(0, 5)}
               onCardClick={openItem}
-              onSeeAll={() => navigate('/browse?type=Film')}
             />
 
-            {/* Overflow items (6+) as a standard row */}
+            {/* Rest as a grid */}
             {movies.length > 5 && (
-              <ContentRow
-                title="More Films"
+              <CategoryGrid
+                title="All Films"
                 items={movies.slice(5)}
+                onCardClick={openItem}
+                isSubscribed={isSubscribed}
                 onSeeAll={() => navigate('/browse?type=Film')}
-                {...rowProps}
+                totalCount={movies.length}
+                eventSource="grid_films"
               />
             )}
           </>
         )}
 
-        {/* ── Series ── */}
+        {/* ── Series — grid layout ── */}
         {series.length > 0 && (
-          <ContentRow
+          <CategoryGrid
             title="Series"
+            eyebrow="Binge-worthy"
             items={series}
+            onCardClick={openItem}
+            isSubscribed={isSubscribed}
             onSeeAll={() => navigate('/browse?type=Series')}
-            {...rowProps}
+            totalCount={series.length}
+            eventSource="grid_series"
           />
         )}
 
@@ -187,13 +194,17 @@ export default function Home() {
           />
         )}
 
-        {/* ── Originals ── */}
+        {/* ── Originals — grid layout ── */}
         {originals.length > 0 && (
-          <ContentRow
+          <CategoryGrid
             title="Originals"
+            eyebrow="Dhara exclusive"
             items={originals}
+            onCardClick={openItem}
+            isSubscribed={isSubscribed}
             onSeeAll={() => navigate('/browse?type=Documentary')}
-            {...rowProps}
+            totalCount={originals.length}
+            eventSource="grid_originals"
           />
         )}
 
