@@ -156,11 +156,16 @@
   transform: translate(-50%, -50%) scale(1);
 }
 
-/* ── Mobile ────────────────────────────────────────────────────────────── */
+/* ── Tablet ────────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .section { padding: 0 20px; }
+  .grid    { height: 360px; }
+  .tileLarge .tileTitle { font-size: 18px; }
+}
+
+/* ── Mobile landscape ─────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .section {
-    padding: 0 16px;
-  }
+  .section { padding: 0 16px; }
 
   .grid {
     grid-template-columns: 1fr;
@@ -168,24 +173,20 @@
     gap: 8px;
   }
 
-  .tileLarge {
-    height: 200px;
-  }
+  .tileLarge  { height: 200px; }
+  .smallGrid  { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tileSmall  { height: 130px; }
 
-  .smallGrid {
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
+  .tileLarge .tileTitle { font-size: 17px; bottom: 14px; left: 14px; }
+}
 
-  .tileSmall {
-    height: 130px;
-  }
-
-  .tileLarge .tileTitle {
-    font-size: 17px;
-    bottom: 14px;
-    left: 14px;
-  }
+/* ── Small phone ───────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .section   { padding: 0 12px; }
+  .tileLarge { height: 170px; }
+  .tileSmall { height: 110px; }
+  .tileTitle { font-size: 12px; bottom: 8px; left: 10px; right: 10px; }
+  .tileLarge .tileTitle { font-size: 15px; }
 }
 
 /* ── TV / 4K ───────────────────────────────────────────────────────────── */

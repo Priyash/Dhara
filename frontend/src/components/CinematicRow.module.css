@@ -207,13 +207,26 @@
 .scrollRight { right: 0; border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 .scrollBtn:hover { background: rgba(9, 9, 11, 0.97); }
 
+/* ── Tablet ────────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .card { width: 260px; }
+}
+
 /* ── Mobile ────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .header   { padding: 0 16px; }
-  .row      { padding: 8px 16px 12px; gap: 10px; }
+  .header    { padding: 0 16px; }
+  .row       { padding: 8px 16px 12px; gap: 10px; }
   .scrollBtn { display: none; }
-  .title    { font-size: 18px; }
-  .card     { width: 240px; }
+  .title     { font-size: 18px; }
+  .card      { width: 220px; }
+  .cardTitle { font-size: 13px; }
+}
+
+/* ── Small phone ───────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .header  { padding: 0 12px; }
+  .row     { padding: 8px 12px 12px; gap: 8px; }
+  .card    { width: 180px; }
 }
 
 /* ── TV / 4K ───────────────────────────────────────────────────────────── */

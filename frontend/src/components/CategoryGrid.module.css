@@ -52,9 +52,10 @@
   gap: 12px;
 }
 
-/* Every PosterCard fills the column width */
+/* PosterCard fills the column — overrides its internal fixed width */
 .grid > article {
-  width: 100%;
+  width: 100% !important;
+  min-width: 0;
   flex-shrink: unset;
 }
 
@@ -101,47 +102,45 @@
   margin-top: 2px;
 }
 
+/* ── Large tablet / small laptop ──────────────────────────────────────── */
+@media (max-width: 1200px) {
+  .grid { grid-template-columns: repeat(4, 1fr); }
+}
+
 /* ── Tablet ────────────────────────────────────────────────────────────── */
-@media (max-width: 1024px) {
-  .grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
+@media (max-width: 900px) {
+  .section  { padding: 0 20px; }
+  .title    { font-size: 20px; }
+  .grid     { grid-template-columns: repeat(4, 1fr); gap: 10px; }
 }
 
-/* ── Mobile ────────────────────────────────────────────────────────────── */
+/* ── Mobile landscape / large phone ───────────────────────────────────── */
 @media (max-width: 768px) {
-  .section {
-    padding: 0 16px;
-  }
-
-  .title { font-size: 18px; }
-
-  .grid {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-  }
-
+  .section  { padding: 0 16px; }
+  .title    { font-size: 18px; }
+  .grid     { grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .moreCount { font-size: 22px; }
+  .seeAll   { font-size: 12px; }
 }
 
+/* ── Phone ─────────────────────────────────────────────────────────────── */
 @media (max-width: 480px) {
-  .grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  .grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .moreCount { font-size: 20px; }
+}
+
+/* ── Small phone (360px) ───────────────────────────────────────────────── */
+@media (max-width: 360px) {
+  .section  { padding: 0 12px; }
+  .grid     { gap: 6px; }
 }
 
 /* ── TV / 4K ───────────────────────────────────────────────────────────── */
 @media (min-width: 1920px) {
-  .section {
-    padding: 0 72px;
-  }
-
-  .title { font-size: 28px; }
-
-  .grid {
-    grid-template-columns: repeat(7, 1fr);
-    gap: 16px;
-  }
-
+  .section  { padding: 0 72px; }
+  .title    { font-size: 28px; }
+  .eyebrow  { font-size: 13px; }
+  .grid     { grid-template-columns: repeat(7, 1fr); gap: 16px; }
   .moreCount { font-size: 36px; }
+  .moreLabel { font-size: 14px; }
 }

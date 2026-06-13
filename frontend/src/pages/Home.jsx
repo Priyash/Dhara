@@ -129,7 +129,7 @@ export default function Home() {
           <ContentRow title="Live Now" items={live} {...rowProps} />
         )}
 
-        {/* ── Movies — editorial mosaic + overflow row ── */}
+        {/* ── Movies — editorial mosaic (5+ items) → grid overflow ── */}
         {movies.length > 0 && (
           <>
             <div className={styles.ambientPulse} aria-hidden="true" />
@@ -147,25 +147,25 @@ export default function Home() {
               </button>
             </div>
 
-            {/* First 5 as magazine mosaic */}
-            <GenreMosaic
-              title="Movies"
-              items={movies.slice(0, 5)}
-              onCardClick={openItem}
-            />
-
-            {/* Rest as a grid */}
-            {movies.length > 5 && (
-              <CategoryGrid
-                title="All Films"
-                items={movies.slice(5)}
+            {/* Mosaic only when there are 5+ films; else fall straight to grid */}
+            {movies.length >= 5 && (
+              <GenreMosaic
+                title="Movies"
+                items={movies.slice(0, 5)}
                 onCardClick={openItem}
-                isSubscribed={isSubscribed}
-                onSeeAll={() => navigate('/browse?type=Film')}
-                totalCount={movies.length}
-                eventSource="grid_films"
               />
             )}
+
+            <CategoryGrid
+              title={movies.length >= 5 ? 'More Films' : 'Movies'}
+              eyebrow={movies.length >= 5 ? undefined : 'Now streaming'}
+              items={movies.length >= 5 ? movies.slice(5) : movies}
+              onCardClick={openItem}
+              isSubscribed={isSubscribed}
+              onSeeAll={() => navigate('/browse?type=Film')}
+              totalCount={movies.length}
+              eventSource="grid_films"
+            />
           </>
         )}
 
