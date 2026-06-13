@@ -1708,13 +1708,20 @@ router.patch('/reels/:id/reject', async (req, res, next) => {
  */
 router.delete('/reels/:id', async (req, res, next) => {
   try {
+    const existing = await Reel.findById(req.params.id).select('bunnyVideoId title').lean()
+    if (!existing) return res.status(404).json({ error: 'Reel not found' })
+
     const reel = await Reel.findByIdAndUpdate(
       req.params.id,
-      { $set: { isDeleted: true, isPublished: false } },
+      { $set: { isDeleted: true, isPublished: false, bunnyVideoId: '' } },
       { new: true }
     ).lean()
 
-    if (!reel) return res.status(404).json({ error: 'Reel not found' })
+    if (existing.bunnyVideoId) {
+      bunnyRequest(`/library/${libraryId}/videos/${existing.bunnyVideoId}`, { method: 'DELETE' })
+        .catch((err) => console.warn('[reel-delete] Bunny delete failed (non-fatal):', err.message))
+    }
+
     logAdminAction(req, 'delete_reel', 'reel', reel._id, reel.title || reel._id.toString())
     res.json({ success: true })
   } catch (err) {

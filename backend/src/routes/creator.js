@@ -8,6 +8,9 @@ import { ContentRankSnapshot } from '../models/ContentRankSnapshot.js'
 import { requireAuth } from '../middleware/auth.js'
 import { emailTierAdvancement } from '../config/email.js'
 import { Reel, REEL_MAX_DURATION_SECS } from '../models/Reel.js'
+import { bunnyRequest } from '../services/bunnyUpload.js'
+
+const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID
 
 // Returns 'YYYY-MM-DD' in IST for a given UTC Date (default: now)
 function istDate(d = new Date()) {
@@ -1019,7 +1022,15 @@ router.delete('/reels/:id', requireAuth, async (req, res, next) => {
     if (reel.submissionStatus === 'approved') {
       return res.status(400).json({ error: 'Approved reels cannot be deleted. Contact support.' })
     }
-    await Reel.findByIdAndUpdate(req.params.id, { $set: { isDeleted: true } })
+
+    const { bunnyVideoId } = reel
+    await Reel.findByIdAndUpdate(req.params.id, { $set: { isDeleted: true, bunnyVideoId: '' } })
+
+    if (bunnyVideoId) {
+      bunnyRequest(`/library/${libraryId}/videos/${bunnyVideoId}`, { method: 'DELETE' })
+        .catch((err) => console.warn('[creator-reel-delete] Bunny delete failed (non-fatal):', err.message))
+    }
+
     res.json({ success: true })
   } catch (err) {
     next(err)
