@@ -356,8 +356,8 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
 }
 
 /* Cards must fill their grid cell, not overflow with a fixed px width */
@@ -425,13 +425,9 @@
 }
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
-@media (max-width: 1200px) {
-  .grid { grid-template-columns: repeat(4, 1fr); }
-}
-
-@media (max-width: 1024px) and (min-width: 769px) {
+@media (max-width: 900px) {
   .gridWrap { padding: 28px 32px 48px; }
-  .grid     { grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .grid     { grid-template-columns: repeat(3, 1fr); gap: 10px; }
 }
 
 @media (max-width: 768px) {
@@ -441,7 +437,7 @@
   .controlRow  { padding: 8px 16px; gap: 8px; }
   .accessLabel { display: none; }
   .gridWrap    { padding: 20px 16px 48px; }
-  .grid        { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .grid        { gap: 8px; }
   .emptyState  { padding: 60px 16px; }
   .resultCount { display: none; }
 }
@@ -457,14 +453,14 @@
 
 @media (min-width: 1920px) {
   .gridWrap { padding: 40px 72px 80px; }
-  .grid     { grid-template-columns: repeat(7, 1fr); gap: 16px; }
+  .grid     { grid-template-columns: repeat(5, 1fr); gap: 18px; }
 }
 
 /* ── Skeleton loading grid ──────────────────────────────────────────────────── */
 .skeletonGrid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
   padding: 32px 48px 80px;
 }
 
@@ -528,8 +524,12 @@
   to { transform: rotate(360deg); }
 }
 
+@media (max-width: 900px) {
+  .skeletonGrid  { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+}
+
 @media (max-width: 768px) {
-  .skeletonGrid  { padding: 24px 20px 48px; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .skeletonGrid  { padding: 24px 20px 48px; gap: 8px; }
   .loadMoreWrap  { padding: 8px 20px 60px; }
 }
 
@@ -538,5 +538,5 @@
 }
 
 @media (min-width: 1920px) {
-  .skeletonGrid  { padding: 36px 72px 80px; grid-template-columns: repeat(7, 1fr); gap: 16px; }
+  .skeletonGrid  { padding: 36px 72px 80px; grid-template-columns: repeat(5, 1fr); gap: 18px; }
 }
