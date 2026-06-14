@@ -585,7 +585,6 @@ export default function Admin() {
   const [mapVideoError, setMapVideoError]     = useState('')
   const [file, setFile]                       = useState(null)
   const [busy, setBusy]                       = useState(false)
-  const [uploadProgress, setUploadProgress]   = useState(0)
   const [notice, setNotice]                   = useState('')
   const [error, setError]                     = useState('')
   const [dragOver, setDragOver]               = useState(false)
@@ -1446,7 +1445,8 @@ export default function Admin() {
     }
     // ─────────────────────────────────────────────────────────────────────
 
-    setNotice(''); setError(''); setBusy(true); setUploadProgress(0)
+    setNotice(''); setError(''); setBusy(true)
+    const fileToUpload = file
     try {
       const job = await createUploadJob({
         title:           isSeries && episodeTitle.trim() ? episodeTitle.trim() : title,
@@ -1457,16 +1457,17 @@ export default function Admin() {
         episodeTitle:    isSeries ? episodeTitle.trim()   : '',
         episodeDuration: isSeries ? episodeDuration.trim() : '',
       })
-      await uploadJobFile(job._id, file, { onProgress: setUploadProgress })
+      // Reset the form as soon as the job is queued so admin can start the next upload
       setTitle(''); setSelectedContentId(''); setFile(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
       setSeasonNumber('1')
       setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration(''); setSeriesEpisodes([])
+      await uploadJobFile(job._id, fileToUpload)
       setNotice('Upload accepted — video is processing asynchronously.')
       await loadData()
     } catch (err) {
       setError(err?.message || 'Upload failed.')
-    } finally { setBusy(false); setUploadProgress(0) }
+    } finally { setBusy(false) }
   }
 
   const handleImportFromCdn = async () => {
@@ -2131,16 +2132,9 @@ export default function Admin() {
                 )}
 
                 {uploadMode === 'single' && (
-                  <div>
-                    <button className={styles.primaryBtn} type="submit" disabled={busy || !selectedCollection}>
-                      {busy ? `Uploading… ${uploadProgress}%` : 'Upload Video'}
-                    </button>
-                    {busy && (
-                      <div className={styles.uploadProgressTrack}>
-                        <div className={styles.uploadProgressFill} style={{ width: `${uploadProgress}%` }} />
-                      </div>
-                    )}
-                  </div>
+                  <button className={styles.primaryBtn} type="submit" disabled={busy || !selectedCollection}>
+                    {busy ? 'Uploading…' : 'Upload Video'}
+                  </button>
                 )}
               </form>
             </article>
