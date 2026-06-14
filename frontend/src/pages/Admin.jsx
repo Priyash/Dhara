@@ -585,6 +585,7 @@ export default function Admin() {
   const [mapVideoError, setMapVideoError]     = useState('')
   const [file, setFile]                       = useState(null)
   const [busy, setBusy]                       = useState(false)
+  const [uploadProgress, setUploadProgress]   = useState(0)
   const [notice, setNotice]                   = useState('')
   const [error, setError]                     = useState('')
   const [dragOver, setDragOver]               = useState(false)
@@ -1462,10 +1463,19 @@ export default function Admin() {
       if (fileInputRef.current) fileInputRef.current.value = ''
       setSeasonNumber('1')
       setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration(''); setSeriesEpisodes([])
-      await uploadJobFile(job._id, fileToUpload)
+      setNotice('Sending to server… 0%')
+      setUploadProgress(0)
+      await uploadJobFile(job._id, fileToUpload, {
+        onProgress: (p) => {
+          setUploadProgress(p)
+          setNotice(`Sending to server… ${p}%`)
+        },
+      })
+      setUploadProgress(0)
       setNotice('Upload accepted — video is processing asynchronously.')
       await loadData()
     } catch (err) {
+      setUploadProgress(0)
       setError(err?.message || 'Upload failed.')
     } finally { setBusy(false) }
   }
@@ -1634,6 +1644,11 @@ export default function Admin() {
       {(notice || error) && (
         <div className={`${styles.message} ${error ? styles.error : styles.notice}`}>
           {error || notice}
+          {!error && uploadProgress > 0 && (
+            <div className={styles.uploadProgressTrack}>
+              <div className={styles.uploadProgressFill} style={{ width: `${uploadProgress}%` }} />
+            </div>
+          )}
         </div>
       )}
 
