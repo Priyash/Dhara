@@ -1651,6 +1651,86 @@ router.patch('/content/:id/featured-order', async (req, res, next) => {
 })
 
 /**
+ * POST /api/admin/bunny/sync-deletions
+ * Detects videos deleted from Bunny CDN and unpublishes the matching MongoDB Content.
+ * For Film/Documentary/Live: clears bunnyVideoId and sets isPublished=false.
+ * For Series/Serial Drama: clears the stale bunnyVideoId on the specific episode.
+ * Safe to run anytime — never deletes MongoDB documents, only clears stale video links.
+ */
+router.post('/bunny/sync-deletions', async (req, res, next) => {
+  try {
+    // Fetch every video GUID in this library by paginating the full list
+    const activeGuids = new Set()
+    let page = 1
+    while (true) {
+      const result = await bunnyRequest(
+        `/library/${libraryId}/videos?page=${page}&itemsPerPage=100&orderBy=date`
+      )
+      const items = result?.items || []
+      items.forEach((v) => { if (v.guid) activeGuids.add(v.guid) })
+      const total = result?.totalItems ?? items.length
+      if (items.length === 0 || page * 100 >= total) break
+      page++
+    }
+
+    // Root-level content (Film / Documentary / Live) with a stale bunnyVideoId
+    const rootContent = await Content.find({
+      bunnyVideoId: { $exists: true, $ne: '' },
+      isDeleted:    { $ne: true },
+    }).select('_id title bunnyVideoId').lean()
+
+    const rootStale = rootContent.filter((c) => !activeGuids.has(c.bunnyVideoId))
+
+    if (rootStale.length > 0) {
+      await Content.updateMany(
+        { _id: { $in: rootStale.map((c) => c._id) } },
+        { $set: { bunnyVideoId: '', isPublished: false } }
+      )
+    }
+
+    // Episode-level stale bunnyVideoIds (Series / Serial Drama)
+    const episodic = await Content.find({
+      type:      { $in: ['Series', 'Serial Drama'] },
+      isDeleted: { $ne: true },
+      'seasons.episodes.bunnyVideoId': { $exists: true, $ne: '' },
+    }).select('_id seasons').lean()
+
+    let episodesCleared = 0
+    for (const doc of episodic) {
+      for (const season of doc.seasons || []) {
+        for (const ep of season.episodes || []) {
+          if (ep.bunnyVideoId && !activeGuids.has(ep.bunnyVideoId)) {
+            await Content.updateOne(
+              { _id: doc._id, 'seasons.number': season.number, 'seasons.episodes.number': ep.number },
+              { $set: { 'seasons.$[s].episodes.$[e].bunnyVideoId': '' } },
+              { arrayFilters: [{ 's.number': season.number }, { 'e.number': ep.number }] }
+            )
+            episodesCleared++
+          }
+        }
+      }
+    }
+
+    bustContentCache()
+    logAdminAction(req, 'sync_cdn_deletions', 'config', null, '', {
+      activeBunnyVideos: activeGuids.size,
+      rootUnpublished: rootStale.length,
+      episodesCleared,
+    })
+
+    res.json({
+      success: true,
+      activeBunnyVideos: activeGuids.size,
+      rootUnpublished: rootStale.length,
+      episodesCleared,
+      unpublished: rootStale.map((c) => ({ id: c._id, title: c.title })),
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
  * POST /api/admin/bunny/prune-collections
  * Deactivates StreamCollection records whose bunnyCollectionId no longer exists in Bunny.
  * Safe to run anytime — only marks records inactive, does not delete them.

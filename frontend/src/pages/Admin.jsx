@@ -13,7 +13,7 @@ import { useStore } from '../store/useStore'
 import { useUploadNotifier } from '../hooks/useUploadNotifier'
 import {
   createAdminCollection, createBunnyCollection, createUploadJob, fetchAdminContentById,
-  getAdminSession, importFromCdn, listBunnyCollections, listBunnyVideos,
+  getAdminSession, importFromCdn, syncCdnDeletions, listBunnyCollections, listBunnyVideos,
   listAdminCollections, listAdminContent, listUploadJobs,
   mapExistingBunnyVideo, syncBunnyCollections, createAdminContent, updateAdminContent, togglePublishContent,
   uploadJobFile, getPaymentConfig, updatePaymentConfig,
@@ -1504,6 +1504,22 @@ export default function Admin() {
     } finally { setBusy(false) }
   }
 
+  const handleSyncDeletions = async () => {
+    setNotice(''); setError(''); setBusy(true)
+    try {
+      const result = await syncCdnDeletions()
+      const parts = []
+      if (result.rootUnpublished > 0) parts.push(`${result.rootUnpublished} content item${result.rootUnpublished !== 1 ? 's' : ''} unpublished`)
+      if (result.episodesCleared > 0) parts.push(`${result.episodesCleared} episode${result.episodesCleared !== 1 ? 's' : ''} cleared`)
+      setNotice(parts.length > 0
+        ? `CDN sync: ${parts.join(', ')} (${result.activeBunnyVideos} active videos on Bunny).`
+        : `CDN sync complete — no stale videos found (${result.activeBunnyVideos} active videos on Bunny).`)
+      await loadData()
+    } catch (err) {
+      setError(err?.message || 'Could not sync CDN deletions.')
+    } finally { setBusy(false) }
+  }
+
   const handleMapExisting = async (e) => {
     e.preventDefault()
     if (!mapContentId || !mapVideoId) { setError('Select both a content item and a stream video.'); return }
@@ -1615,6 +1631,9 @@ export default function Admin() {
             <>
               <button className={styles.refreshBtn} onClick={handleSyncBunnyCollections} disabled={busy}>
                 <FolderPlus size={13} /> Sync CDN
+              </button>
+              <button className={styles.refreshBtn} onClick={handleSyncDeletions} disabled={busy}>
+                <RefreshCw size={13} /> Sync Deletions
               </button>
               <button className={styles.importBtn} onClick={handleImportFromCdn} disabled={busy}>
                 <UploadCloud size={13} /> Import from CDN
