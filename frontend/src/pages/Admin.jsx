@@ -13,7 +13,7 @@ import { useStore } from '../store/useStore'
 import { useUploadNotifier } from '../hooks/useUploadNotifier'
 import {
   createAdminCollection, createBunnyCollection, createUploadJob, fetchAdminContentById,
-  getAdminSession, importFromCdn, listBunnyCollections, listBunnyVideos,
+  getAdminSession, importFromCdn, syncCdnDeletions, listBunnyCollections, listBunnyVideos,
   listAdminCollections, listAdminContent, listUploadJobs,
   mapExistingBunnyVideo, syncBunnyCollections, createAdminContent, updateAdminContent, togglePublishContent,
   uploadJobFile, getPaymentConfig, updatePaymentConfig,
@@ -585,6 +585,7 @@ export default function Admin() {
   const [mapVideoError, setMapVideoError]     = useState('')
   const [file, setFile]                       = useState(null)
   const [busy, setBusy]                       = useState(false)
+  const [uploadProgress, setUploadProgress]   = useState(0)
   const [notice, setNotice]                   = useState('')
   const [error, setError]                     = useState('')
   const [dragOver, setDragOver]               = useState(false)
@@ -1462,10 +1463,19 @@ export default function Admin() {
       if (fileInputRef.current) fileInputRef.current.value = ''
       setSeasonNumber('1')
       setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration(''); setSeriesEpisodes([])
-      await uploadJobFile(job._id, fileToUpload)
+      setNotice('Sending to server… 0%')
+      setUploadProgress(0)
+      await uploadJobFile(job._id, fileToUpload, {
+        onProgress: (p) => {
+          setUploadProgress(p)
+          setNotice(`Sending to server… ${p}%`)
+        },
+      })
+      setUploadProgress(0)
       setNotice('Upload accepted — video is processing asynchronously.')
       await loadData()
     } catch (err) {
+      setUploadProgress(0)
       setError(err?.message || 'Upload failed.')
     } finally { setBusy(false) }
   }
@@ -1491,6 +1501,23 @@ export default function Admin() {
       await loadData()
     } catch (err) {
       setError(err?.message || 'Could not sync collections.')
+    } finally { setBusy(false) }
+  }
+
+  const handleSyncDeletions = async () => {
+    setNotice(''); setError(''); setBusy(true)
+    try {
+      const result = await syncCdnDeletions()
+      const parts = []
+      if (result.rootDeleted > 0) parts.push(`${result.rootDeleted} item${result.rootDeleted !== 1 ? 's' : ''} removed`)
+      if (result.showsDeleted > 0) parts.push(`${result.showsDeleted} show${result.showsDeleted !== 1 ? 's' : ''} removed`)
+      if (result.episodesCleared > 0) parts.push(`${result.episodesCleared} episode link${result.episodesCleared !== 1 ? 's' : ''} cleared`)
+      setNotice(parts.length > 0
+        ? `CDN sync: ${parts.join(', ')} (${result.activeBunnyVideos} active videos on Bunny).`
+        : `CDN sync complete — no stale videos found (${result.activeBunnyVideos} active videos on Bunny).`)
+      await loadData()
+    } catch (err) {
+      setError(err?.message || 'Could not sync CDN deletions.')
     } finally { setBusy(false) }
   }
 
@@ -1606,6 +1633,9 @@ export default function Admin() {
               <button className={styles.refreshBtn} onClick={handleSyncBunnyCollections} disabled={busy}>
                 <FolderPlus size={13} /> Sync CDN
               </button>
+              <button className={styles.refreshBtn} onClick={handleSyncDeletions} disabled={busy}>
+                <RefreshCw size={13} /> Sync Deletions
+              </button>
               <button className={styles.importBtn} onClick={handleImportFromCdn} disabled={busy}>
                 <UploadCloud size={13} /> Import from CDN
               </button>
@@ -1634,6 +1664,11 @@ export default function Admin() {
       {(notice || error) && (
         <div className={`${styles.message} ${error ? styles.error : styles.notice}`}>
           {error || notice}
+          {!error && uploadProgress > 0 && (
+            <div className={styles.uploadProgressTrack}>
+              <div className={styles.uploadProgressFill} style={{ width: `${uploadProgress}%` }} />
+            </div>
+          )}
         </div>
       )}
 

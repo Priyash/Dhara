@@ -354,6 +354,10 @@ export async function importFromCdn() {
   return request('/api/admin/import-from-cdn', { method: 'POST' })
 }
 
+export async function syncCdnDeletions() {
+  return request('/api/admin/bunny/sync-deletions', { method: 'POST' })
+}
+
 export async function listBunnyVideos(params = {}) {
   const qs = new URLSearchParams(params).toString()
   return request(`/api/admin/bunny/videos${qs ? `?${qs}` : ''}`)

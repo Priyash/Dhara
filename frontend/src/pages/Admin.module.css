@@ -781,6 +781,22 @@
   box-shadow: none;
 }
 
+/* ── Upload progress bar (shown inside the notice message) ───────────────── */
+.uploadProgressTrack {
+  height: 3px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.uploadProgressFill {
+  height: 100%;
+  background: currentColor;
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+
 /* ── Content type tab bar (matches navbar link style) ────────────────────── */
 .contentTypeTabs {
   display: flex;
