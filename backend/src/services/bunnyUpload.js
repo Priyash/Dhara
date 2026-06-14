@@ -4,6 +4,7 @@
  *
  * Reads BUNNY_STREAM_LIBRARY_ID and BUNNY_STREAM_API_KEY from env.
  */
+import { Readable } from 'stream'
 import { UploadJob } from '../models/UploadJob.js'
 
 const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID
@@ -28,7 +29,14 @@ export async function bunnyRequest(path, { method = 'GET', body, headers = {}, t
       body,
       signal: controller.signal,
     }
-    if (body && typeof body.pipe === 'function') init.duplex = 'half'
+    // Node.js native fetch (undici) requires a Web ReadableStream, not a Node.js Readable.
+    // Convert any Node.js stream (e.g. Express req) so fetch can stream it to Bunny CDN.
+    if (body && typeof body.pipe === 'function') {
+      init.body = Readable.toWeb(body)
+      init.duplex = 'half'
+    } else if (body instanceof ReadableStream) {
+      init.duplex = 'half'
+    }
     res = await fetch(`https://video.bunnycdn.com${path}`, init)
   } finally {
     if (timeoutId) clearTimeout(timeoutId)

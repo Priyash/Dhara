@@ -781,6 +781,64 @@
   box-shadow: none;
 }
 
+.uploadProgressTrack {
+  height: 3px;
+  background: rgba(219,39,119,0.15);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.uploadProgressFill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+
+/* ── Content type tab bar (matches navbar link style) ────────────────────── */
+.contentTypeTabs {
+  display: flex;
+  gap: 20px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 4px;
+  padding-bottom: 0;
+}
+
+.contentTypeTab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 6px 0 8px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 0.15s;
+  white-space: nowrap;
+}
+
+.contentTypeTab:hover {
+  color: var(--color-text);
+}
+
+.contentTypeTabActive {
+  color: var(--color-text);
+  font-weight: 500;
+  border-bottom-color: var(--color-accent);
+}
+
+/* ── Single episode field grid ───────────────────────────────────────────── */
+.episodeFieldGrid {
+  display: grid;
+  grid-template-columns: 62px 62px 1fr 110px;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: start;
+}
+
 .secondaryBtn {
   border: 1px solid var(--color-accent);
   border-radius: var(--radius-md);
@@ -798,6 +856,24 @@
 .secondaryBtn:hover {
   background: rgba(219,39,119,0.1);
 }
+
+/* ── Inline small outline button (e.g. "+ New" next to content dropdown) ─── */
+.btnOutlineSmall {
+  flex-shrink: 0;
+  padding: 0 10px;
+  height: 36px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-accent);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.btnOutlineSmall:hover { background: rgba(219,39,119,0.12); }
 
 /* ── Upload queue ─────────────────────────────────────────────────────────── */
 .uploadQueueHeader {
@@ -2097,8 +2173,8 @@
 
 .bulkHeaderRow {
   display: grid;
-  grid-template-columns: 64px 1fr 80px 1fr 32px;
-  gap: 8px;
+  grid-template-columns: 52px 52px 1fr 85px 100px 28px;
+  gap: 6px;
   padding: 4px 4px 8px;
   font-family: var(--font-body);
   font-size: 10px;
@@ -2110,11 +2186,10 @@
 
 .bulkRow {
   display: grid;
-  grid-template-columns: 64px 1fr 80px 1fr 32px;
-  gap: 8px;
+  grid-template-columns: 52px 52px 1fr 85px 100px 28px;
+  gap: 6px;
   align-items: center;
   margin-bottom: 6px;
-  flex-wrap: wrap;
 }
 
 .bulkRowDone    { opacity: 0.55; }

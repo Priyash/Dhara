@@ -306,27 +306,33 @@ export async function createUploadJob(payload) {
   })
 }
 
-export async function uploadJobFile(jobId, file) {
-  const headers = {
-    ...(await authHeaders()),
-    'Content-Type': 'application/octet-stream',
-    'x-file-name': encodeURIComponent(file.name || 'upload.mp4'),
-  }
-
-  const res = await fetch(`${BASE_URL}/api/admin/upload-jobs/${jobId}/file`, {
-    method: 'PUT',
-    headers,
-    body: file,
+export function uploadJobFile(jobId, file, { onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    auth.currentUser?.getIdToken()
+      .then((token) => {
+        const xhr = new XMLHttpRequest()
+        if (onProgress) {
+          xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+          })
+        }
+        xhr.addEventListener('load', () => {
+          try {
+            const data = JSON.parse(xhr.responseText)
+            if (xhr.status >= 200 && xhr.status < 300) resolve(data)
+            else reject(new Error(data?.error || `HTTP ${xhr.status}`))
+          } catch { reject(new Error(`HTTP ${xhr.status}`)) }
+        })
+        xhr.addEventListener('error', () => reject(new Error('Network error during upload')))
+        xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')))
+        xhr.open('PUT', `${BASE_URL}/api/admin/upload-jobs/${jobId}/file`)
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+        xhr.setRequestHeader('x-file-name', encodeURIComponent(file.name || 'upload.mp4'))
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+        xhr.send(file)
+      })
+      .catch(reject)
   })
-
-  let data = null
-  try {
-    data = await res.json()
-  } catch {
-    data = null
-  }
-  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`)
-  return data
 }
 
 export async function listBunnyCollections() {
