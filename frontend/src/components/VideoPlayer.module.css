@@ -214,6 +214,7 @@
   cursor: pointer;
   transition: height 0.15s ease, background 0.15s ease;
   min-width: 44px;
+  touch-action: none;
 }
 
 .progressTrack:hover,
@@ -398,6 +399,9 @@
   height: 3px;
   accent-color: #db2777;
   cursor: pointer;
+  /* Expanded touch area so the thin slider track is still hittable on touch */
+  padding: 10px 0;
+  box-sizing: content-box;
 }
 
 /* Top-left title overlay inside the video area */

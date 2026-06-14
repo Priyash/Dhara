@@ -485,9 +485,23 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   }, [src])
 
   useEffect(() => {
-    const onFs = () => setFullscreen(Boolean(document.fullscreenElement))
-    document.addEventListener('fullscreenchange', onFs)
-    return () => document.removeEventListener('fullscreenchange', onFs)
+    const onFs = () => setFullscreen(
+      Boolean(document.fullscreenElement || document.webkitFullscreenElement)
+    )
+    // iOS video-level fullscreen fires on the video element, not the document
+    const v = videoRef.current
+    const onWebKitBegin = () => setFullscreen(true)
+    const onWebKitEnd   = () => setFullscreen(false)
+    document.addEventListener('fullscreenchange',        onFs)
+    document.addEventListener('webkitfullscreenchange',  onFs)
+    v?.addEventListener('webkitbeginfullscreen', onWebKitBegin)
+    v?.addEventListener('webkitendfullscreen',   onWebKitEnd)
+    return () => {
+      document.removeEventListener('fullscreenchange',       onFs)
+      document.removeEventListener('webkitfullscreenchange', onFs)
+      v?.removeEventListener('webkitbeginfullscreen', onWebKitBegin)
+      v?.removeEventListener('webkitendfullscreen',   onWebKitEnd)
+    }
   }, [])
 
   useEffect(() => {
@@ -711,9 +725,18 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
   const toggleFullscreen = () => {
     const el = containerRef.current
+    const v  = videoRef.current
     if (!el) return
-    if (!document.fullscreenElement) el.requestFullscreen?.()
-    else document.exitFullscreen?.()
+    const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement)
+    if (!isFs) {
+      // Standard → webkit prefixed → iOS video-level fallback
+      if      (el.requestFullscreen)            el.requestFullscreen()
+      else if (el.webkitRequestFullscreen)      el.webkitRequestFullscreen()
+      else if (v?.webkitEnterFullscreen)        v.webkitEnterFullscreen()
+    } else {
+      if      (document.exitFullscreen)         document.exitFullscreen()
+      else if (document.webkitExitFullscreen)   document.webkitExitFullscreen()
+    }
   }
 
   const togglePip = async () => {
@@ -903,8 +926,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         }
         case 'KeyF': {
           e.preventDefault()
-          if (!document.fullscreenElement) containerRef.current?.requestFullscreen?.()
-          else document.exitFullscreen?.()
+          toggleFullscreen()
           break
         }
         case 'KeyP': {
@@ -958,6 +980,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
   // Mobile: double-tap left third = -10s, right third = +10s, centre = play/pause
   const handleTouchEnd = (e) => {
+    resetIdleTimer()
     const v = videoRef.current
     if (!v || !duration) return
     const touch = e.changedTouches[0]
@@ -1022,6 +1045,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
       <div
         className={styles.videoArea}
         onClick={handleVideoAreaClick}
+        onTouchStart={resetIdleTimer}
         onTouchEnd={handleTouchEnd}
         onMouseEnter={() => { setVideoHovered(true); resetIdleTimer() }}
         onMouseLeave={() => { setVideoHovered(false); setShowControls(true); clearTimeout(idleTimerRef.current) }}
@@ -1093,6 +1117,8 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         <div
           className={`${styles.controlsBar} ${controlsVisible ? styles.controlsVisible : styles.controlsHidden}`}
           onClick={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
         >
         {/* Progress row */}
         <div className={styles.progressRow}>
@@ -1102,7 +1128,8 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
             ref={progressRef}
             className={`${styles.progressTrack} ${isDragging ? styles.progressDragging : ''}`}
             onMouseDown={handleDragStart}
-            onTouchStart={(e) => { e.preventDefault(); handleDragStart(e.touches[0]) }}
+            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); handleDragStart(e.touches[0]) }}
+            onTouchEnd={(e) => e.stopPropagation()}
             onMouseMove={handleProgressHover}
             onMouseLeave={clearHoverPreview}
             onClick={handleProgressClick}
