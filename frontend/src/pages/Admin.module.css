@@ -857,24 +857,6 @@
   background: rgba(219,39,119,0.1);
 }
 
-/* ── Inline small outline button (e.g. "+ New" next to content dropdown) ─── */
-.btnOutlineSmall {
-  flex-shrink: 0;
-  padding: 0 10px;
-  height: 36px;
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-accent);
-  font-family: var(--font-body);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background var(--transition);
-}
-.btnOutlineSmall:hover { background: rgba(219,39,119,0.12); }
-
 /* ── Upload queue ─────────────────────────────────────────────────────────── */
 .uploadQueueHeader {
   display: flex;

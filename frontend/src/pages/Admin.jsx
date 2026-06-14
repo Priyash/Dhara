@@ -656,7 +656,6 @@ export default function Admin() {
   // ── Content editor ────────────────────────────────────────────────────────
   const [editingId, setEditingId]     = useState(null)
   const [editForm, setEditForm]       = useState(null)
-  const [inlineCreateFromUpload, setInlineCreateFromUpload] = useState(false)
   const [editBusy, setEditBusy]       = useState(false)
   const [editNotice, setEditNotice]   = useState('')
   const [editError, setEditError]     = useState('')
@@ -907,7 +906,6 @@ export default function Admin() {
   const closeEditModal = () => {
     setEditingId(null); setEditForm(null)
     setEditNotice('');  setEditError('')
-    setInlineCreateFromUpload(false)
   }
 
   const openCreateModal = (prefill = null) => {
@@ -954,18 +952,9 @@ export default function Admin() {
         // ── Create mode ──
         const created = await createAdminContent(payload)
         await loadData()
-        if (inlineCreateFromUpload) {
-          // Auto-select the new item in the upload form and close
-          setSelectedContentId(created._id)
-          setInlineCreateFromUpload(false)
-          setEditingId(null); setEditForm(null)
-          setEditNotice(''); setEditError('')
-          setNotice(`"${created.title}" created — now select your file and upload.`)
-        } else {
-          // Switch to edit mode so admin can see the "Go to Uploads" CTA
-          setEditingId(created._id)
-          setEditNotice(`"${created.title}" created successfully!`)
-        }
+        // Switch to edit mode so admin can see the "Go to Uploads" CTA
+        setEditingId(created._id)
+        setEditNotice(`"${created.title}" created successfully!`)
       } else {
         // ── Edit mode ──
         await updateAdminContent(editingId, payload)
@@ -1883,27 +1872,14 @@ export default function Admin() {
                 </p>
                 <label className={styles.label}>
                   {uploadCategory === 'Series' || uploadCategory === 'Serial Drama' ? 'Series / Show' : 'Content Item'}
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <select className={styles.select} style={{ flex: 1, width: 'auto', minWidth: 0 }} value={selectedContentId} onChange={(e) => handleContentSelect(e.target.value)}>
-                      <option value="">Upload without linking (map later)</option>
-                      {contentItems
-                        .filter((c) => c.type === uploadCategory)
-                        .map((item) => (
-                          <option key={item._id} value={item._id}>{item.title}</option>
-                        ))}
-                    </select>
-                    <button
-                      type="button"
-                      className={styles.btnOutlineSmall}
-                      title="Create a new content entry and auto-select it"
-                      onClick={() => {
-                        setInlineCreateFromUpload(true)
-                        openCreateModal({ type: uploadCategory, title: title.trim() || '' })
-                      }}
-                    >
-                      + New
-                    </button>
-                  </div>
+                  <select className={styles.select} value={selectedContentId} onChange={(e) => handleContentSelect(e.target.value)}>
+                    <option value="">Upload without linking (map later)</option>
+                    {contentItems
+                      .filter((c) => c.type === uploadCategory)
+                      .map((item) => (
+                        <option key={item._id} value={item._id}>{item.title}</option>
+                      ))}
+                  </select>
                   {!selectedContentId && (
                     <span style={{ fontSize: '0.72rem', color: '#b45309', marginTop: '0.3rem', display: 'block' }}>
                       Video uploads to CDN but won't appear in the app until mapped.
