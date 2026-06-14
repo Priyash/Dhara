@@ -1509,8 +1509,9 @@ export default function Admin() {
     try {
       const result = await syncCdnDeletions()
       const parts = []
-      if (result.rootUnpublished > 0) parts.push(`${result.rootUnpublished} content item${result.rootUnpublished !== 1 ? 's' : ''} unpublished`)
-      if (result.episodesCleared > 0) parts.push(`${result.episodesCleared} episode${result.episodesCleared !== 1 ? 's' : ''} cleared`)
+      if (result.rootDeleted > 0) parts.push(`${result.rootDeleted} item${result.rootDeleted !== 1 ? 's' : ''} removed`)
+      if (result.showsDeleted > 0) parts.push(`${result.showsDeleted} show${result.showsDeleted !== 1 ? 's' : ''} removed`)
+      if (result.episodesCleared > 0) parts.push(`${result.episodesCleared} episode link${result.episodesCleared !== 1 ? 's' : ''} cleared`)
       setNotice(parts.length > 0
         ? `CDN sync: ${parts.join(', ')} (${result.activeBunnyVideos} active videos on Bunny).`
         : `CDN sync complete — no stale videos found (${result.activeBunnyVideos} active videos on Bunny).`)

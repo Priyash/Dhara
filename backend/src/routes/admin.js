@@ -1652,10 +1652,11 @@ router.patch('/content/:id/featured-order', async (req, res, next) => {
 
 /**
  * POST /api/admin/bunny/sync-deletions
- * Detects videos deleted from Bunny CDN and unpublishes the matching MongoDB Content.
- * For Film/Documentary/Live: clears bunnyVideoId and sets isPublished=false.
- * For Series/Serial Drama: clears the stale bunnyVideoId on the specific episode.
- * Safe to run anytime — never deletes MongoDB documents, only clears stale video links.
+ * Detects videos deleted from Bunny CDN and fully removes the matching content from the site.
+ * For Film/Documentary/Live: soft-deletes the Content document (isDeleted=true, isPublished=false).
+ * For Series/Serial Drama: clears stale episode bunnyVideoIds; if ALL episodes across the show
+ *   are now without a video, soft-deletes the parent document too.
+ * Safe to run anytime — uses soft-delete so content is recoverable by admin if needed.
  */
 router.post('/bunny/sync-deletions', async (req, res, next) => {
   try {
@@ -1684,7 +1685,7 @@ router.post('/bunny/sync-deletions', async (req, res, next) => {
     if (rootStale.length > 0) {
       await Content.updateMany(
         { _id: { $in: rootStale.map((c) => c._id) } },
-        { $set: { bunnyVideoId: '', isPublished: false } }
+        { $set: { bunnyVideoId: '', isPublished: false, isDeleted: true } }
       )
     }
 
@@ -1696,7 +1697,10 @@ router.post('/bunny/sync-deletions', async (req, res, next) => {
     }).select('_id seasons').lean()
 
     let episodesCleared = 0
+    const episodicDeleted = []
+
     for (const doc of episodic) {
+      // Clear each stale episode video link
       for (const season of doc.seasons || []) {
         for (const ep of season.episodes || []) {
           if (ep.bunnyVideoId && !activeGuids.has(ep.bunnyVideoId)) {
@@ -1706,24 +1710,37 @@ router.post('/bunny/sync-deletions', async (req, res, next) => {
               { arrayFilters: [{ 's.number': season.number }, { 'e.number': ep.number }] }
             )
             episodesCleared++
+            // Mutate local copy so the "all gone?" check below sees the cleared state
+            ep.bunnyVideoId = ''
           }
         }
+      }
+
+      // If no episode in the entire show has a video anymore, soft-delete the show
+      const hasAnyVideo = (doc.seasons || []).some((s) =>
+        (s.episodes || []).some((ep) => ep.bunnyVideoId)
+      )
+      if (!hasAnyVideo) {
+        await Content.findByIdAndUpdate(doc._id, { $set: { isPublished: false, isDeleted: true } })
+        episodicDeleted.push(doc._id)
       }
     }
 
     bustContentCache()
     logAdminAction(req, 'sync_cdn_deletions', 'config', null, '', {
       activeBunnyVideos: activeGuids.size,
-      rootUnpublished: rootStale.length,
+      rootDeleted: rootStale.length,
       episodesCleared,
+      showsDeleted: episodicDeleted.length,
     })
 
     res.json({
       success: true,
       activeBunnyVideos: activeGuids.size,
-      rootUnpublished: rootStale.length,
+      rootDeleted: rootStale.length,
       episodesCleared,
-      unpublished: rootStale.map((c) => ({ id: c._id, title: c.title })),
+      showsDeleted: episodicDeleted.length,
+      removed: rootStale.map((c) => ({ id: c._id, title: c.title })),
     })
   } catch (err) {
     next(err)
