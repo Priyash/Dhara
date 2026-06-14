@@ -19,7 +19,7 @@ const contentSchema = new mongoose.Schema(
   {
     title:        { type: String, required: true },
     subtitle:     String,
-    type:         { type: String, enum: ['Film', 'Series', 'Serial Drama', 'Documentary'], required: true },
+    type:         { type: String, enum: ['Film', 'Series', 'Serial Drama', 'Documentary', 'Live'], required: true },
     duration:     { type: String, default: '' },  // Film/Documentary runtime e.g. "1h 45m"; Series/Serial Drama use episode durations
     genre:        [String],
     rating:       { type: Number, min: 0, max: 5, default: 0 },

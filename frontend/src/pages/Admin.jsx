@@ -165,7 +165,7 @@ function MonTopContentList({ items }) {
     </p>
   )
   const maxV = Math.max(...items.map(i => i.views), 1)
-  const TYPE_COLOR = { Film:'#db2777', Series:'#a78bfa', 'Serial Drama':'#f472b6', Documentary:'#34d399' }
+  const TYPE_COLOR = { Film:'#db2777', Series:'#a78bfa', 'Serial Drama':'#f472b6', Documentary:'#34d399', Live:'#fb923c' }
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:8 }}>
       {items.map(item => {
@@ -560,16 +560,21 @@ export default function Admin() {
   const [selectedCollectionId, setSelectedCollectionId] = useState('')
   const [selectedContentId, setSelectedContentId]       = useState('')
   // Episode upload fields — only used when selected content is a Series
+  const [uploadCategory, setUploadCategory] = useState('Film')   // 'Film' | 'Series' | 'Serial Drama' | 'Documentary'
+  const [seasonNumber, setSeasonNumber]     = useState('1')
   const [episodeNumber, setEpisodeNumber]   = useState('')
   const [episodeTitle, setEpisodeTitle]     = useState('')
   const [episodeDuration, setEpisodeDuration] = useState('')
-  const [seriesEpisodes, setSeriesEpisodes] = useState([])   // existing episodes of selected series
+  const [seriesEpisodes, setSeriesEpisodes] = useState([])   // existing episodes across all seasons
   const [loadingSeriesEpisodes, setLoadingSeriesEpisodes] = useState(false)
+  const [mapSeasonNumber, setMapSeasonNumber] = useState('1')
+  const [mapEpisodeNumber, setMapEpisodeNumber] = useState('')
   // Bulk upload mode (single vs. bulk queue for series)
   const [uploadMode, setUploadMode]         = useState('single') // 'single' | 'bulk'
   const bulkRowIdRef                        = useRef(1)
+  const fileInputRef                        = useRef(null)
   const [bulkRows, setBulkRows]             = useState([
-    { id: 0, number: '', title: '', duration: '', file: null, status: 'idle', error: '' },
+    { id: 0, number: '', title: '', duration: '', file: null, status: 'idle', progress: 0, error: '' },
   ])
   const [bulkBusy, setBulkBusy]             = useState(false)
   // Drag-to-reorder state for episode rows in the edit modal
@@ -580,6 +585,7 @@ export default function Admin() {
   const [mapVideoError, setMapVideoError]     = useState('')
   const [file, setFile]                       = useState(null)
   const [busy, setBusy]                       = useState(false)
+  const [uploadProgress, setUploadProgress]   = useState(0)
   const [notice, setNotice]                   = useState('')
   const [error, setError]                     = useState('')
   const [dragOver, setDragOver]               = useState(false)
@@ -650,6 +656,7 @@ export default function Admin() {
   // ── Content editor ────────────────────────────────────────────────────────
   const [editingId, setEditingId]     = useState(null)
   const [editForm, setEditForm]       = useState(null)
+  const [inlineCreateFromUpload, setInlineCreateFromUpload] = useState(false)
   const [editBusy, setEditBusy]       = useState(false)
   const [editNotice, setEditNotice]   = useState('')
   const [editError, setEditError]     = useState('')
@@ -900,11 +907,12 @@ export default function Admin() {
   const closeEditModal = () => {
     setEditingId(null); setEditForm(null)
     setEditNotice('');  setEditError('')
+    setInlineCreateFromUpload(false)
   }
 
-  const openCreateModal = () => {
+  const openCreateModal = (prefill = null) => {
     setEditingId(NEW_CONTENT_ID)
-    setEditForm(EMPTY_EDIT_FORM)
+    setEditForm(prefill ? { ...EMPTY_EDIT_FORM, ...prefill } : EMPTY_EDIT_FORM)
     setEditNotice(''); setEditError('')
   }
 
@@ -946,9 +954,18 @@ export default function Admin() {
         // ── Create mode ──
         const created = await createAdminContent(payload)
         await loadData()
-        // Switch to edit mode so admin can see the "Go to Uploads" CTA
-        setEditingId(created._id)
-        setEditNotice(`"${created.title}" created successfully!`)
+        if (inlineCreateFromUpload) {
+          // Auto-select the new item in the upload form and close
+          setSelectedContentId(created._id)
+          setInlineCreateFromUpload(false)
+          setEditingId(null); setEditForm(null)
+          setEditNotice(''); setEditError('')
+          setNotice(`"${created.title}" created — now select your file and upload.`)
+        } else {
+          // Switch to edit mode so admin can see the "Go to Uploads" CTA
+          setEditingId(created._id)
+          setEditNotice(`"${created.title}" created successfully!`)
+        }
       } else {
         // ── Edit mode ──
         await updateAdminContent(editingId, payload)
@@ -1151,21 +1168,37 @@ export default function Admin() {
   }
 
   // When a Series content item is selected, fetch its existing episodes
+  const handleCategoryChange = (cat) => {
+    setUploadCategory(cat)
+    setSelectedContentId(''); setTitle(''); setFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    setSeasonNumber('1')
+    setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration(''); setSeriesEpisodes([])
+    setUploadMode('single')
+    setBulkRows([{ id: bulkRowIdRef.current++, number: '', title: '', duration: '', file: null, status: 'idle', progress: 0, error: '' }])
+    setError(''); setNotice('')
+  }
+
   const handleContentSelect = async (contentId) => {
     setSelectedContentId(contentId)
+    setSeasonNumber('1')
     setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration('')
     setSeriesEpisodes([])
     setUploadMode('single')
-    setBulkRows([{ id: bulkRowIdRef.current++, number: '', title: '', duration: '', file: null, status: 'idle', error: '' }])
+    setBulkRows([{ id: bulkRowIdRef.current++, number: '', title: '', duration: '', file: null, status: 'idle', progress: 0, error: '' }])
     const selected = contentItems.find((c) => c._id === contentId)
     if ((selected?.type === 'Series' || selected?.type === 'Serial Drama') && contentId) {
       setLoadingSeriesEpisodes(true)
       try {
         const full = await fetchAdminContentById(contentId)
-        const eps  = (full.episodes || []).sort((a, b) => a.number - b.number)
+        // Flatten episodes from all seasons, preserving which season each belongs to
+        const eps = (full.seasons || [])
+          .flatMap((s) => (s.episodes || []).map((ep) => ({ ...ep, seasonNumber: s.number })))
+          .sort((a, b) => a.seasonNumber !== b.seasonNumber ? a.seasonNumber - b.seasonNumber : a.number - b.number)
         setSeriesEpisodes(eps)
-        // Auto-suggest next episode number
-        const nextNum = eps.length > 0 ? Math.max(...eps.map((e) => e.number)) + 1 : 1
+        // Auto-suggest next episode in season 1
+        const s1 = eps.filter((e) => e.seasonNumber === 1)
+        const nextNum = s1.length > 0 ? Math.max(...s1.map((e) => e.number)) + 1 : 1
         setEpisodeNumber(String(nextNum))
       } catch { /* non-critical */ }
       finally { setLoadingSeriesEpisodes(false) }
@@ -1337,6 +1370,27 @@ export default function Admin() {
       return
     }
 
+    // ── Duplicate guardrails ──────────────────────────────────────────────
+    const seenKeys = new Set()
+    for (const row of validRows) {
+      const key = `${row.season || 1}-${row.number}`
+      if (seenKeys.has(key)) {
+        setError(`Duplicate in batch: S${row.season || 1}E${row.number} appears more than once. Remove the duplicate row.`)
+        return
+      }
+      seenKeys.add(key)
+    }
+    if (selectedContentId && seriesEpisodes.length > 0) {
+      const dupRow = validRows.find((row) =>
+        seriesEpisodes.some((ep) => ep.seasonNumber === Number(row.season || 1) && ep.number === Number(row.number))
+      )
+      if (dupRow) {
+        setError(`S${dupRow.season || 1}E${dupRow.number} is already uploaded for this series. Remove it from the batch or use the Map tab to replace the existing video.`)
+        return
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     setBulkBusy(true); setError(''); setNotice('')
     let allOk = true
     for (const row of validRows) {
@@ -1345,18 +1399,21 @@ export default function Admin() {
         setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: 'error', error: fileErr } : r))
         allOk = false; continue
       }
-      setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: 'uploading', error: '' } : r))
+      setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: 'uploading', progress: 0, error: '' } : r))
       try {
         const job = await createUploadJob({
           title:           row.title.trim() || `Episode ${row.number}`,
           collectionId:    selectedCollectionId,
           contentId:       selectedContentId || null,
+          seasonNumber:    Number(row.season  || 1),
           episodeNumber:   Number(row.number),
           episodeTitle:    row.title.trim(),
           episodeDuration: row.duration.trim(),
         })
-        await uploadJobFile(job._id, row.file)
-        setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: 'done' } : r))
+        await uploadJobFile(job._id, row.file, {
+          onProgress: (p) => setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, progress: p } : r)),
+        })
+        setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: 'done', progress: 100 } : r))
       } catch (err) {
         setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, status: 'error', error: err?.message || 'Upload failed' } : r))
         allOk = false
@@ -1365,7 +1422,7 @@ export default function Admin() {
     setBulkBusy(false)
     if (allOk) {
       setNotice(`Queued ${validRows.length} episode upload${validRows.length !== 1 ? 's' : ''} — processing asynchronously.`)
-      setBulkRows([{ id: bulkRowIdRef.current++, number: '', title: '', duration: '', file: null, status: 'idle', error: '' }])
+      setBulkRows([{ id: bulkRowIdRef.current++, number: '', title: '', duration: '', file: null, status: 'idle', progress: 0, error: '' }])
       setUploadMode('single')
       await loadData()
     }
@@ -1377,30 +1434,50 @@ export default function Admin() {
     if (fileErr) return setError(fileErr)
     if (!selectedCollectionId) return setError('Please select a mapped collection.')
 
-    const selectedType = contentItems.find((c) => c._id === selectedContentId)?.type
-    const isSeries = Boolean(selectedContentId && (selectedType === 'Series' || selectedType === 'Serial Drama'))
+    const isSeries = uploadCategory === 'Series' || uploadCategory === 'Serial Drama'
     if (isSeries && !episodeNumber) return setError('Please enter an episode number for this series.')
     if (isSeries && episodeDuration && !isValidDuration(episodeDuration))
       return setError(`Invalid episode duration "${episodeDuration}". Use "42m", "1h 20m", or "1:20".`)
 
-    setNotice(''); setError(''); setBusy(true)
+    // ── Duplicate guardrails ──────────────────────────────────────────────
+    if (isSeries && selectedContentId && episodeNumber) {
+      const dupEp = seriesEpisodes.find(
+        (ep) => ep.seasonNumber === Number(seasonNumber) && ep.number === Number(episodeNumber)
+      )
+      if (dupEp) {
+        setError(`S${seasonNumber}E${episodeNumber} is already uploaded for this series. Choose a different episode number, or use the Map tab to replace the existing video.`)
+        return
+      }
+    }
+    if (!isSeries && selectedContentId) {
+      const sel = contentItems.find((c) => c._id === selectedContentId)
+      if (sel?.bunnyVideoId) {
+        if (!window.confirm(`"${sel.title}" already has a video linked.\n\nQueue another upload anyway? Use the Map tab if you want to replace the existing video instead.`)) return
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
+    setNotice(''); setError(''); setBusy(true); setUploadProgress(0)
     try {
       const job = await createUploadJob({
         title:           isSeries && episodeTitle.trim() ? episodeTitle.trim() : title,
         collectionId:    selectedCollectionId,
         contentId:       selectedContentId || null,
+        seasonNumber:    isSeries ? Number(seasonNumber)  : null,
         episodeNumber:   isSeries ? Number(episodeNumber) : null,
         episodeTitle:    isSeries ? episodeTitle.trim()   : '',
         episodeDuration: isSeries ? episodeDuration.trim() : '',
       })
-      await uploadJobFile(job._id, file)
+      await uploadJobFile(job._id, file, { onProgress: setUploadProgress })
       setTitle(''); setSelectedContentId(''); setFile(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      setSeasonNumber('1')
       setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration(''); setSeriesEpisodes([])
       setNotice('Upload accepted — video is processing asynchronously.')
       await loadData()
     } catch (err) {
       setError(err?.message || 'Upload failed.')
-    } finally { setBusy(false) }
+    } finally { setBusy(false); setUploadProgress(0) }
   }
 
   const handleImportFromCdn = async () => {
@@ -1430,10 +1507,19 @@ export default function Admin() {
   const handleMapExisting = async (e) => {
     e.preventDefault()
     if (!mapContentId || !mapVideoId) { setError('Select both a content item and a stream video.'); return }
+    const mapSelectedType = contentItems.find((c) => c._id === mapContentId)?.type
+    const mapIsEpisodic = mapSelectedType === 'Series' || mapSelectedType === 'Serial Drama'
+    if (mapIsEpisodic && !mapEpisodeNumber) { setError('Enter an episode number for this series.'); return }
     setNotice(''); setError(''); setBusy(true)
     try {
-      const result = await mapExistingBunnyVideo({ contentId: mapContentId, bunnyVideoId: mapVideoId })
+      const payload = { contentId: mapContentId, bunnyVideoId: mapVideoId }
+      if (mapIsEpisodic) {
+        payload.seasonNumber  = Number(mapSeasonNumber  || 1)
+        payload.episodeNumber = Number(mapEpisodeNumber)
+      }
+      const result = await mapExistingBunnyVideo(payload)
       setNotice(result.message || 'Stream video mapped successfully.')
+      setMapEpisodeNumber('')
       await loadData()
     } catch (err) {
       setError(err?.message || 'Could not map stream video.')
@@ -1742,12 +1828,47 @@ export default function Admin() {
               <h2 className={styles.cardTitle}><UploadCloud size={16} /> Upload Video</h2>
               <form className={styles.form} onSubmit={handleUpload}>
 
+                {/* ── Content type picker ── */}
                 <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-accent)', marginBottom: '0.5rem' }}>
-                  STEP 1 — NAME & ORGANISE
+                  STEP 1 — CONTENT TYPE
+                </p>
+                <div className={styles.contentTypeTabs}>
+                  {[
+                    { value: 'Film',         label: 'Movies' },
+                    { value: 'Series',       label: 'Series' },
+                    { value: 'Serial Drama', label: 'ধারাবাহিক' },
+                    { value: 'Documentary',  label: 'Originals' },
+                    { value: 'Live',         label: 'Live' },
+                  ].map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`${styles.contentTypeTab} ${uploadCategory === value ? styles.contentTypeTabActive : ''}`}
+                      onClick={() => handleCategoryChange(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-accent)', margin: '1rem 0 0.5rem' }}>
+                  STEP 2 — NAME & ORGANISE
                 </p>
                 <label className={styles.label}>
-                  Video Title
-                  <input className={styles.input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Movie title" required />
+                  {uploadCategory === 'Series' || uploadCategory === 'Serial Drama' ? 'Episode Title' : 'Title'}
+                  <input
+                    className={styles.input}
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder={
+                      uploadCategory === 'Film'         ? 'e.g. Haripada Bandwala' :
+                      uploadCategory === 'Series'       ? 'e.g. Episode title' :
+                      uploadCategory === 'Serial Drama' ? 'e.g. পর্বের নাম (যেমন: মায়ার জঞ্জাল)' :
+                      uploadCategory === 'Live'         ? 'e.g. Live channel title' :
+                                                          'e.g. Documentary title'
+                    }
+                    required
+                  />
                 </label>
                 <label className={styles.label}>
                   Collection
@@ -1758,32 +1879,40 @@ export default function Admin() {
                 </label>
 
                 <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-accent)', margin: '1rem 0 0.5rem' }}>
-                  STEP 2 — LINK TO CONTENT (OPTIONAL)
+                  STEP 3 — LINK TO CONTENT (OPTIONAL)
                 </p>
                 <label className={styles.label}>
-                  Content Item
-                  <select className={styles.select} value={selectedContentId} onChange={(e) => handleContentSelect(e.target.value)}>
-                    <option value="">Upload without linking (map later)</option>
-                    {contentItems.map((item) => (
-                      <option key={item._id} value={item._id}>
-                        {item.title} ({item.type})
-                      </option>
-                    ))}
-                  </select>
+                  {uploadCategory === 'Series' || uploadCategory === 'Serial Drama' ? 'Series / Show' : 'Content Item'}
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <select className={styles.select} style={{ flex: 1, width: 'auto', minWidth: 0 }} value={selectedContentId} onChange={(e) => handleContentSelect(e.target.value)}>
+                      <option value="">Upload without linking (map later)</option>
+                      {contentItems
+                        .filter((c) => c.type === uploadCategory)
+                        .map((item) => (
+                          <option key={item._id} value={item._id}>{item.title}</option>
+                        ))}
+                    </select>
+                    <button
+                      type="button"
+                      className={styles.btnOutlineSmall}
+                      title="Create a new content entry and auto-select it"
+                      onClick={() => {
+                        setInlineCreateFromUpload(true)
+                        openCreateModal({ type: uploadCategory, title: title.trim() || '' })
+                      }}
+                    >
+                      + New
+                    </button>
+                  </div>
                   {!selectedContentId && (
                     <span style={{ fontSize: '0.72rem', color: '#b45309', marginTop: '0.3rem', display: 'block' }}>
                       Video uploads to CDN but won't appear in the app until mapped.
                     </span>
                   )}
-                  {selectedContentId && !['Series', 'Serial Drama'].includes(contentItems.find((c) => c._id === selectedContentId)?.type) && (
-                    <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: '0.3rem', display: 'block' }}>
-                      Select a <strong style={{ color: 'var(--color-accent)' }}>Series</strong> or <strong style={{ color: 'var(--color-accent)' }}>Serial Drama</strong> to enable episode-by-episode upload.
-                    </span>
-                  )}
                 </label>
 
                 {/* ── Episode fields — shown for Series and Serial Drama ── */}
-                {selectedContentId && ['Series', 'Serial Drama'].includes(contentItems.find((c) => c._id === selectedContentId)?.type) && (
+                {(uploadCategory === 'Series' || uploadCategory === 'Serial Drama') && (
                   <div className={styles.episodeUploadBlock}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                       <p className={styles.episodeUploadTitle}>
@@ -1820,16 +1949,17 @@ export default function Admin() {
                         <div className={styles.epPills}>
                           {seriesEpisodes.map((ep) => (
                             <button
-                              key={ep.number}
+                              key={`${ep.seasonNumber}-${ep.number}`}
                               type="button"
-                              className={`${styles.epPill} ${Number(episodeNumber) === ep.number ? styles.epPillActive : ''}`}
+                              className={`${styles.epPill} ${Number(episodeNumber) === ep.number && Number(seasonNumber) === ep.seasonNumber ? styles.epPillActive : ''}`}
                               onClick={() => {
+                                setSeasonNumber(String(ep.seasonNumber || 1))
                                 setEpisodeNumber(String(ep.number))
                                 setEpisodeTitle(ep.title || '')
                                 setEpisodeDuration(ep.duration || '')
                               }}
                             >
-                              E{ep.number}
+                              S{ep.seasonNumber}E{ep.number}
                               {ep.bunnyVideoId ? ' ✓' : ' (no video)'}
                             </button>
                           ))}
@@ -1840,7 +1970,18 @@ export default function Admin() {
                     {/* Single episode fields */}
                     {uploadMode === 'single' && (
                       <>
-                        <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: 8, marginTop: 8 }}>
+                        <div className={styles.episodeFieldGrid}>
+                          <label className={styles.label}>
+                            Season #
+                            <input
+                              className={styles.input}
+                              type="number"
+                              min="1"
+                              value={seasonNumber}
+                              onChange={(e) => setSeasonNumber(e.target.value)}
+                              placeholder="1"
+                            />
+                          </label>
                           <label className={styles.label}>
                             Ep #
                             <input
@@ -1863,12 +2004,12 @@ export default function Admin() {
                             />
                           </label>
                           <label className={styles.label}>
-                            Duration <span className={styles.labelHint}>(e.g. 42m, 1h 20m)</span>
+                            Duration
                             <input
                               className={`${styles.input} ${episodeDuration && !isValidDuration(episodeDuration) ? styles.inputError : ''}`}
                               value={episodeDuration}
                               onChange={(e) => setEpisodeDuration(e.target.value)}
-                              placeholder="42m"
+                              placeholder="e.g. 42m"
                               title="Format: 42m · 1h · 1h 20m · 1:20"
                             />
                             {episodeDuration && !isValidDuration(episodeDuration) && (
@@ -1888,6 +2029,7 @@ export default function Admin() {
                     {uploadMode === 'bulk' && (
                       <div className={styles.bulkTable}>
                         <div className={styles.bulkHeaderRow}>
+                          <span>Season</span>
                           <span>Ep #</span>
                           <span>Title</span>
                           <span>Duration</span>
@@ -1896,6 +2038,15 @@ export default function Admin() {
                         </div>
                         {bulkRows.map((row) => (
                           <div key={row.id} className={`${styles.bulkRow} ${row.status === 'done' ? styles.bulkRowDone : row.status === 'error' ? styles.bulkRowError : row.status === 'uploading' ? styles.bulkRowUploading : ''}`}>
+                            <input
+                              className={styles.input}
+                              type="number"
+                              min="1"
+                              value={row.season ?? 1}
+                              placeholder="1"
+                              disabled={bulkBusy}
+                              onChange={(e) => setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, season: e.target.value } : r))}
+                            />
                             <input
                               className={styles.input}
                               type="number"
@@ -1921,7 +2072,7 @@ export default function Admin() {
                               onChange={(e) => setBulkRows((prev) => prev.map((r) => r.id === row.id ? { ...r, duration: e.target.value } : r))}
                             />
                             <label className={styles.bulkFileBtn}>
-                              {row.status === 'uploading' ? '⟳ Uploading…'
+                              {row.status === 'uploading' ? `⟳ ${row.progress}%`
                                 : row.status === 'done'    ? '✓ Done'
                                 : row.file                 ? row.file.name.slice(0, 20)
                                 :                            'Choose file'}
@@ -1957,7 +2108,7 @@ export default function Admin() {
                             disabled={bulkBusy}
                             onClick={() => {
                               const nextNum = bulkRows.reduce((max, r) => Math.max(max, Number(r.number) || 0), 0) + 1
-                              setBulkRows((prev) => [...prev, { id: bulkRowIdRef.current++, number: String(nextNum), title: '', duration: '', file: null, status: 'idle', error: '' }])
+                              setBulkRows((prev) => [...prev, { id: bulkRowIdRef.current++, number: String(nextNum), title: '', duration: '', file: null, status: 'idle', progress: 0, error: '' }])
                             }}
                             style={{ fontSize: 12, padding: '5px 12px' }}
                           >
@@ -1979,7 +2130,7 @@ export default function Admin() {
                 )}
 
                 {uploadMode === 'single' && <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-accent)', margin: '1rem 0 0.5rem' }}>
-                  STEP 3 — UPLOAD FILE
+                  STEP 4 — UPLOAD FILE
                 </p>}
                 <div className={styles.label} style={uploadMode === 'bulk' ? { display: 'none' } : {}}>
                   <div
@@ -1993,7 +2144,7 @@ export default function Admin() {
                       ? <><span className={styles.dropZoneFile}>{file.name}</span><span className={styles.dropZoneHint}>{(file.size / 1024 / 1024).toFixed(1)} MB</span></>
                       : <><span className={styles.dropZoneText}>Drop video file here</span><span className={styles.dropZoneHint}>or click to browse · MP4, MOV, MKV · max 2 GB</span></>
                     }
-                    <input className={styles.fileInput} type="file" accept=".mp4,.mov,.mkv,video/mp4,video/quicktime,video/x-matroska" onChange={(e) => handleFileChange(e.target.files?.[0] || null)} required />
+                    <input ref={fileInputRef} className={styles.fileInput} type="file" accept=".mp4,.mov,.mkv,video/mp4,video/quicktime,video/x-matroska" onChange={(e) => handleFileChange(e.target.files?.[0] || null)} required />
                   </div>
                 </div>
 
@@ -2004,9 +2155,16 @@ export default function Admin() {
                 )}
 
                 {uploadMode === 'single' && (
-                  <button className={styles.primaryBtn} type="submit" disabled={busy || !selectedCollection}>
-                    {busy ? 'Uploading...' : 'Upload Video'}
-                  </button>
+                  <div>
+                    <button className={styles.primaryBtn} type="submit" disabled={busy || !selectedCollection}>
+                      {busy ? `Uploading… ${uploadProgress}%` : 'Upload Video'}
+                    </button>
+                    {busy && (
+                      <div className={styles.uploadProgressTrack}>
+                        <div className={styles.uploadProgressFill} style={{ width: `${uploadProgress}%` }} />
+                      </div>
+                    )}
+                  </div>
                 )}
               </form>
             </article>
@@ -2043,11 +2201,40 @@ export default function Admin() {
               </p>
               <label className={styles.label}>
                 Content Item
-                <select className={styles.select} value={mapContentId} onChange={(e) => setMapContentId(e.target.value)}>
+                <select className={styles.select} value={mapContentId} onChange={(e) => { setMapContentId(e.target.value); setMapEpisodeNumber(''); setMapSeasonNumber('1') }}>
                   <option value="">Select content</option>
                   {contentItems.map((item) => <option key={item._id} value={item._id}>{item.title} ({item.type})</option>)}
                 </select>
               </label>
+
+              {/* Season + episode fields for series */}
+              {mapContentId && ['Series', 'Serial Drama'].includes(contentItems.find((c) => c._id === mapContentId)?.type) && (
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 80px', gap: 8 }}>
+                  <label className={styles.label}>
+                    Season #
+                    <input
+                      className={styles.input}
+                      type="number"
+                      min="1"
+                      value={mapSeasonNumber}
+                      onChange={(e) => setMapSeasonNumber(e.target.value)}
+                      placeholder="1"
+                    />
+                  </label>
+                  <label className={styles.label}>
+                    Ep #
+                    <input
+                      className={styles.input}
+                      type="number"
+                      min="1"
+                      value={mapEpisodeNumber}
+                      onChange={(e) => setMapEpisodeNumber(e.target.value)}
+                      placeholder="1"
+                      required
+                    />
+                  </label>
+                </div>
+              )}
 
               <button className={styles.primaryBtn} type="submit" disabled={busy || !mapVideoId || !mapContentId}>
                 Link Video to Content
@@ -2989,6 +3176,7 @@ export default function Admin() {
                       <option value="Series">Series</option>
                       <option value="Serial Drama">Serial Drama</option>
                       <option value="Documentary">Documentary</option>
+                      <option value="Live">Live</option>
                     </select>
                   </label>
                   {editForm.type !== 'Series' && editForm.type !== 'Serial Drama' && (

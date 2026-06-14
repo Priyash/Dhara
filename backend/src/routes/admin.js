@@ -98,24 +98,26 @@ async function syncProcessingJob(job) {
       // Reel upload — link directly to Reel.bunnyVideoId
       await Reel.findByIdAndUpdate(updated.reelId, { $set: { bunnyVideoId: updated.bunnyVideoId } })
     } else if (isReady && updated?.contentId) {
-      if (updated.episodeNumber && updated.seasonNumber) {
-        // Link bunnyVideoId to the correct season→episode using array filters
+      if (updated.episodeNumber) {
+        // Series / Serial Drama — link to the correct season→episode.
+        // seasonNumber defaults to 1 if the upload form didn't provide one.
+        const sNum = updated.seasonNumber ?? 1
+        const eNum = updated.episodeNumber
         const linked = await Content.findOneAndUpdate(
-          { _id: updated.contentId, 'seasons.number': updated.seasonNumber, 'seasons.episodes.number': updated.episodeNumber },
+          { _id: updated.contentId, 'seasons.number': sNum, 'seasons.episodes.number': eNum },
           { $set: { 'seasons.$[s].episodes.$[e].bunnyVideoId': updated.bunnyVideoId } },
-          { arrayFilters: [{ 's.number': updated.seasonNumber }, { 'e.number': updated.episodeNumber }], new: true }
+          { arrayFilters: [{ 's.number': sNum }, { 'e.number': eNum }], new: true }
         )
-        // Season/episode didn't exist yet — push into the correct season, creating if needed
         if (!linked) {
-          const hasSeason = await Content.exists({ _id: updated.contentId, 'seasons.number': updated.seasonNumber })
+          const hasSeason = await Content.exists({ _id: updated.contentId, 'seasons.number': sNum })
           if (hasSeason) {
             await Content.findOneAndUpdate(
-              { _id: updated.contentId, 'seasons.number': updated.seasonNumber },
+              { _id: updated.contentId, 'seasons.number': sNum },
               {
                 $push: {
                   'seasons.$.episodes': {
-                    number:       updated.episodeNumber,
-                    title:        updated.episodeTitle    || `Episode ${updated.episodeNumber}`,
+                    number:       eNum,
+                    title:        updated.episodeTitle    || `Episode ${eNum}`,
                     duration:     updated.episodeDuration || '',
                     bunnyVideoId: updated.bunnyVideoId,
                   },
@@ -126,11 +128,11 @@ async function syncProcessingJob(job) {
             await Content.findByIdAndUpdate(updated.contentId, {
               $push: {
                 seasons: {
-                  number:   updated.seasonNumber,
+                  number:   sNum,
                   title:    '',
                   episodes: [{
-                    number:       updated.episodeNumber,
-                    title:        updated.episodeTitle    || `Episode ${updated.episodeNumber}`,
+                    number:       eNum,
+                    title:        updated.episodeTitle    || `Episode ${eNum}`,
                     duration:     updated.episodeDuration || '',
                     bunnyVideoId: updated.bunnyVideoId,
                   }],
@@ -390,8 +392,10 @@ router.post('/import-from-cdn', async (req, res, next) => {
         const durationMins = Math.round((video.length || 0) / 60)
         const palette = PALETTES[imported % PALETTES.length]
 
+        const rawTitle = video.title || 'Untitled'
+        const cleanTitle = rawTitle.replace(/\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|ts|mxf)$/i, '').trim() || 'Untitled'
         const content = await Content.create({
-          title:        video.title || 'Untitled',
+          title:        cleanTitle,
           type:         'Film',
           genre:        [],
           rating:       0,
@@ -439,7 +443,7 @@ router.post('/content', async (req, res, next) => {
     } = req.body
 
     if (!title?.trim()) return res.status(400).json({ error: 'Title is required' })
-    if (!['Film', 'Series', 'Serial Drama', 'Documentary'].includes(type)) {
+    if (!['Film', 'Series', 'Serial Drama', 'Documentary', 'Live'].includes(type)) {
       return res.status(400).json({ error: 'Invalid type' })
     }
 
@@ -569,24 +573,54 @@ router.patch('/content/:id/publish', async (req, res, next) => {
 
 router.post('/map-existing-video', async (req, res, next) => {
   try {
-    const { contentId, bunnyVideoId } = req.body
+    const { contentId, bunnyVideoId, seasonNumber, episodeNumber } = req.body
     if (!contentId || !bunnyVideoId) {
       return res.status(400).json({ error: 'contentId and bunnyVideoId are required' })
     }
 
-    const content = await Content.findByIdAndUpdate(
+    const content = await Content.findById(contentId).select('title type').lean()
+    if (!content) return res.status(404).json({ error: 'Content not found' })
+
+    const vid = String(bunnyVideoId).trim()
+    const isEpisodic = content.type === 'Series' || content.type === 'Serial Drama'
+
+    if (isEpisodic && episodeNumber) {
+      const sNum = Number(seasonNumber  || 1)
+      const eNum = Number(episodeNumber)
+
+      const linked = await Content.findOneAndUpdate(
+        { _id: contentId, 'seasons.number': sNum, 'seasons.episodes.number': eNum },
+        { $set: { 'seasons.$[s].episodes.$[e].bunnyVideoId': vid } },
+        { arrayFilters: [{ 's.number': sNum }, { 'e.number': eNum }], new: true }
+      ).lean()
+
+      if (!linked) {
+        const hasSeason = await Content.exists({ _id: contentId, 'seasons.number': sNum })
+        if (hasSeason) {
+          await Content.findOneAndUpdate(
+            { _id: contentId, 'seasons.number': sNum },
+            { $push: { 'seasons.$.episodes': { number: eNum, title: '', duration: '', bunnyVideoId: vid } } }
+          )
+        } else {
+          await Content.findByIdAndUpdate(contentId, {
+            $push: { seasons: { number: sNum, title: '', episodes: [{ number: eNum, title: '', duration: '', bunnyVideoId: vid }] } },
+          })
+        }
+      }
+
+      bustContentCache()
+      return res.json({ success: true, message: `Mapped video to S${sNum}E${eNum} of "${content.title}".` })
+    }
+
+    // Film / Documentary — or series mapped to root (legacy / trailer use-case)
+    const updated = await Content.findByIdAndUpdate(
       contentId,
-      { $set: { bunnyVideoId: String(bunnyVideoId).trim() } },
+      { $set: { bunnyVideoId: vid } },
       { new: true }
     ).select('title bunnyVideoId type').lean()
 
-    if (!content) return res.status(404).json({ error: 'Content not found' })
-
-    res.json({
-      success: true,
-      content,
-      message: `Mapped Bunny video ${content.bunnyVideoId} to ${content.title}.`,
-    })
+    bustContentCache()
+    res.json({ success: true, content: updated, message: `Mapped Bunny video to "${updated.title}".` })
   } catch (err) {
     next(err)
   }
@@ -682,9 +716,11 @@ router.put('/upload-jobs/:id/file', async (req, res, next) => {
       },
     })
 
-    await processUploadJob(job._id, req)
+    // Fire-and-forget: stream req → Bunny in background so the browser gets 202 immediately
+    // rather than waiting for the full Render→Bunny re-upload (could be 10+ min for large files).
+    void processUploadJob(job._id, req)
 
-    res.status(202).json({ success: true, jobId: job._id, message: 'File uploaded. Bunny is transcoding.' })
+    res.status(202).json({ success: true, jobId: job._id, message: 'File received. Bunny is transcoding.' })
   } catch (err) {
     next(err)
   }
