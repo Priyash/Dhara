@@ -46,6 +46,10 @@ function logAdminAction(req, action, targetType, targetId, targetLabel, metadata
   }).catch((err) => console.error('[audit]', err.message))
 }
 
+import { createWriteStream, createReadStream, unlink } from 'fs'
+import { pipeline } from 'stream/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { bunnyRequest, processUploadJob } from '../services/bunnyUpload.js'
 
 const router = Router()
@@ -690,6 +694,7 @@ router.post('/upload-jobs', async (req, res, next) => {
 })
 
 router.put('/upload-jobs/:id/file', async (req, res, next) => {
+  let tmpPath = null
   try {
     const job = await UploadJob.findById(req.params.id)
     if (!job) return res.status(404).json({ error: 'Upload job not found' })
@@ -707,6 +712,16 @@ router.put('/upload-jobs/:id/file', async (req, res, next) => {
     }
 
     const fileName = String(req.headers['x-file-name'] || '').slice(0, 240)
+
+    // Drain the full request body to a temp file BEFORE responding.
+    // Render's reverse proxy closes the upstream Node.js connection when we send
+    // any 2xx response before consuming the body — so the fire-and-forget pattern
+    // of piping `req` directly to Bunny silently truncates the stream in production.
+    // Buffering to disk first means the response is sent only after all bytes have
+    // arrived, and the Bunny upload then reads a complete local file.
+    tmpPath = join(tmpdir(), `dhara_${job._id}_${Date.now()}.tmp`)
+    await pipeline(req, createWriteStream(tmpPath))
+
     await UploadJob.findByIdAndUpdate(job._id, {
       $set: {
         status: 'queued',
@@ -716,12 +731,13 @@ router.put('/upload-jobs/:id/file', async (req, res, next) => {
       },
     })
 
-    // Fire-and-forget: stream req → Bunny in background so the browser gets 202 immediately
-    // rather than waiting for the full Render→Bunny re-upload (could be 10+ min for large files).
-    void processUploadJob(job._id, req)
+    // Fire-and-forget from temp file → Bunny; delete the file when done either way
+    void processUploadJob(job._id, createReadStream(tmpPath))
+      .finally(() => unlink(tmpPath, () => {}))
 
     res.status(202).json({ success: true, jobId: job._id, message: 'File received. Bunny is transcoding.' })
   } catch (err) {
+    if (tmpPath) unlink(tmpPath, () => {})
     next(err)
   }
 })

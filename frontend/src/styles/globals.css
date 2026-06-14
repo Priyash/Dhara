@@ -5,6 +5,7 @@
 }
 
 :root {
+  font-size: 16px;
   --color-bg:         #09090b;
   --color-surface:    #111115;
   --color-surface-2:  #18181f;
