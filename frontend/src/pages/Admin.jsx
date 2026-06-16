@@ -15,7 +15,7 @@ import {
   createAdminCollection, createBunnyCollection, createUploadJob, fetchAdminContentById,
   getAdminSession, importFromCdn, syncCdnDeletions, listBunnyCollections, listBunnyVideos,
   listAdminCollections, listAdminContent, listUploadJobs,
-  mapExistingBunnyVideo, syncBunnyCollections, createAdminContent, updateAdminContent, togglePublishContent,
+  mapExistingBunnyVideo, syncBunnyCollections, createAdminContent, updateAdminContent, togglePublishContent, deleteAdminContent,
   uploadJobFile, getPaymentConfig, updatePaymentConfig,
   listCreatorApplications, approveCreatorApplication, rejectCreatorApplication,
   listAdminSubmissions, approveSubmission, rejectSubmission,
@@ -819,6 +819,7 @@ export default function Admin() {
   // ── Quick premium toggle (no modal needed) ───────────────────────────────
   const [togglingPremium, setTogglingPremium]   = useState(null)
   const [togglingPublish, setTogglingPublish]   = useState(null)
+  const [confirmDeleteId, setConfirmDeleteId]   = useState(null)
 
   const handleTogglePremium = async (item) => {
     setTogglingPremium(item._id)
@@ -854,6 +855,19 @@ export default function Admin() {
       showToast({ type: 'error', message: err?.message || 'Could not update publish state' })
     } finally {
       setTogglingPublish(null)
+    }
+  }
+
+  const handleDeleteContent = async (item) => {
+    if (confirmDeleteId !== item._id) { setConfirmDeleteId(item._id); return }
+    setConfirmDeleteId(null)
+    setContentItems((prev) => prev.filter((c) => c._id !== item._id))
+    try {
+      await deleteAdminContent(item._id)
+      showToast({ type: 'success', message: `"${item.title}" deleted` })
+    } catch (err) {
+      await loadData()
+      showToast({ type: 'error', message: err?.message || 'Could not delete content' })
     }
   }
 
@@ -1766,6 +1780,15 @@ export default function Admin() {
                     disabled={editBusy && editingId === item._id}
                   >
                     <Pencil size={12} /> Edit
+                  </button>
+                  <button
+                    className={`${styles.deleteBtn} ${confirmDeleteId === item._id ? styles.deleteBtnConfirm : ''}`}
+                    onClick={() => handleDeleteContent(item)}
+                    onBlur={() => { if (confirmDeleteId === item._id) setConfirmDeleteId(null) }}
+                    title="Delete content"
+                  >
+                    <Trash2 size={12} />
+                    {confirmDeleteId === item._id ? 'Confirm?' : 'Delete'}
                   </button>
                 </div>
               </div>
