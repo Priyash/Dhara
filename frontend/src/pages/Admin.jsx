@@ -593,7 +593,6 @@ export default function Admin() {
   const [toast, setToast]                     = useState(null)
   const [jobsLastRefreshed, setJobsLastRefreshed] = useState(null)
   const [isRefreshing, setIsRefreshing]        = useState(false)
-  const [refreshCountdown, setRefreshCountdown] = useState(5)
 
   // ── Payment provider ──────────────────────────────────────────────────────
   const [paymentConfig, setPaymentConfig]   = useState(null)
@@ -696,6 +695,7 @@ export default function Admin() {
     setJobsLastRefreshed(new Date())
     setBunnyCollections(bunnyCollectionData)
     if (paymentData) setPaymentConfig(paymentData)
+    checkTransitions(jobData)
   }
 
   const loadBunnyVideos = async (collectionId) => {
@@ -737,24 +737,7 @@ export default function Admin() {
   useEffect(() => {
     if (!adminAllowed) return undefined
     requestPermission()
-    const INTERVAL = 5
-    let count = INTERVAL
-    setRefreshCountdown(INTERVAL)
-    const tick = setInterval(() => {
-      count -= 1
-      setRefreshCountdown(count)
-      if (count <= 0) {
-        count = INTERVAL
-        setRefreshCountdown(INTERVAL)
-        setIsRefreshing(true)
-        listUploadJobs(40)
-          .then((jobs) => { setJobs(jobs); setJobsLastRefreshed(new Date()); checkTransitions(jobs) })
-          .catch(() => {})
-          .finally(() => setIsRefreshing(false))
-      }
-    }, 1000)
-    return () => clearInterval(tick)
-  }, [adminAllowed, requestPermission, checkTransitions])
+  }, [adminAllowed, requestPermission])
 
 
   useEffect(() => {
@@ -1644,7 +1627,6 @@ export default function Admin() {
           <button
             className={styles.refreshBtn}
             onClick={async () => {
-              setRefreshCountdown(5)
               setIsRefreshing(true)
               try { await loadData() } finally { setIsRefreshing(false) }
             }}
@@ -1652,9 +1634,6 @@ export default function Admin() {
           >
             <RefreshCw size={13} className={isRefreshing ? styles.refreshIconSpin : ''} />
             {isRefreshing ? 'Refreshing…' : 'Refresh'}
-            {!isRefreshing && activeTab === 'uploads' && (
-              <span className={styles.refreshCountdownBadge}>{refreshCountdown}s</span>
-            )}
           </button>
           {activeTab === 'uploads' && (
             <>
