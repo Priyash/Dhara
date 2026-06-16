@@ -722,12 +722,42 @@ router.put('/upload-jobs/:id/file', async (req, res, next) => {
     tmpPath = join(tmpdir(), `dhara_${job._id}_${Date.now()}.tmp`)
     await pipeline(req, createWriteStream(tmpPath))
 
+    // Verify the target Bunny collection still exists; auto-create it if it was deleted.
+    // processUploadJob re-fetches the job by ID, so updating bunnyCollectionId in MongoDB
+    // here is enough — the background task will pick up the new GUID automatically.
+    let bunnyCollectionId = job.bunnyCollectionId
+    if (bunnyCollectionId) {
+      try {
+        await bunnyRequest(`/library/${libraryId}/collections/${bunnyCollectionId}`)
+      } catch {
+        // Collection missing on Bunny — recreate it and update both records
+        try {
+          const newCol = await bunnyRequest(`/library/${libraryId}/collections`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ name: job.collectionName }),
+          })
+          const newGuid = String(newCol?.guid || '').trim()
+          if (newGuid) {
+            await StreamCollection.findOneAndUpdate(
+              { bunnyCollectionId },
+              { $set: { bunnyCollectionId: newGuid, isActive: true } }
+            )
+            bunnyCollectionId = newGuid
+          }
+        } catch (colErr) {
+          console.warn('[upload] Could not auto-create Bunny collection:', colErr.message)
+        }
+      }
+    }
+
     await UploadJob.findByIdAndUpdate(job._id, {
       $set: {
         status: 'queued',
         progress: 10,
         note: 'File received. Queued for Bunny upload.',
         fileName,
+        bunnyCollectionId,
       },
     })
 
