@@ -31,7 +31,19 @@ export default function Home() {
 
   useEffect(() => {
     if (!isLoggedIn) { setContinueWatching([]); return }
-    fetchContinueWatching().then(setContinueWatching).catch(() => {})
+    // Small delay so Watch.jsx's unmount save completes before we read from the backend
+    const t = setTimeout(() => {
+      fetchContinueWatching().then(setContinueWatching).catch(() => {})
+    }, 350)
+    return () => clearTimeout(t)
+  }, [isLoggedIn])
+
+  // Re-fetch when the tab regains focus (user returns from another tab after watching)
+  useEffect(() => {
+    if (!isLoggedIn) return
+    const onFocus = () => fetchContinueWatching().then(setContinueWatching).catch(() => {})
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
   }, [isLoggedIn])
 
   const movies      = content.filter(c => c.type === 'Film')

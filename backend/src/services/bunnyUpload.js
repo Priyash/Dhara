@@ -57,7 +57,7 @@ export async function bunnyRequest(path, { method = 'GET', body, headers = {}, t
  * Sets the job status through uploading → processing.
  * On failure sets status = 'failed' with the error message.
  */
-export async function processUploadJob(jobId, fileBuffer) {
+export async function processUploadJob(jobId, fileBuffer, fileSize = 0) {
   try {
     const job = await UploadJob.findById(jobId)
     if (!job) return
@@ -79,9 +79,14 @@ export async function processUploadJob(jobId, fileBuffer) {
       $set: { bunnyVideoId, progress: 45, note: 'Uploading source file to Bunny Stream...' },
     })
 
+    // Content-Length is required — without it Bunny accepts HTTP 200 but internally
+    // marks the upload as failed (status 5) because it can't verify the file was complete.
+    const putHeaders = { 'Content-Type': 'application/octet-stream' }
+    if (fileSize > 0) putHeaders['Content-Length'] = String(fileSize)
+
     await bunnyRequest(`/library/${libraryId}/videos/${bunnyVideoId}`, {
       method:    'PUT',
-      headers:   { 'Content-Type': 'application/octet-stream' },
+      headers:   putHeaders,
       body:      fileBuffer,
       timeoutMs: UPLOAD_TIMEOUT_MS,
     })
@@ -93,5 +98,8 @@ export async function processUploadJob(jobId, fileBuffer) {
     await UploadJob.findByIdAndUpdate(jobId, {
       $set: { status: 'failed', progress: 0, error: err?.message || 'Upload failed' },
     })
+    // Re-throw so callers can surface the error: admin route returns 500 to the XHR,
+    // reel route uses void + .catch(() => {}) so the job status update is enough.
+    throw err
   }
 }

@@ -46,10 +46,6 @@ function logAdminAction(req, action, targetType, targetId, targetLabel, metadata
   }).catch((err) => console.error('[audit]', err.message))
 }
 
-import { createWriteStream, createReadStream, unlink } from 'fs'
-import { pipeline } from 'stream/promises'
-import { tmpdir } from 'os'
-import { join } from 'path'
 import { bunnyRequest, processUploadJob } from '../services/bunnyUpload.js'
 
 const router = Router()
@@ -74,13 +70,32 @@ async function listBunnyVideos({ collectionId = '', search = '' } = {}) {
   return result?.items || []
 }
 
+// Bunny Stream video status codes that indicate a terminal failure
+const BUNNY_FAIL_STATUSES = new Set([4, 5, 6])
+
 async function syncProcessingJob(job) {
   if (!job.bunnyVideoId || !['processing', 'uploading', 'queued'].includes(job.status)) return job
 
   try {
     const video = await bunnyRequest(`/library/${libraryId}/videos/${job.bunnyVideoId}`)
+    const bunnyStatus   = Number(video?.status ?? -1)
     const encodeProgress = Number(video?.encodeProgress || 0)
-    const isReady = encodeProgress >= 100
+
+    // Bunny status 4 = Resolution not available, 5 = Upload failed, 6 = Failed
+    if (BUNNY_FAIL_STATUSES.has(bunnyStatus)) {
+      const errMsg = bunnyStatus === 5 ? 'Bunny upload failed — file may be corrupted or too large.'
+                   : bunnyStatus === 4 ? 'Bunny could not encode this resolution.'
+                   : 'Bunny encoding failed.'
+      const failed = await UploadJob.findByIdAndUpdate(
+        job._id,
+        { $set: { status: 'failed', progress: 0, error: errMsg } },
+        { new: true }
+      ).catch(() => null)
+      return failed || { ...job, status: 'failed', progress: 0, error: errMsg }
+    }
+
+    // Bunny status 3 = Finished; also guard on encodeProgress for safety
+    const isReady = bunnyStatus === 3 || encodeProgress >= 100
 
     const nextStatus = isReady ? 'ready' : 'processing'
     const nextProgress = isReady ? 100 : Math.max(70, Math.min(99, Math.round(70 + encodeProgress * 0.29)))
@@ -705,7 +720,6 @@ router.post('/upload-jobs', async (req, res, next) => {
 })
 
 router.put('/upload-jobs/:id/file', async (req, res, next) => {
-  let tmpPath = null
   try {
     const job = await UploadJob.findById(req.params.id)
     if (!job) return res.status(404).json({ error: 'Upload job not found' })
@@ -724,24 +738,12 @@ router.put('/upload-jobs/:id/file', async (req, res, next) => {
 
     const fileName = String(req.headers['x-file-name'] || '').slice(0, 240)
 
-    // Drain the full request body to a temp file BEFORE responding.
-    // Render's reverse proxy closes the upstream Node.js connection when we send
-    // any 2xx response before consuming the body — so the fire-and-forget pattern
-    // of piping `req` directly to Bunny silently truncates the stream in production.
-    // Buffering to disk first means the response is sent only after all bytes have
-    // arrived, and the Bunny upload then reads a complete local file.
-    tmpPath = join(tmpdir(), `dhara_${job._id}_${Date.now()}.tmp`)
-    await pipeline(req, createWriteStream(tmpPath))
-
     // Verify the target Bunny collection still exists; auto-create it if it was deleted.
-    // processUploadJob re-fetches the job by ID, so updating bunnyCollectionId in MongoDB
-    // here is enough — the background task will pick up the new GUID automatically.
     let bunnyCollectionId = job.bunnyCollectionId
     if (bunnyCollectionId) {
       try {
         await bunnyRequest(`/library/${libraryId}/collections/${bunnyCollectionId}`)
       } catch {
-        // Collection missing on Bunny — recreate it and update both records
         try {
           const newCol = await bunnyRequest(`/library/${libraryId}/collections`, {
             method:  'POST',
@@ -766,19 +768,21 @@ router.put('/upload-jobs/:id/file', async (req, res, next) => {
       $set: {
         status: 'queued',
         progress: 10,
-        note: 'File received. Queued for Bunny upload.',
+        note: 'Streaming file to Bunny CDN…',
         fileName,
         bunnyCollectionId,
       },
     })
 
-    // Fire-and-forget from temp file → Bunny; delete the file when done either way
-    void processUploadJob(job._id, createReadStream(tmpPath))
-      .finally(() => unlink(tmpPath, () => {}))
+    // Stream req directly to Bunny — no temp file, no second transfer, no disk usage.
+    // We await the full PUT before responding so the XHR result reflects whether Bunny
+    // actually accepted the bytes, not just whether our server received them.
+    // processUploadJob throws on failure after updating the job status to 'failed'.
+    await processUploadJob(job._id, req, contentLength)
 
     res.status(202).json({ success: true, jobId: job._id, message: 'File received. Bunny is transcoding.' })
   } catch (err) {
-    if (tmpPath) unlink(tmpPath, () => {})
+    // Job is already marked 'failed' by processUploadJob; surface the error to the client
     next(err)
   }
 })
