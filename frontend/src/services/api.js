@@ -97,10 +97,21 @@ export async function fetchContinueWatching() {
   return data.map((item) => {
     const normalized = normalizeItem(item)
     const { positionSecs = 0, durationSecs = 0 } = item._progress || {}
-    const progressPct = durationSecs > 0
-      ? Math.min(99, Math.round((positionSecs / durationSecs) * 100))
+
+    // Prefer localStorage when it has a higher position — this wins the race
+    // between Watch.jsx's unmount flush and Home.jsx's fetch, and also surfaces
+    // in-session progress that hasn't been sent to the backend yet.
+    const localKey = `dhara_progress_${normalized._id || normalized.id}`
+    const localPos = parseFloat(localStorage.getItem(localKey) || '0')
+    const localDur = parseFloat(localStorage.getItem(`${localKey}_dur`) || '0')
+
+    const effectivePos = localPos > positionSecs ? localPos : positionSecs
+    const effectiveDur = localDur > 0 ? localDur : durationSecs
+
+    const progressPct = effectiveDur > 0
+      ? Math.min(99, Math.round((effectivePos / effectiveDur) * 100))
       : 0
-    return { ...normalized, progressPct, _progress: item._progress }
+    return { ...normalized, progressPct, _progress: { ...item._progress, positionSecs: effectivePos, durationSecs: effectiveDur } }
   })
 }
 
