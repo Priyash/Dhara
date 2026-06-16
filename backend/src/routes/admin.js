@@ -152,7 +152,18 @@ async function syncProcessingJob(job) {
     }
 
     return updated || job
-  } catch {
+  } catch (err) {
+    // If Bunny returns 404 the video was deleted from the CDN — mark the job
+    // as failed immediately so it stops showing "Transcoding…" in the UI.
+    const isGone = /404|not found/i.test(err?.message || '')
+    if (isGone) {
+      const failed = await UploadJob.findByIdAndUpdate(
+        job._id,
+        { $set: { status: 'failed', progress: 0, error: 'Video was deleted from Bunny CDN.' } },
+        { new: true }
+      ).catch(() => null)
+      return failed || { ...job, status: 'failed', progress: 0, error: 'Video was deleted from Bunny CDN.' }
+    }
     return job
   }
 }
