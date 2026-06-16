@@ -425,7 +425,7 @@ router.post('/import-from-cdn', async (req, res, next) => {
 
 router.get('/content', async (req, res, next) => {
   try {
-    const items = await Content.find()
+    const items = await Content.find({ isDeleted: { $ne: true } })
       .sort({ updatedAt: -1 })
       .limit(100)
       .select('title type bunnyVideoId isPremium isFeatured isPublished releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount posterUrl')

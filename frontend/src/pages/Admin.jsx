@@ -15,7 +15,7 @@ import {
   createAdminCollection, createBunnyCollection, createUploadJob, fetchAdminContentById,
   getAdminSession, importFromCdn, syncCdnDeletions, listBunnyCollections, listBunnyVideos,
   listAdminCollections, listAdminContent, listUploadJobs,
-  mapExistingBunnyVideo, syncBunnyCollections, createAdminContent, updateAdminContent, togglePublishContent, deleteAdminContent,
+  mapExistingBunnyVideo, createAdminContent, updateAdminContent, togglePublishContent, deleteAdminContent,
   uploadJobFile, getPaymentConfig, updatePaymentConfig,
   listCreatorApplications, approveCreatorApplication, rejectCreatorApplication,
   listAdminSubmissions, approveSubmission, rejectSubmission,
@@ -1507,17 +1507,6 @@ export default function Admin() {
     } finally { setBusy(false) }
   }
 
-  const handleSyncBunnyCollections = async () => {
-    setNotice(''); setError(''); setBusy(true)
-    try {
-      const result = await syncBunnyCollections()
-      setNotice(`Synced ${result.imported} collections.`)
-      await loadData()
-    } catch (err) {
-      setError(err?.message || 'Could not sync collections.')
-    } finally { setBusy(false) }
-  }
-
   const handleSyncDeletions = async () => {
     setNotice(''); setError(''); setBusy(true)
     try {
@@ -1644,9 +1633,6 @@ export default function Admin() {
           </button>
           {activeTab === 'uploads' && (
             <>
-              <button className={styles.refreshBtn} onClick={handleSyncBunnyCollections} disabled={busy}>
-                <FolderPlus size={13} /> Sync CDN
-              </button>
               <button className={styles.refreshBtn} onClick={handleSyncDeletions} disabled={busy}>
                 <RefreshCw size={13} /> Sync Deletions
               </button>
