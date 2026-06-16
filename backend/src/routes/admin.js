@@ -74,13 +74,32 @@ async function listBunnyVideos({ collectionId = '', search = '' } = {}) {
   return result?.items || []
 }
 
+// Bunny Stream video status codes that indicate a terminal failure
+const BUNNY_FAIL_STATUSES = new Set([4, 5, 6])
+
 async function syncProcessingJob(job) {
   if (!job.bunnyVideoId || !['processing', 'uploading', 'queued'].includes(job.status)) return job
 
   try {
     const video = await bunnyRequest(`/library/${libraryId}/videos/${job.bunnyVideoId}`)
+    const bunnyStatus   = Number(video?.status ?? -1)
     const encodeProgress = Number(video?.encodeProgress || 0)
-    const isReady = encodeProgress >= 100
+
+    // Bunny status 4 = Resolution not available, 5 = Upload failed, 6 = Failed
+    if (BUNNY_FAIL_STATUSES.has(bunnyStatus)) {
+      const errMsg = bunnyStatus === 5 ? 'Bunny upload failed — file may be corrupted or too large.'
+                   : bunnyStatus === 4 ? 'Bunny could not encode this resolution.'
+                   : 'Bunny encoding failed.'
+      const failed = await UploadJob.findByIdAndUpdate(
+        job._id,
+        { $set: { status: 'failed', progress: 0, error: errMsg } },
+        { new: true }
+      ).catch(() => null)
+      return failed || { ...job, status: 'failed', progress: 0, error: errMsg }
+    }
+
+    // Bunny status 3 = Finished; also guard on encodeProgress for safety
+    const isReady = bunnyStatus === 3 || encodeProgress >= 100
 
     const nextStatus = isReady ? 'ready' : 'processing'
     const nextProgress = isReady ? 100 : Math.max(70, Math.min(99, Math.round(70 + encodeProgress * 0.29)))
@@ -772,8 +791,10 @@ router.put('/upload-jobs/:id/file', async (req, res, next) => {
       },
     })
 
-    // Fire-and-forget from temp file → Bunny; delete the file when done either way
-    void processUploadJob(job._id, createReadStream(tmpPath))
+    // Fire-and-forget from temp file → Bunny; delete the file when done either way.
+    // Pass contentLength so processUploadJob can set Content-Length on the PUT request —
+    // Bunny requires it and silently marks the upload as failed without it.
+    void processUploadJob(job._id, createReadStream(tmpPath), contentLength)
       .finally(() => unlink(tmpPath, () => {}))
 
     res.status(202).json({ success: true, jobId: job._id, message: 'File received. Bunny is transcoding.' })
