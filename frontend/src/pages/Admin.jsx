@@ -592,6 +592,8 @@ export default function Admin() {
   const [autoThumbUploading, setAutoThumbUploading] = useState(false)
   const [toast, setToast]                     = useState(null)
   const [jobsLastRefreshed, setJobsLastRefreshed] = useState(null)
+  const [isRefreshing, setIsRefreshing]        = useState(false)
+  const [refreshCountdown, setRefreshCountdown] = useState(5)
 
   // ── Payment provider ──────────────────────────────────────────────────────
   const [paymentConfig, setPaymentConfig]   = useState(null)
@@ -735,12 +737,23 @@ export default function Admin() {
   useEffect(() => {
     if (!adminAllowed) return undefined
     requestPermission()
-    const timer = setInterval(() => {
-      listUploadJobs(40)
-        .then((jobs) => { setJobs(jobs); setJobsLastRefreshed(new Date()); checkTransitions(jobs) })
-        .catch(() => {})
-    }, 5000)
-    return () => clearInterval(timer)
+    const INTERVAL = 5
+    let count = INTERVAL
+    setRefreshCountdown(INTERVAL)
+    const tick = setInterval(() => {
+      count -= 1
+      setRefreshCountdown(count)
+      if (count <= 0) {
+        count = INTERVAL
+        setRefreshCountdown(INTERVAL)
+        setIsRefreshing(true)
+        listUploadJobs(40)
+          .then((jobs) => { setJobs(jobs); setJobsLastRefreshed(new Date()); checkTransitions(jobs) })
+          .catch(() => {})
+          .finally(() => setIsRefreshing(false))
+      }
+    }, 1000)
+    return () => clearInterval(tick)
   }, [adminAllowed, requestPermission, checkTransitions])
 
 
@@ -1628,8 +1641,20 @@ export default function Admin() {
           </p>
         </div>
         <div className={styles.headerActions}>
-          <button className={styles.refreshBtn} onClick={() => void loadData()}>
-            <RefreshCw size={13} /> Refresh
+          <button
+            className={styles.refreshBtn}
+            onClick={async () => {
+              setRefreshCountdown(5)
+              setIsRefreshing(true)
+              try { await loadData() } finally { setIsRefreshing(false) }
+            }}
+            disabled={isRefreshing}
+          >
+            <RefreshCw size={13} className={isRefreshing ? styles.refreshIconSpin : ''} />
+            {isRefreshing ? 'Refreshing…' : 'Refresh'}
+            {!isRefreshing && activeTab === 'uploads' && (
+              <span className={styles.refreshCountdownBadge}>{refreshCountdown}s</span>
+            )}
           </button>
           {activeTab === 'uploads' && (
             <>
