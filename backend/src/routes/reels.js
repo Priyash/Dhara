@@ -361,7 +361,7 @@ router.put('/:id/file',
         $set: { status: 'queued', progress: 10, note: 'File received. Queued for upload.', fileName },
       })
       const fileBuffer = Buffer.from(req.body)
-      setImmediate(() => { void processUploadJob(job._id, fileBuffer, fileBuffer.length) })
+      setImmediate(() => { void processUploadJob(job._id, fileBuffer, fileBuffer.length).catch(() => {}) })
       res.status(202).json({ success: true, jobId: job._id, message: 'File accepted and queued.' })
     } catch (err) {
       next(err)

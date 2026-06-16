@@ -98,5 +98,8 @@ export async function processUploadJob(jobId, fileBuffer, fileSize = 0) {
     await UploadJob.findByIdAndUpdate(jobId, {
       $set: { status: 'failed', progress: 0, error: err?.message || 'Upload failed' },
     })
+    // Re-throw so callers can surface the error: admin route returns 500 to the XHR,
+    // reel route uses void + .catch(() => {}) so the job status update is enough.
+    throw err
   }
 }
