@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Clapperboard, Users, Globe, Play, SkipForward, VideoOff, RotateCcw, Eye, ThumbsUp, MessageSquare } from 'lucide-react'
+import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Play, SkipForward, VideoOff, RotateCcw } from 'lucide-react'
 import VideoPlayer from '../components/VideoPlayer'
 import PosterCard from '../components/PosterCard'
 import { fetchContentById, fetchStreamUrl, saveWatchProgress, recordView, fetchContent, rateContent, recordInteractionEvent, sendStreamHeartbeat, endStreamSession } from '../services/api'
@@ -16,53 +16,6 @@ function formatTime(secs) {
   return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s}` : `${m}:${s}`
 }
 
-function StarRating({ contentId, initialScore, communityRating, communityRatingCount }) {
-  const { isLoggedIn } = useStore()
-  const [hovered, setHovered] = useState(0)
-  const [selected, setSelected] = useState(initialScore || 0)
-  const [submitted, setSubmitted] = useState(Boolean(initialScore))
-  const [community, setCommunity] = useState({ rating: communityRating, count: communityRatingCount })
-
-  const handleRate = async (score) => {
-    if (!isLoggedIn) return
-    setSelected(score)
-    setSubmitted(true)
-    try {
-      const res = await rateContent(contentId, score)
-      setCommunity({ rating: res.communityRating, count: res.communityRatingCount })
-    } catch {}
-  }
-
-  const display = hovered || selected
-  return (
-    <div className={styles.starRating}>
-      <div className={styles.starRow}>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button
-            key={n}
-            className={styles.starBtn}
-            onMouseEnter={() => !submitted && setHovered(n)}
-            onMouseLeave={() => !submitted && setHovered(0)}
-            onClick={() => handleRate(n)}
-            aria-label={`Rate ${n} out of 5`}
-          >
-            <Star
-              size={18}
-              fill={n <= display ? '#db2777' : 'none'}
-              color={n <= display ? '#db2777' : 'rgba(255,255,255,0.25)'}
-              strokeWidth={1.5}
-            />
-          </button>
-        ))}
-      </div>
-      {community.count > 0 && (
-        <span className={styles.starMeta}>
-          {community.rating.toFixed(1)} · {community.count.toLocaleString()} {community.count === 1 ? 'rating' : 'ratings'}
-        </span>
-      )}
-    </div>
-  )
-}
 
 function stripExtension(name = '') {
   return name.replace(/\.(mp4|mkv|mov|avi|webm|m4v|flv|wmv|ts|mts|3gp)$/i, '').trim()
@@ -87,6 +40,8 @@ export default function Watch() {
   const [streamError,      setStreamError]      = useState(null)
   const [related,        setRelated]       = useState([])
   const [resumePos,      setResumePos]     = useState(null)
+  const [theaterMode,    setTheaterMode]   = useState(false)
+  const [showEndCard,    setShowEndCard]   = useState(false)
   // Tracks which content+episode sessions have already had their view recorded
   // this mount. Key: `${id}-${episodeIndex}`. Prevents double-counting on re-renders.
   const viewRecordedRef = useRef(new Set())
@@ -105,6 +60,7 @@ export default function Watch() {
   useEffect(() => {
     stickyReleasedRef.current = false
     setPlayerPlaying(false)
+    setShowEndCard(false)
   }, [hlsUrl])
 
   // Apply / remove sticky on play state change
@@ -423,11 +379,8 @@ export default function Watch() {
   const hasNextEp     = activeEp < episodes.length - 1
   const hasSeasons    = seasons.length > 0
 
-  const hasGenre    = content.genre?.length > 0
-  const hasCast     = content.cast?.length > 0
-  const hasDirector = Boolean(content.director)
-  const hasRating   = content.rating > 0
-  const hasMeta     = true  // always show the meta panel when content is loaded
+  const hasGenre  = content.genre?.length > 0
+  const hasRating = content.rating > 0
 
   // Build backdrop URL for cinematic gate
   const backdropRaw = content.backdropUrl || content.posterUrl || null
@@ -573,14 +526,7 @@ export default function Watch() {
   }
 
   return (
-    <div className={styles.page}>
-      <div className={styles.topBar}>
-        <button className={styles.backBtn} onClick={() => navigate(-1)} aria-label="Go back">
-          <ArrowLeft size={16} />
-          <span>Back</span>
-        </button>
-      </div>
-
+    <div className={`${styles.page} ${theaterMode ? styles.pageTheater : ''}`}>
       {showGraceBanner && (
         <div className={styles.tierBannerGrace}>
           Your subscription has expired — you're in a grace period until <strong>{formatExpiryDate(graceEndsAt)}</strong>.{' '}
@@ -639,7 +585,54 @@ export default function Watch() {
               storageKey={id}
               maxQualityHeight={maxQualityHeight}
               onPlayingChange={setPlayerPlaying}
+              onBack={() => navigate(-1)}
+              nextEp={hasNextEp ? { number: episodes[activeEp + 1].number, title: episodes[activeEp + 1].title } : null}
+              onNextEp={hasNextEp ? () => { setActiveEp(activeEp + 1); setShowList(false) } : null}
+              theaterMode={theaterMode}
+              onTheaterToggle={() => setTheaterMode((s) => !s)}
+              onVideoEnded={!hasNextEp ? () => setShowEndCard(true) : undefined}
+              isLive={false}
+              watermarkText={user?.email || user?.uid || null}
             />
+            {/* End card — shown when video finishes and there is no next episode */}
+            {showEndCard && !hasNextEp && (
+              <div className={styles.endCard} onClick={() => setShowEndCard(false)}>
+                <div className={styles.endCardInner} onClick={(e) => e.stopPropagation()}>
+                  <p className={styles.endCardLabel}>You watched</p>
+                  <p className={styles.endCardTitle}>{playerTitle}</p>
+                  <button
+                    className={styles.endCardReplay}
+                    onClick={() => { setShowEndCard(false); setHlsUrl(null); setTimeout(() => setHlsUrl(hlsUrl), 50) }}
+                  >
+                    ↺ Watch Again
+                  </button>
+                  {related.length > 0 && (
+                    <div className={styles.endCardRelated}>
+                      {related.slice(0, 4).map((item) => (
+                        <button
+                          key={item._id || item.id}
+                          className={styles.endCardItem}
+                          onClick={() => {
+                            setShowEndCard(false)
+                            if (item.isPremium && !isSubscribed) { openItem(item); return }
+                            navigate(`/watch/${item._id || item.id}`)
+                          }}
+                        >
+                          {item.posterUrl && (
+                            <img
+                              src={cloudinaryTransform(item.posterUrl, 'w_180,h_270,c_fill,f_auto,q_auto')}
+                              alt={item.title}
+                              className={styles.endCardPoster}
+                            />
+                          )}
+                          <span className={styles.endCardItemTitle}>{item.title}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             {resumePos && (
               <div className={styles.resumePrompt}>
                 <span className={styles.resumeText}>
@@ -668,143 +661,6 @@ export default function Watch() {
       )}
 
       <div className={styles.below}>
-        {hasMeta && (
-          <div className={styles.metaPanel}>
-            {/* Left: title block + synopsis */}
-            <div className={styles.metaLeft}>
-              <div className={styles.metaHeader}>
-                <h1 className={styles.metaTitle}>{cleanTitle}</h1>
-                {content.subtitle && (
-                  <p className={styles.metaSubtitle}>{content.subtitle}</p>
-                )}
-                {content.isPremium && (
-                  <span className={styles.proBadge}>
-                    <Crown size={10} color="#fff" /> PRO
-                  </span>
-                )}
-              </div>
-
-              {/* Quick facts row */}
-              <div className={styles.quickFacts}>
-                {content.releaseYear && (
-                  <span className={styles.fact}>{content.releaseYear}</span>
-                )}
-                {content.type && (
-                  <span className={styles.fact}>{content.type}</span>
-                )}
-                {content.contentLanguage && (
-                  <span className={styles.factLang}>
-                    <Globe size={11} />
-                    {content.contentLanguage}
-                  </span>
-                )}
-                {content.certification && (
-                  <span className={styles.factCert}>{content.certification}</span>
-                )}
-                {hasRating && (
-                  <span className={styles.factRating}>
-                    <Star size={11} fill="#db2777" color="#db2777" />
-                    {content.rating.toFixed(1)}
-                  </span>
-                )}
-                {streamTier && (() => {
-                  const QUALITY_LABEL = { free: '480p', trial: 'HD', monthly: 'HD', annual: 'Full HD', family: '4K' }
-                  const label = QUALITY_LABEL[streamTier] ?? streamTier
-                  const isCapped = streamTier === 'free' || streamTier === 'trial' || streamTier === 'monthly'
-                  return (
-                    <span
-                      className={styles.factQuality}
-                      title={isCapped ? 'Upgrade your plan for higher quality' : undefined}
-                    >
-                      {label}
-                    </span>
-                  )
-                })()}
-              </div>
-
-              {/* Engagement strip — always visible, shows zeros until activity accumulates */}
-              <div className={styles.engagementRow}>
-                <span className={styles.engagementStat}>
-                  <Eye size={13} />
-                  {(() => {
-                    const v = content.viewCount ?? 0
-                    return v >= 1_000_000 ? `${(v/1_000_000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : v
-                  })()}
-                  <em>views</em>
-                </span>
-                <span className={styles.engagementStat}>
-                  <ThumbsUp size={13} />
-                  {(() => {
-                    const l = content.likeCount ?? 0
-                    return l >= 1000 ? `${(l/1000).toFixed(1)}k` : l
-                  })()}
-                  <em>likes</em>
-                </span>
-                <span className={styles.engagementStat} style={{ color: '#db2777' }}>
-                  <MessageSquare size={13} />
-                  {content.communityRatingCount > 0
-                    ? `${content.communityRating?.toFixed(1) ?? '0.0'}`
-                    : '—'}
-                  <em>
-                    {content.communityRatingCount > 0
-                      ? `from ${content.communityRatingCount >= 1000 ? `${(content.communityRatingCount/1000).toFixed(1)}k` : content.communityRatingCount} ${content.communityRatingCount === 1 ? 'rating' : 'ratings'}`
-                      : 'no ratings yet'}
-                  </em>
-                </span>
-              </div>
-
-              {hasGenre && (
-                <div className={styles.genreRow}>
-                  {content.genre.map((g) => (
-                    <span key={g} className={styles.genreChip}>{g}</span>
-                  ))}
-                </div>
-              )}
-
-              {content.desc && (
-                <p className={styles.synopsis}>{content.desc}</p>
-              )}
-
-              {isLoggedIn && (
-                <StarRating
-                  contentId={id}
-                  initialScore={null}
-                  communityRating={content.communityRating ?? 0}
-                  communityRatingCount={content.communityRatingCount ?? 0}
-                />
-              )}
-            </div>
-
-            {/* Right: crew + cast */}
-            {(hasDirector || hasCast) && (
-              <div className={styles.metaRight}>
-                {hasDirector && (
-                  <div className={styles.crewBlock}>
-                    <div className={styles.crewLabel}>
-                      <Clapperboard size={12} />
-                      Director
-                    </div>
-                    <p className={styles.crewValue}>{content.director}</p>
-                  </div>
-                )}
-                {hasCast && (
-                  <div className={styles.crewBlock}>
-                    <div className={styles.crewLabel}>
-                      <Users size={12} />
-                      Cast
-                    </div>
-                    <div className={styles.castRow}>
-                      {content.cast.map((name) => (
-                        <span key={name} className={styles.castChip}>{name}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
         <div className={styles.info}>
           {hasNextEp && (
             <button

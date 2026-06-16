@@ -455,6 +455,71 @@
   white-space: nowrap;
 }
 
+/* Back button rendered inside the player top overlay */
+.backOverlayBtn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px 0 9px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.9);
+  cursor: pointer;
+  pointer-events: all;
+  transition: background 0.15s, border-color 0.15s, transform 0.12s;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  white-space: nowrap;
+}
+
+.backOverlayBtn:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.32);
+  transform: translateX(-2px);
+}
+
+.backOverlayText {
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-body, sans-serif);
+}
+
+/* Large center play button — shown when paused */
+.centerPlayBtn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.52);
+  border: 2px solid rgba(255,255,255,0.45);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: all;
+  transition: background 0.18s, border-color 0.18s, transform 0.12s;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.centerPlayBtn:hover {
+  background: rgba(219,39,119,0.28);
+  border-color: rgba(219,39,119,0.65);
+  transform: translate(-50%, -50%) scale(1.07);
+}
+
+.centerPlayBtn:active {
+  transform: translate(-50%, -50%) scale(0.95);
+}
+
 /* Aspect ratio badge — fullscreen only */
 .arBadge {
   font-size: 11px;
@@ -536,6 +601,19 @@
 }
 
 @media (max-width: 720px) {
+  .countdownOverlay {
+    bottom: 80px;
+    right: 12px;
+  }
+
+  .countdownInner {
+    width: 180px;
+    padding: 12px 14px;
+    gap: 8px;
+  }
+
+  .countdownRing { width: 40px; height: 40px; }
+
   .controlsBar {
     padding: 48px 12px 12px;
     gap: 8px;
@@ -599,6 +677,11 @@
     transform: translateX(-50%) scale(0.86);
     transform-origin: bottom center;
   }
+
+  .centerPlayBtn {
+    width: 56px;
+    height: 56px;
+  }
 }
 
 /* Touch devices: progress thumb always visible (no hover) */
@@ -615,6 +698,489 @@
   .ctrlBtnPrimary {
     min-width: 44px;
     min-height: 44px;
+  }
+}
+
+/* ── Ambient glow — blurred poster behind player when paused ─────────────────*/
+.ambientGlow {
+  position: absolute;
+  inset: -60px -80px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(90px) saturate(2.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.8s ease;
+}
+
+.ambientGlowVisible {
+  opacity: 0.38;
+}
+
+/* ── Speed badge — shown in progress row when rate ≠ 1× ─────────────────────*/
+.speedBadge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  color: #f472b6;
+  background: rgba(219,39,119,0.14);
+  border: 1px solid rgba(219,39,119,0.3);
+  border-radius: 4px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Casting ribbon — shown at top when AirPlay / Cast is active ─────────────*/
+.castingRibbon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: linear-gradient(to bottom, rgba(219,39,119,0.28) 0%, transparent 100%);
+  color: rgba(255,255,255,0.92);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-body, sans-serif);
+  pointer-events: none;
+}
+
+.castingStopBtn {
+  pointer-events: all;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: rgba(219,39,119,0.18);
+  border: 1px solid rgba(219,39,119,0.4);
+  color: #f9a8d4;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-body, sans-serif);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.castingStopBtn:hover { background: rgba(219,39,119,0.3); }
+
+/* ── Chapter marks on the progress track ────────────────────────────────────*/
+.chapterMark {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 8px;
+  background: rgba(255,255,255,0.25);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 1;
+}
+.progressTrack:hover .chapterMark,
+.progressDragging .chapterMark { height: 10px; }
+
+/* ── "Up next" countdown overlay ────────────────────────────────────────────*/
+.countdownOverlay {
+  position: absolute;
+  bottom: 96px;
+  right: 24px;
+  z-index: 10;
+  animation: countdownSlideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes countdownSlideIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+.countdownInner {
+  background: rgba(12,12,16,0.96);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  padding: 16px 20px;
+  width: 210px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.countdownLabel {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: rgba(255,255,255,0.32);
+  margin: 0;
+}
+
+.countdownTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.85);
+  text-align: center;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.countdownRing {
+  width: 48px;
+  height: 48px;
+}
+
+.countdownNum {
+  font-size: 14px;
+  font-weight: 700;
+  fill: #fff;
+  font-family: var(--font-body, sans-serif);
+}
+
+.countdownBtnGroup {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.countdownPlayNow {
+  flex: 1;
+  padding: 8px 0;
+  border: none;
+  border-radius: 8px;
+  background: #db2777;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-body, sans-serif);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.countdownPlayNow:hover { opacity: 0.88; }
+
+.countdownCancel {
+  flex: 1;
+  padding: 8px 0;
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.5);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-body, sans-serif);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.countdownCancel:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); }
+
+/* ── Keyboard shortcuts cheat-sheet ─────────────────────────────────────────*/
+.shortcutsOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.62);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.shortcutsPanel {
+  background: rgba(13,13,17,0.97);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  padding: 20px 24px;
+  width: min(320px, calc(100% - 40px));
+  backdrop-filter: blur(20px);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+}
+
+.shortcutsTitle {
+  font-family: var(--font-display, serif);
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.9);
+  margin: 0 0 16px;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.shortcutsGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shortcutRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.shortcutKeys {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.kbdKey {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.8);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-body, sans-serif);
+  white-space: nowrap;
+}
+
+.shortcutAction {
+  font-size: 13px;
+  color: rgba(255,255,255,0.48);
+  text-align: right;
+}
+
+/* ── Invisible drifting watermark ────────────────────────────────────────────*/
+.watermark {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.13);
+  font-family: var(--font-body, monospace);
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+  mix-blend-mode: difference;
+  animation: watermarkCycle 8s ease forwards;
+}
+
+@keyframes watermarkCycle {
+  0%   { opacity: 0; }
+  8%   { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ── Active control button state (CC active, theater active) ─────────────────*/
+.ctrlBtnActive {
+  color: #f472b6 !important;
+  background: rgba(219,39,119,0.14) !important;
+  border-color: rgba(219,39,119,0.3) !important;
+}
+
+/* ── Offline ribbon ──────────────────────────────────────────────────────────*/
+.offlineRibbon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9;
+  text-align: center;
+  padding: 8px 20px;
+  background: linear-gradient(to bottom, rgba(220,38,38,0.85) 0%, transparent 100%);
+  color: rgba(255,255,255,0.95);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-body, sans-serif);
+  pointer-events: none;
+  letter-spacing: 0.1px;
+}
+
+/* ── Skip Intro button ───────────────────────────────────────────────────────*/
+.skipIntroBtn {
+  position: absolute;
+  bottom: 96px;
+  left: 24px;
+  z-index: 7;
+  padding: 9px 20px;
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 6px;
+  background: rgba(0,0,0,0.7);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-body, sans-serif);
+  cursor: pointer;
+  letter-spacing: 0.1px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  animation: skipIntroPop 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.skipIntroBtn:hover {
+  background: rgba(219,39,119,0.22);
+  border-color: rgba(219,39,119,0.65);
+  transform: translateY(-1px);
+}
+@keyframes skipIntroPop {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* ── Swipe gesture indicator ─────────────────────────────────────────────────*/
+.gestureIndicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  background: rgba(0,0,0,0.65);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--font-body, sans-serif);
+  padding: 12px 24px;
+  border-radius: 12px;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: gestureIn 1.2s ease forwards;
+}
+@keyframes gestureIn {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.88); }
+  10%  { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+  25%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ── Debug stats overlay ─────────────────────────────────────────────────────*/
+.statsOverlay {
+  position: absolute;
+  top: 56px;
+  left: 16px;
+  z-index: 9;
+  background: rgba(8,8,12,0.88);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  min-width: 200px;
+}
+
+.statRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.statKey {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(255,255,255,0.35);
+  font-family: var(--font-body, sans-serif);
+}
+
+.statVal {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.85);
+  font-family: var(--font-body, sans-serif);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Live stream indicators ──────────────────────────────────────────────────*/
+.livePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(220,38,38,0.85);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  font-family: var(--font-body, sans-serif);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.liveDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  animation: livePulse 1.2s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.55; transform: scale(0.8); }
+}
+
+.goLiveBtn {
+  padding: 3px 10px;
+  border: 1px solid rgba(220,38,38,0.5);
+  border-radius: 999px;
+  background: rgba(220,38,38,0.15);
+  color: #fca5a5;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-body, sans-serif);
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.goLiveBtn:hover {
+  background: rgba(220,38,38,0.3);
+  border-color: rgba(220,38,38,0.75);
+}
+
+/* ── Subtitle cue styling ────────────────────────────────────────────────────*/
+:global(video::cue) {
+  background: rgba(0,0,0,0.75);
+  color: #fff;
+  font-size: 17px;
+  font-family: var(--font-body, system-ui, sans-serif);
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+
+@media (max-width: 720px) {
+  .skipIntroBtn {
+    bottom: 80px;
+    left: 12px;
+    font-size: 12px;
+    padding: 8px 16px;
+  }
+
+  .statsOverlay {
+    top: 48px;
+    left: 10px;
+    min-width: 170px;
   }
 }
 
