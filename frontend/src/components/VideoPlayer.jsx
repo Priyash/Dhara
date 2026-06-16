@@ -3,7 +3,7 @@ import Hls from 'hls.js'
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   SkipBack, SkipForward, Settings, Loader2, RotateCcw, PictureInPicture2,
-  Airplay,
+  Airplay, ArrowLeft, Captions, MonitorPlay,
 } from 'lucide-react'
 import styles from './VideoPlayer.module.css'
 
@@ -72,7 +72,18 @@ function qualityLabel(level) {
   return kbps ? `${h} · ${kbps}kbps` : h
 }
 
-export default function VideoPlayer({ src, title, poster, storageKey, maxQualityHeight = null, onPlayingChange }) {
+const WATERMARK_POSITIONS = [
+  { top: '10%',  left: '6%'  },
+  { top: '10%',  right: '6%' },
+  { top: '42%',  left: '6%'  },
+  { top: '42%',  right: '6%' },
+  { bottom: '22%', left: '6%' },
+  { bottom: '22%', right: '6%' },
+  { top: '10%',  left: '50%', transform: 'translateX(-50%)' },
+  { bottom: '22%', left: '50%', transform: 'translateX(-50%)' },
+]
+
+export default function VideoPlayer({ src, title, poster, storageKey, maxQualityHeight = null, onPlayingChange, onBack, nextEp, onNextEp, introStart, introEnd, subtitleUrl, isLive, theaterMode, onTheaterToggle, onVideoEnded, watermarkText }) {
   const videoRef    = useRef(null)
   const containerRef= useRef(null)
   const progressRef = useRef(null)
@@ -133,10 +144,60 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const volumeRef   = useRef(1)
   const mutedRef    = useRef(false)
 
+  // ── "Up next" countdown ─────────────────────────────────────────────────────
+  const [showCountdown,  setShowCountdown]  = useState(false)
+  const [countdownSecs,  setCountdownSecs]  = useState(10)
+  const countdownTimerRef = useRef(null)
+
+  // ── Volume fade-in on first play ────────────────────────────────────────────
+  const volumeFadeRef = useRef(null)
+  const firstPlayRef  = useRef(true)
+
+  // ── Keyboard shortcut cheat-sheet ───────────────────────────────────────────
+  const [showShortcuts,  setShowShortcuts]  = useState(false)
+  const showShortcutsRef = useRef(false)
+
   // ── Double-click / double-tap detection ────────────────────────────────────
   const clickTimerRef = useRef(null)
   const tapCountRef   = useRef(0)
   const tapTimerRef   = useRef(null)
+
+  // ── showHint ref (avoids adding showHint to attachHlsSource deps) ───────────
+  const showHintRef = useRef(null)
+
+  // ── Quality switch toast helpers ─────────────────────────────────────────────
+  const prevQualityHeightRef = useRef(null)
+
+  // ── Skip intro ───────────────────────────────────────────────────────────────
+  const [showSkipIntro, setShowSkipIntro] = useState(false)
+
+  // ── Subtitles / CC ───────────────────────────────────────────────────────────
+  const [subtitlesEnabled, setSubtitlesEnabled] = useState(false)
+
+  // ── Debug stats overlay ──────────────────────────────────────────────────────
+  const [showStats, setShowStats] = useState(false)
+
+  // ── Offline banner ───────────────────────────────────────────────────────────
+  const [isOffline, setIsOffline] = useState(() => !navigator.onLine)
+
+  // ── Stall detection ──────────────────────────────────────────────────────────
+  const stallCountRef   = useRef(0)
+  const stallTimerRef   = useRef(null)
+  const lastTimeRef     = useRef(null)
+
+  // ── Mobile swipe gestures ────────────────────────────────────────────────────
+  const gestureStartRef  = useRef(null)
+  const gestureTypeRef   = useRef(null)   // 'seek' | 'volume' | 'brightness' | null
+  const gestureBaseRef   = useRef(null)
+  const gestureSeekToRef = useRef(null)
+  const [gestureIndicator, setGestureIndicator] = useState(null)
+  const gestureTimerRef   = useRef(null)
+  const [videoBrightness, setVideoBrightness] = useState(1)
+  const videoBrightnessRef = useRef(1)
+  const longPressTimerRef  = useRef(null)
+
+  // ── Watermark position cycling ───────────────────────────────────────────────
+  const [watermarkIdx, setWatermarkIdx] = useState(0)
 
   const progress  = duration ? (currentTime / duration) * 100 : 0
   const bufferPct = duration ? (buffered  / duration) * 100 : 0
@@ -297,12 +358,31 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
       setQualityOptions(visibleLevels.map((l, i) => ({ value: String(levels.indexOf(l)), label: qualityLabel(l) })))
       setQualityValue('auto')
       setActiveQualityLabel(visibleLevels.length ? `Auto · ${visibleLevels.length} levels` : 'Auto')
+
+      // Restore saved quality preference
+      const savedHeight = parseInt(localStorage.getItem('dhara_quality') || '0')
+      if (savedHeight > 0 && (maxQualityHeight === null || savedHeight <= maxQualityHeight)) {
+        const targetIdx = levels.findIndex((l) => l.height === savedHeight)
+        if (targetIdx >= 0) {
+          hls.currentLevel = targetIdx
+          setQualityValue(String(targetIdx))
+        }
+      }
+
       autoPlayAndResume()
     })
 
     hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
       const level = hls.levels?.[data.level]
-      if (level) setActiveQualityLabel(qualityLabel(level))
+      if (level) {
+        setActiveQualityLabel(qualityLabel(level))
+        const newH = level.height
+        const prevH = prevQualityHeightRef.current
+        if (prevH !== null && prevH !== newH && newH) {
+          showHintRef.current?.(`${newH > prevH ? '↑' : '↓'} ${newH}p`)
+        }
+        prevQualityHeightRef.current = newH ?? null
+      }
     })
 
     hls.on(Hls.Events.ERROR, (_, data) => {
@@ -754,9 +834,12 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
       hlsRef.current.currentLevel = val === 'auto' ? -1 : Number(val)
       if (val === 'auto') {
         setActiveQualityLabel('Auto')
+        localStorage.removeItem('dhara_quality')
       } else {
         const selected = qualityOptions.find((opt) => opt.value === val)
         if (selected) setActiveQualityLabel(selected.label)
+        const level = hlsRef.current.levels?.[Number(val)]
+        if (level?.height) localStorage.setItem('dhara_quality', String(level.height))
       }
     }
   }
@@ -782,6 +865,23 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
       localStorage.removeItem(STORAGE_KEY)
       localStorage.removeItem(`${STORAGE_KEY}_dur`)
     }
+    if (nextEp && onNextEp) {
+      setCountdownSecs(10)
+      setShowCountdown(true)
+      countdownTimerRef.current = setInterval(() => {
+        setCountdownSecs((s) => {
+          if (s <= 1) {
+            clearInterval(countdownTimerRef.current)
+            setShowCountdown(false)
+            onNextEp()
+            return 10
+          }
+          return s - 1
+        })
+      }, 1000)
+    } else {
+      onVideoEnded?.()
+    }
   }
 
   const resetIdleTimer = useCallback(() => {
@@ -796,9 +896,18 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   useEffect(() => () => clearTimeout(bufferingTimerRef.current), [])
 
   // Sync refs so keyboard handler always has fresh values without stale closures
-  useEffect(() => { playingRef.current = playing }, [playing])
-  useEffect(() => { volumeRef.current  = volume  }, [volume])
-  useEffect(() => { mutedRef.current   = muted   }, [muted])
+  useEffect(() => { playingRef.current       = playing      }, [playing])
+  useEffect(() => { volumeRef.current        = volume       }, [volume])
+  useEffect(() => { mutedRef.current         = muted        }, [muted])
+  useEffect(() => { showShortcutsRef.current = showShortcuts }, [showShortcuts])
+
+  // Reset per-src state when source changes
+  useEffect(() => {
+    firstPlayRef.current = true
+    setShowCountdown(false)
+    setCountdownSecs(10)
+    clearInterval(countdownTimerRef.current)
+  }, [src])
 
   // Persist volume preference across sessions
   useEffect(() => {
@@ -878,10 +987,88 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     shortcutHintTimer.current = setTimeout(() => setShortcutHint(null), 800)
   }, [])
 
+  // Sync showHint into a ref so HLS event handlers can call it without stale closures
+  useEffect(() => { showHintRef.current = showHint }, [showHint])
+
+  // Cycle watermark position every 8 s (fade out → reposition → fade in via CSS animation + key)
+  useEffect(() => {
+    if (!watermarkText) return
+    const t = setInterval(() => setWatermarkIdx((i) => (i + 1) % WATERMARK_POSITIONS.length), 8000)
+    return () => clearInterval(t)
+  }, [watermarkText])
+
+  // Gesture indicator: show a brief label then auto-dismiss
+  const showGestureIndicator = useCallback((text) => {
+    setGestureIndicator(text)
+    clearTimeout(gestureTimerRef.current)
+    gestureTimerRef.current = setTimeout(() => setGestureIndicator(null), 1200)
+  }, [])
+
+  // Online / offline banner
+  useEffect(() => {
+    const onOnline  = () => setIsOffline(false)
+    const onOffline = () => setIsOffline(true)
+    window.addEventListener('online',  onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => {
+      window.removeEventListener('online',  onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
+  }, [])
+
+  // Subtitle track mode
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || !subtitleUrl) return
+    for (const track of Array.from(v.textTracks)) {
+      track.mode = subtitlesEnabled ? 'showing' : 'hidden'
+    }
+  }, [subtitleUrl, subtitlesEnabled])
+
+  // Stall detection: 3 consecutive frozen-frame checks → recover
+  useEffect(() => {
+    stallTimerRef.current = setInterval(() => {
+      const v = videoRef.current
+      if (!v || v.paused || v.ended || !hlsRef.current) return
+      const t = v.currentTime
+      if (t === lastTimeRef.current && v.readyState < 3) {
+        stallCountRef.current += 1
+        if (stallCountRef.current >= 3) {
+          stallCountRef.current = 0
+          showHintRef.current?.('Reconnecting…')
+          hlsRef.current.recoverMediaError()
+        }
+      } else {
+        stallCountRef.current = 0
+      }
+      lastTimeRef.current = t
+    }, 3000)
+    return () => clearInterval(stallTimerRef.current)
+  }, [])
+
+  // Skip intro: show button when currentTime is inside intro window
+  useEffect(() => {
+    if (introStart == null || introEnd == null) { setShowSkipIntro(false); return }
+    setShowSkipIntro(currentTime >= introStart && currentTime < introEnd)
+  }, [currentTime, introStart, introEnd])
+
+  // Persist playback speed across sessions
+  useEffect(() => {
+    const saved = parseFloat(localStorage.getItem('dhara_speed') || '1')
+    const valid = [0.75, 1, 1.25, 1.5, 2].includes(saved) ? saved : 1
+    setPlaybackRate(valid)
+  }, [])
+  useEffect(() => { localStorage.setItem('dhara_speed', String(playbackRate)) }, [playbackRate])
+
   // Keyboard shortcuts — Space/K play-pause, J/← -10s, L/→ +10s,
   // ↑↓ volume, M mute, F fullscreen, P PiP
   useEffect(() => {
     const onKey = (e) => {
+      // Block browser save-page / view-source shortcuts while the player is mounted
+      if ((e.ctrlKey || e.metaKey) && 'su'.includes(e.key.toLowerCase())) {
+        e.preventDefault()
+        return
+      }
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return
       const v = videoRef.current
       if (!v) return
@@ -936,18 +1123,45 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
           else v.requestPictureInPicture().catch(() => {})
           break
         }
-        default: break
+        case 'KeyT': {
+          e.preventDefault()
+          onTheaterToggle?.()
+          break
+        }
+        case 'KeyI': {
+          if (!e.shiftKey) break
+          e.preventDefault()
+          setShowStats((s) => !s)
+          break
+        }
+        case 'Escape': {
+          setShowSettings(false)
+          setShowShortcuts(false)
+          setShowStats(false)
+          break
+        }
+        default:
+          if (e.key === '?') {
+            e.preventDefault()
+            setShowShortcuts((s) => !s)
+          }
+          break
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [showHint])
 
-  // Cleanup double-click / double-tap timers on unmount
+  // Cleanup timers on unmount
   useEffect(() => () => {
     clearTimeout(clickTimerRef.current)
     clearTimeout(tapTimerRef.current)
     clearTimeout(shortcutHintTimer.current)
+    clearInterval(countdownTimerRef.current)
+    clearInterval(stallTimerRef.current)
+    clearTimeout(gestureTimerRef.current)
+    clearTimeout(longPressTimerRef.current)
+    if (volumeFadeRef.current) cancelAnimationFrame(volumeFadeRef.current)
   }, [])
 
   // Cast / AirPlay
@@ -978,8 +1192,93 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     }
   }
 
-  // Mobile: double-tap left third = -10s, right third = +10s, centre = play/pause
-  const handleTouchEnd = (e) => {
+  // Mobile swipe gestures: vertical on left half = brightness, right half = volume, horizontal = seek
+  const handleTouchStartPlayer = (e) => {
+    resetIdleTimer()
+    const touch = e.touches[0]
+    gestureStartRef.current = { x: touch.clientX, y: touch.clientY }
+    gestureTypeRef.current  = null
+    gestureBaseRef.current  = null
+    gestureSeekToRef.current = null
+
+    longPressTimerRef.current = setTimeout(() => {
+      if (navigator.vibrate) navigator.vibrate(30)
+      setShowStats((s) => !s)
+      gestureTypeRef.current = 'longpress'
+    }, 2000)
+  }
+
+  const handleTouchMovePlayer = (e) => {
+    const start = gestureStartRef.current
+    if (!start) return
+    const touch = e.touches[0]
+    const dx = touch.clientX - start.x
+    const dy = touch.clientY - start.y
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) clearTimeout(longPressTimerRef.current)
+
+    if (!gestureTypeRef.current) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
+      const rect = containerRef.current?.getBoundingClientRect()
+      const isLeft = rect && (touch.clientX - rect.left) / rect.width < 0.5
+      if (Math.abs(dx) > Math.abs(dy) * 1.3) {
+        gestureTypeRef.current = 'seek'
+        gestureBaseRef.current = videoRef.current?.currentTime ?? 0
+      } else if (isLeft) {
+        gestureTypeRef.current = 'brightness'
+        gestureBaseRef.current = videoBrightnessRef.current
+      } else {
+        gestureTypeRef.current = 'volume'
+        gestureBaseRef.current = mutedRef.current ? 0 : volumeRef.current
+      }
+    }
+
+    const type = gestureTypeRef.current
+    const base = gestureBaseRef.current
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!type || base === null || !rect || type === 'longpress') return
+
+    if (type === 'seek') {
+      const seekDelta = (dx / rect.width) * (videoRef.current?.duration || 0)
+      const newTime = Math.max(0, Math.min(videoRef.current?.duration || 0, base + seekDelta))
+      gestureSeekToRef.current = newTime
+      const diff = Math.round(seekDelta)
+      showGestureIndicator(diff >= 0 ? `+${diff}s` : `${diff}s`)
+    } else if (type === 'brightness') {
+      const nb = Math.max(0.1, Math.min(2, base - (dy / rect.height) * 2))
+      videoBrightnessRef.current = nb
+      setVideoBrightness(nb)
+      showGestureIndicator(`☀ ${Math.round(nb * 100)}%`)
+    } else if (type === 'volume') {
+      const nv = Math.max(0, Math.min(1, base - (dy / rect.height) * 1.5))
+      setVolume(nv); setMuted(nv === 0)
+      if (videoRef.current) { videoRef.current.volume = nv; videoRef.current.muted = nv === 0 }
+      showGestureIndicator(`🔊 ${Math.round(nv * 100)}%`)
+    }
+  }
+
+  const handleTouchEndPlayer = (e) => {
+    clearTimeout(longPressTimerRef.current)
+    const type = gestureTypeRef.current
+    gestureTypeRef.current  = null
+    gestureStartRef.current = null
+    gestureBaseRef.current  = null
+
+    if (type === 'seek') {
+      const seekTo = gestureSeekToRef.current
+      gestureSeekToRef.current = null
+      if (seekTo !== null && videoRef.current) {
+        videoRef.current.currentTime = seekTo
+        if (navigator.vibrate) navigator.vibrate(15)
+      }
+      return
+    }
+    if (type === 'brightness' || type === 'volume') {
+      if (navigator.vibrate) navigator.vibrate(15)
+      return
+    }
+    if (type === 'longpress') return
+
+    // Tap / double-tap
     resetIdleTimer()
     const v = videoRef.current
     if (!v || !duration) return
@@ -994,9 +1293,13 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     if (tapCountRef.current >= 2) {
       tapCountRef.current = 0
       if (pct < 0.35) {
-        v.currentTime = Math.max(0, v.currentTime - 10); showHint('← 10s')
+        v.currentTime = Math.max(0, v.currentTime - 10)
+        showHint('← 10s')
+        if (navigator.vibrate) navigator.vibrate(15)
       } else if (pct > 0.65) {
-        v.currentTime = Math.min(v.duration, v.currentTime + 10); showHint('10s →')
+        v.currentTime = Math.min(v.duration, v.currentTime + 10)
+        showHint('10s →')
+        if (navigator.vibrate) navigator.vibrate(15)
       } else {
         togglePlay()
       }
@@ -1029,15 +1332,17 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   }
 
   const controlsVisible = showControls || !playing || isDragging
-  const arLabel = aspectRatioLabel(videoNaturalSize.w, videoNaturalSize.h)
-  const streamBadge = streamMode === 'native-hls'
-    ? 'HLS'
-    : streamMode === 'hls'
-      ? `HLS${activeQualityLabel ? ` · ${activeQualityLabel}` : ''}`
-      : ''
 
   return (
     <div ref={containerRef} className={`${styles.wrapper} ${fullscreen ? styles.fullscreen : ''}`}>
+      {/* Ambient glow — blurred poster bleeds around the player when paused */}
+      {poster && !fullscreen && (
+        <div
+          className={`${styles.ambientGlow} ${!playing ? styles.ambientGlowVisible : ''}`}
+          style={{ backgroundImage: `url(${poster})` }}
+          aria-hidden="true"
+        />
+      )}
       {/* Hidden video used only for cross-origin thumbnail capture */}
       <video ref={thumbVideoRef} style={{ display: 'none' }} crossOrigin="anonymous" muted playsInline preload="auto" />
 
@@ -1045,19 +1350,41 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
       <div
         className={styles.videoArea}
         onClick={handleVideoAreaClick}
-        onTouchStart={resetIdleTimer}
-        onTouchEnd={handleTouchEnd}
+        onContextMenu={(e) => e.preventDefault()}
+        onTouchStart={handleTouchStartPlayer}
+        onTouchMove={handleTouchMovePlayer}
+        onTouchEnd={handleTouchEndPlayer}
         onMouseEnter={() => { setVideoHovered(true); resetIdleTimer() }}
         onMouseLeave={() => { setVideoHovered(false); setShowControls(true); clearTimeout(idleTimerRef.current) }}
         onMouseMove={resetIdleTimer}
       >
-        {title && (
-          <div className={`${styles.titleOverlay} ${videoHovered ? styles.titleOverlayVisible : ''}`}>
-            <p className={styles.titleOverlayText}>{title}</p>
-            {streamBadge && (
-              <span className={styles.streamBadge}>{streamBadge}</span>
+        {/* Back button + title — visible whenever controls are visible */}
+        {(onBack || title) && (
+          <div className={`${styles.titleOverlay} ${controlsVisible ? styles.titleOverlayVisible : ''}`}>
+            {onBack && (
+              <button
+                className={styles.backOverlayBtn}
+                onClick={(e) => { e.stopPropagation(); onBack() }}
+                aria-label="Go back"
+              >
+                <ArrowLeft size={16} />
+                <span className={styles.backOverlayText}>Back</span>
+              </button>
             )}
+            {title && <p className={styles.titleOverlayText}>{title}</p>}
           </div>
+        )}
+
+        {/* Large center play button — shown when paused */}
+        {!playing && !playerError && (
+          <button
+            className={styles.centerPlayBtn}
+            onClick={(e) => { e.stopPropagation(); togglePlay() }}
+            onTouchEnd={(e) => e.stopPropagation()}
+            aria-label="Play"
+          >
+            <Play size={32} fill="currentColor" style={{ marginLeft: 3 }} />
+          </button>
         )}
         <video
           ref={videoRef}
@@ -1065,7 +1392,10 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
           crossOrigin="anonymous"
           disableRemotePlayback={false}
           x-webkit-airplay="allow"
+          controlsList="nodownload"
+          onContextMenu={(e) => e.preventDefault()}
           poster={poster}
+          style={videoBrightness !== 1 ? { filter: `brightness(${videoBrightness})` } : undefined}
           onLoadedMetadata={(e) => {
             setDuration(e.target.duration)
             setVideoNaturalSize({ w: e.target.videoWidth, h: e.target.videoHeight })
@@ -1081,11 +1411,40 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
             setCurrentTime(e.target.currentTime)
             if (e.target.buffered.length) setBuffered(e.target.buffered.end(e.target.buffered.length - 1))
           }}
-          onPlay={() => { setPlaying(true); onPlayingChange?.(true) }}
-          onPause={() => { setPlaying(false); onPlayingChange?.(false) }}
+          onPlay={() => {
+            setPlaying(true)
+            onPlayingChange?.(true)
+            if (firstPlayRef.current && !mutedRef.current) {
+              firstPlayRef.current = false
+              const v = videoRef.current
+              if (v) {
+                const target = volumeRef.current
+                v.volume = 0
+                let start = null
+                const tick = (ts) => {
+                  if (!start) start = ts
+                  const pct = Math.min(1, (ts - start) / 350)
+                  if (videoRef.current) videoRef.current.volume = target * pct
+                  if (pct < 1) volumeFadeRef.current = requestAnimationFrame(tick)
+                }
+                volumeFadeRef.current = requestAnimationFrame(tick)
+              }
+            } else {
+              firstPlayRef.current = false
+            }
+          }}
+          onPause={() => {
+            setPlaying(false)
+            onPlayingChange?.(false)
+            if (volumeFadeRef.current) { cancelAnimationFrame(volumeFadeRef.current); volumeFadeRef.current = null }
+          }}
           onEnded={handleEnded}
           playsInline
-        />
+        >
+          {subtitleUrl && (
+            <track key={subtitleUrl} kind="subtitles" src={subtitleUrl} />
+          )}
+        </video>
 
         {!playing && currentTime === 0 && poster && (
           <div className={styles.posterOverlay} style={{ backgroundImage: `url(${poster})` }} aria-hidden="true" />
@@ -1094,6 +1453,53 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         {buffering && !playerError && (
           <div className={styles.bufferingBadge}>
             <Loader2 size={14} className={styles.spin} /> Buffering…
+          </div>
+        )}
+
+        {/* Casting ribbon — shown at top when AirPlay / Cast is active */}
+        {castConnected && (
+          <div className={styles.castingRibbon}>
+            <Airplay size={14} />
+            <span>Casting to TV</span>
+            <button
+              className={styles.castingStopBtn}
+              onClick={(e) => { e.stopPropagation(); handleCast() }}
+            >
+              Stop
+            </button>
+          </div>
+        )}
+
+        {/* Offline banner */}
+        {isOffline && (
+          <div className={styles.offlineRibbon} aria-live="assertive">
+            No internet connection — playback may stall
+          </div>
+        )}
+
+        {/* Skip Intro button */}
+        {showSkipIntro && (
+          <button
+            className={styles.skipIntroBtn}
+            onClick={(e) => { e.stopPropagation(); if (videoRef.current && introEnd != null) videoRef.current.currentTime = introEnd }}
+          >
+            Skip Intro ›
+          </button>
+        )}
+
+        {/* Swipe gesture indicator */}
+        {gestureIndicator && (
+          <div className={styles.gestureIndicator} aria-hidden="true">{gestureIndicator}</div>
+        )}
+
+        {/* Debug stats overlay — Shift+I or 2s long-press */}
+        {showStats && (
+          <div className={styles.statsOverlay} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.statRow}><span className={styles.statKey}>Resolution</span><span className={styles.statVal}>{videoNaturalSize.w > 0 ? `${videoNaturalSize.w}×${videoNaturalSize.h}` : '—'}</span></div>
+            <div className={styles.statRow}><span className={styles.statKey}>Quality</span><span className={styles.statVal}>{activeQualityLabel || '—'}</span></div>
+            <div className={styles.statRow}><span className={styles.statKey}>Buffer</span><span className={styles.statVal}>{Math.max(0, Math.round((buffered - currentTime) * 10) / 10)}s ahead</span></div>
+            <div className={styles.statRow}><span className={styles.statKey}>Speed</span><span className={styles.statVal}>{playbackRate}×</span></div>
+            <div className={styles.statRow}><span className={styles.statKey}>Mode</span><span className={styles.statVal}>{streamMode || '—'}</span></div>
           </div>
         )}
 
@@ -1113,6 +1519,18 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
           </div>
         )}
 
+        {/* Invisible drifting watermark — embeds user identity in screen recordings */}
+        {watermarkText && (
+          <div
+            key={watermarkIdx}
+            className={styles.watermark}
+            style={WATERMARK_POSITIONS[watermarkIdx]}
+            aria-hidden="true"
+          >
+            {watermarkText}
+          </div>
+        )}
+
         {/* ── Controls overlay — inside video area ── */}
         <div
           className={`${styles.controlsBar} ${controlsVisible ? styles.controlsVisible : styles.controlsHidden}`}
@@ -1123,6 +1541,9 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         {/* Progress row */}
         <div className={styles.progressRow}>
           <span className={styles.timeElapsed}>{formatTime(currentTime)}</span>
+          {playbackRate !== 1 && (
+            <span className={styles.speedBadge}>{playbackRate}×</span>
+          )}
 
           <div
             ref={progressRef}
@@ -1140,6 +1561,9 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
             <div className={styles.progressBuffer} style={{ width: `${bufferPct}%` }} />
             <div ref={fillRef}  className={styles.progressFill}  style={{ width: `${progress}%` }} />
             <div ref={thumbRef} className={`${styles.progressThumb} ${isDragging ? styles.progressThumbDragging : ''}`} style={{ left: `${progress}%` }} />
+            {duration > 600 && Array.from({ length: 9 }, (_, i) => (
+              <div key={i} className={styles.chapterMark} style={{ left: `${(i + 1) * 10}%` }} />
+            ))}
 
             {hoverTime !== null && (
               <div
@@ -1152,7 +1576,22 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
             )}
           </div>
 
-          <span className={styles.timeRemaining}>{duration > 0 ? formatRemaining(remaining) : ''}</span>
+          {isLive ? (
+            <div className={styles.livePill}>
+              <span className={styles.liveDot} aria-hidden="true" />
+              LIVE
+            </div>
+          ) : (
+            <span className={styles.timeRemaining}>{duration > 0 ? formatRemaining(remaining) : ''}</span>
+          )}
+          {isLive && duration > 0 && remaining > 30 && (
+            <button
+              className={styles.goLiveBtn}
+              onClick={(e) => { e.stopPropagation(); if (videoRef.current) videoRef.current.currentTime = videoRef.current.duration }}
+            >
+              Go Live
+            </button>
+          )}
         </div>
 
         {/* Buttons row */}
@@ -1187,8 +1626,25 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
           {/* Right */}
           <div className={styles.rightControls}>
-            {fullscreen && arLabel && (
-              <span className={styles.arBadge}>{arLabel}</span>
+            {subtitleUrl && (
+              <button
+                className={`${styles.ctrlBtn} ${subtitlesEnabled ? styles.ctrlBtnActive : ''}`}
+                onClick={() => setSubtitlesEnabled((s) => !s)}
+                aria-label={subtitlesEnabled ? 'Disable subtitles' : 'Enable subtitles'}
+                title="Subtitles / CC"
+              >
+                <Captions size={18} />
+              </button>
+            )}
+            {onTheaterToggle && (
+              <button
+                className={`${styles.ctrlBtn} ${theaterMode ? styles.ctrlBtnActive : ''}`}
+                onClick={(e) => { e.stopPropagation(); onTheaterToggle() }}
+                aria-label={theaterMode ? 'Exit theater mode' : 'Theater mode'}
+                title="Theater mode (T)"
+              >
+                <MonitorPlay size={18} />
+              </button>
             )}
             {castAvailable && (
               <button
@@ -1215,6 +1671,82 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         </div>
 
         </div>{/* end controlsBar */}
+
+        {/* "Up next" episode countdown — bottom-right, appears after video ends */}
+        {showCountdown && nextEp && (
+          <div
+            className={styles.countdownOverlay}
+            onClick={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+          >
+            <div className={styles.countdownInner}>
+              <p className={styles.countdownLabel}>Up Next</p>
+              <p className={styles.countdownTitle}>
+                E{nextEp.number}{nextEp.title ? ` · ${nextEp.title}` : ''}
+              </p>
+              <div className={styles.countdownTimer}>
+                <svg className={styles.countdownRing} viewBox="0 0 36 36" aria-hidden="true">
+                  <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="2.5" />
+                  <circle
+                    cx="18" cy="18" r="15" fill="none"
+                    stroke="#db2777" strokeWidth="2.5" strokeLinecap="round"
+                    strokeDasharray={`${(countdownSecs / 10) * 94.25} 94.25`}
+                    transform="rotate(-90 18 18)"
+                  />
+                  <text x="18" y="22.5" textAnchor="middle" className={styles.countdownNum}>{countdownSecs}</text>
+                </svg>
+              </div>
+              <div className={styles.countdownBtnGroup}>
+                <button
+                  className={styles.countdownPlayNow}
+                  onClick={() => { clearInterval(countdownTimerRef.current); setShowCountdown(false); onNextEp() }}
+                >
+                  Play Now
+                </button>
+                <button
+                  className={styles.countdownCancel}
+                  onClick={() => { clearInterval(countdownTimerRef.current); setShowCountdown(false) }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Keyboard shortcut cheat-sheet — press ? to toggle */}
+        {showShortcuts && (
+          <div
+            className={styles.shortcutsOverlay}
+            onClick={(e) => { e.stopPropagation(); setShowShortcuts(false) }}
+            onTouchEnd={(e) => e.stopPropagation()}
+          >
+            <div className={styles.shortcutsPanel} onClick={(e) => e.stopPropagation()}>
+              <h3 className={styles.shortcutsTitle}>Keyboard Shortcuts</h3>
+              <div className={styles.shortcutsGrid}>
+                {[
+                  { keys: ['Space', 'K'], action: 'Play / Pause'       },
+                  { keys: ['J', '←'],     action: 'Rewind 10s'         },
+                  { keys: ['L', '→'],     action: 'Forward 10s'        },
+                  { keys: ['↑', '↓'],     action: 'Volume'             },
+                  { keys: ['M'],           action: 'Mute'               },
+                  { keys: ['F'],           action: 'Fullscreen'         },
+                  { keys: ['T'],           action: 'Theater mode'       },
+                  { keys: ['P'],           action: 'Picture in Picture' },
+                  { keys: ['Shift+I'],     action: 'Debug stats'        },
+                  { keys: ['?'],           action: 'Close this panel'   },
+                ].map(({ keys, action }) => (
+                  <div key={action} className={styles.shortcutRow}>
+                    <div className={styles.shortcutKeys}>
+                      {keys.map((k) => <kbd key={k} className={styles.kbdKey}>{k}</kbd>)}
+                    </div>
+                    <span className={styles.shortcutAction}>{action}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Settings panel — anchored to videoArea, not controlsBar, so
             position stays consistent across all aspect ratios and screen sizes */}

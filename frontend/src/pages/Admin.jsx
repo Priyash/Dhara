@@ -15,7 +15,7 @@ import {
   createAdminCollection, createBunnyCollection, createUploadJob, fetchAdminContentById,
   getAdminSession, importFromCdn, syncCdnDeletions, listBunnyCollections, listBunnyVideos,
   listAdminCollections, listAdminContent, listUploadJobs,
-  mapExistingBunnyVideo, syncBunnyCollections, createAdminContent, updateAdminContent, togglePublishContent,
+  mapExistingBunnyVideo, createAdminContent, updateAdminContent, togglePublishContent, deleteAdminContent,
   uploadJobFile, getPaymentConfig, updatePaymentConfig,
   listCreatorApplications, approveCreatorApplication, rejectCreatorApplication,
   listAdminSubmissions, approveSubmission, rejectSubmission,
@@ -592,6 +592,7 @@ export default function Admin() {
   const [autoThumbUploading, setAutoThumbUploading] = useState(false)
   const [toast, setToast]                     = useState(null)
   const [jobsLastRefreshed, setJobsLastRefreshed] = useState(null)
+  const [isRefreshing, setIsRefreshing]        = useState(false)
 
   // ── Payment provider ──────────────────────────────────────────────────────
   const [paymentConfig, setPaymentConfig]   = useState(null)
@@ -694,6 +695,7 @@ export default function Admin() {
     setJobsLastRefreshed(new Date())
     setBunnyCollections(bunnyCollectionData)
     if (paymentData) setPaymentConfig(paymentData)
+    checkTransitions(jobData)
   }
 
   const loadBunnyVideos = async (collectionId) => {
@@ -735,13 +737,7 @@ export default function Admin() {
   useEffect(() => {
     if (!adminAllowed) return undefined
     requestPermission()
-    const timer = setInterval(() => {
-      listUploadJobs(40)
-        .then((jobs) => { setJobs(jobs); setJobsLastRefreshed(new Date()); checkTransitions(jobs) })
-        .catch(() => {})
-    }, 5000)
-    return () => clearInterval(timer)
-  }, [adminAllowed, requestPermission, checkTransitions])
+  }, [adminAllowed, requestPermission])
 
 
   useEffect(() => {
@@ -819,6 +815,7 @@ export default function Admin() {
   // ── Quick premium toggle (no modal needed) ───────────────────────────────
   const [togglingPremium, setTogglingPremium]   = useState(null)
   const [togglingPublish, setTogglingPublish]   = useState(null)
+  const [confirmDeleteId, setConfirmDeleteId]   = useState(null)
 
   const handleTogglePremium = async (item) => {
     setTogglingPremium(item._id)
@@ -854,6 +851,19 @@ export default function Admin() {
       showToast({ type: 'error', message: err?.message || 'Could not update publish state' })
     } finally {
       setTogglingPublish(null)
+    }
+  }
+
+  const handleDeleteContent = async (item) => {
+    if (confirmDeleteId !== item._id) { setConfirmDeleteId(item._id); return }
+    setConfirmDeleteId(null)
+    setContentItems((prev) => prev.filter((c) => c._id !== item._id))
+    try {
+      await deleteAdminContent(item._id)
+      showToast({ type: 'success', message: `"${item.title}" deleted` })
+    } catch (err) {
+      await loadData()
+      showToast({ type: 'error', message: err?.message || 'Could not delete content' })
     }
   }
 
@@ -1493,17 +1503,6 @@ export default function Admin() {
     } finally { setBusy(false) }
   }
 
-  const handleSyncBunnyCollections = async () => {
-    setNotice(''); setError(''); setBusy(true)
-    try {
-      const result = await syncBunnyCollections()
-      setNotice(`Synced ${result.imported} collections.`)
-      await loadData()
-    } catch (err) {
-      setError(err?.message || 'Could not sync collections.')
-    } finally { setBusy(false) }
-  }
-
   const handleSyncDeletions = async () => {
     setNotice(''); setError(''); setBusy(true)
     try {
@@ -1625,14 +1624,19 @@ export default function Admin() {
           </p>
         </div>
         <div className={styles.headerActions}>
-          <button className={styles.refreshBtn} onClick={() => void loadData()}>
-            <RefreshCw size={13} /> Refresh
+          <button
+            className={styles.refreshBtn}
+            onClick={async () => {
+              setIsRefreshing(true)
+              try { await loadData() } finally { setIsRefreshing(false) }
+            }}
+            disabled={isRefreshing}
+          >
+            <RefreshCw size={13} className={isRefreshing ? styles.refreshIconSpin : ''} />
+            {isRefreshing ? 'Refreshing…' : 'Refresh'}
           </button>
           {activeTab === 'uploads' && (
             <>
-              <button className={styles.refreshBtn} onClick={handleSyncBunnyCollections} disabled={busy}>
-                <FolderPlus size={13} /> Sync CDN
-              </button>
               <button className={styles.refreshBtn} onClick={handleSyncDeletions} disabled={busy}>
                 <RefreshCw size={13} /> Sync Deletions
               </button>
@@ -1766,6 +1770,15 @@ export default function Admin() {
                     disabled={editBusy && editingId === item._id}
                   >
                     <Pencil size={12} /> Edit
+                  </button>
+                  <button
+                    className={`${styles.deleteBtn} ${confirmDeleteId === item._id ? styles.deleteBtnConfirm : ''}`}
+                    onClick={() => handleDeleteContent(item)}
+                    onBlur={() => { if (confirmDeleteId === item._id) setConfirmDeleteId(null) }}
+                    title="Delete content"
+                  >
+                    <Trash2 size={12} />
+                    {confirmDeleteId === item._id ? 'Confirm?' : 'Delete'}
                   </button>
                 </div>
               </div>

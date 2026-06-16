@@ -553,6 +553,21 @@
   outline: none;
 }
 
+.refreshIconSpin {
+  animation: monSpin 0.9s linear infinite;
+}
+
+.refreshCountdownBadge {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-dim);
+  background: rgba(255,255,255,0.06);
+  border-radius: 4px;
+  padding: 1px 5px;
+  letter-spacing: 0.01em;
+  margin-left: 1px;
+}
+
 .importBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -1114,6 +1129,38 @@
 .editBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 .editBtn:focus,
 .editBtn:focus-visible { outline: none; box-shadow: none; }
+
+.deleteBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(225,29,72,0.2);
+  border-radius: var(--radius-md);
+  background: rgba(225,29,72,0.04);
+  color: rgba(225,29,72,0.5);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.deleteBtn:hover {
+  background: rgba(225,29,72,0.1);
+  border-color: rgba(225,29,72,0.4);
+  color: #e11d48;
+}
+
+.deleteBtnConfirm {
+  background: rgba(225,29,72,0.15);
+  border-color: rgba(225,29,72,0.6);
+  color: #e11d48;
+}
+
+.deleteBtn:focus,
+.deleteBtn:focus-visible { outline: none; box-shadow: none; }
 
 /* Action group (PRO toggle + Edit) */
 .libraryActions {

@@ -153,51 +153,6 @@
   color: rgba(255,255,255,0.38);
 }
 
-/* ── Top bar ─────────────────────────────────────────────────────────────────*/
-.topBar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 24px;
-  background: #000;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-
-.backBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 999px;
-  padding: 8px 16px 8px 12px;
-  color: rgba(255,255,255,0.85);
-  font-family: var(--font-body, sans-serif);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.15s;
-}
-
-.backBtn:hover {
-  background: rgba(219,39,119,0.1);
-  border-color: rgba(219,39,119,0.35);
-  color: #db2777;
-  transform: translateX(-2px);
-}
-
-.topBarTitle {
-  flex: 1;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 500;
-  color: rgba(255,255,255,0.5);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: 0.1px;
-}
 
 /* ── Player ──────────────────────────────────────────────────────────────────*/
 .playerWrap {
@@ -614,11 +569,11 @@
   cursor: pointer;
 }
 
-/* Below player */
+/* Below player — episode list and related content only */
 .below {
   max-width: 1080px;
   margin: 0 auto;
-  padding: 32px 40px 60px;
+  padding: 20px 40px 60px;
 }
 
 /* ── Metadata panel ──────────────────────────────────────────────────────────*/
@@ -1067,8 +1022,7 @@
   .relatedGrid { grid-template-columns: repeat(2, 1fr); }
   .info { flex-direction: column; align-items: flex-start; gap: 10px; }
   .nextEpBtn, .listToggle { width: 100%; max-width: 100%; }
-  .topBar { padding: 10px 14px; gap: 10px; }
-  .backBtn { padding: 7px 12px 7px 9px; font-size: 12px; }
+  .below { padding: 12px 14px 32px; }
 }
 
 /* ── TV / 4K ──────────────────────────────────────────────────────────────── */
@@ -1175,4 +1129,130 @@
   .gatePanelFine {
     display: none;
   }
+}
+
+/* ── Theater mode ────────────────────────────────────────────────────────────*/
+.pageTheater .below {
+  background: rgba(0,0,0,0.85);
+  padding-top: 12px;
+}
+
+.pageTheater .below .info button {
+  opacity: 0.7;
+}
+
+/* ── End card overlay ────────────────────────────────────────────────────────*/
+.endCard {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: endCardFadeIn 0.4s ease both;
+}
+
+@keyframes endCardFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.endCardInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  padding: 24px;
+  max-width: 560px;
+  width: 100%;
+}
+
+.endCardLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: rgba(255,255,255,0.35);
+  font-family: var(--font-body, sans-serif);
+  margin: 0;
+}
+
+.endCardTitle {
+  font-size: clamp(14px, 2vw, 18px);
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+  font-family: var(--font-display, serif);
+  margin: 0;
+  max-width: 480px;
+  line-height: 1.35;
+}
+
+.endCardReplay {
+  padding: 10px 28px;
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-body, sans-serif);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.endCardReplay:hover {
+  background: rgba(219,39,119,0.22);
+  border-color: rgba(219,39,119,0.55);
+  transform: scale(1.03);
+}
+
+.endCardRelated {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.endCardItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 90px;
+  transition: transform 0.18s;
+}
+.endCardItem:hover { transform: scale(1.05); }
+
+.endCardPoster {
+  width: 90px;
+  height: 135px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.endCardItemTitle {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.7);
+  font-family: var(--font-body, sans-serif);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 90px;
+}
+
+@media (max-width: 480px) {
+  .endCardItem { width: 72px; }
+  .endCardPoster { width: 72px; height: 108px; }
+  .endCardItemTitle { max-width: 72px; }
 }

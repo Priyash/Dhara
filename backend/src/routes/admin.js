@@ -152,7 +152,18 @@ async function syncProcessingJob(job) {
     }
 
     return updated || job
-  } catch {
+  } catch (err) {
+    // If Bunny returns 404 the video was deleted from the CDN — mark the job
+    // as failed immediately so it stops showing "Transcoding…" in the UI.
+    const isGone = /404|not found/i.test(err?.message || '')
+    if (isGone) {
+      const failed = await UploadJob.findByIdAndUpdate(
+        job._id,
+        { $set: { status: 'failed', progress: 0, error: 'Video was deleted from Bunny CDN.' } },
+        { new: true }
+      ).catch(() => null)
+      return failed || { ...job, status: 'failed', progress: 0, error: 'Video was deleted from Bunny CDN.' }
+    }
     return job
   }
 }
@@ -425,7 +436,7 @@ router.post('/import-from-cdn', async (req, res, next) => {
 
 router.get('/content', async (req, res, next) => {
   try {
-    const items = await Content.find()
+    const items = await Content.find({ isDeleted: { $ne: true } })
       .sort({ updatedAt: -1 })
       .limit(100)
       .select('title type bunnyVideoId isPremium isFeatured isPublished releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount posterUrl')
@@ -722,12 +733,42 @@ router.put('/upload-jobs/:id/file', async (req, res, next) => {
     tmpPath = join(tmpdir(), `dhara_${job._id}_${Date.now()}.tmp`)
     await pipeline(req, createWriteStream(tmpPath))
 
+    // Verify the target Bunny collection still exists; auto-create it if it was deleted.
+    // processUploadJob re-fetches the job by ID, so updating bunnyCollectionId in MongoDB
+    // here is enough — the background task will pick up the new GUID automatically.
+    let bunnyCollectionId = job.bunnyCollectionId
+    if (bunnyCollectionId) {
+      try {
+        await bunnyRequest(`/library/${libraryId}/collections/${bunnyCollectionId}`)
+      } catch {
+        // Collection missing on Bunny — recreate it and update both records
+        try {
+          const newCol = await bunnyRequest(`/library/${libraryId}/collections`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ name: job.collectionName }),
+          })
+          const newGuid = String(newCol?.guid || '').trim()
+          if (newGuid) {
+            await StreamCollection.findOneAndUpdate(
+              { bunnyCollectionId },
+              { $set: { bunnyCollectionId: newGuid, isActive: true } }
+            )
+            bunnyCollectionId = newGuid
+          }
+        } catch (colErr) {
+          console.warn('[upload] Could not auto-create Bunny collection:', colErr.message)
+        }
+      }
+    }
+
     await UploadJob.findByIdAndUpdate(job._id, {
       $set: {
         status: 'queued',
         progress: 10,
         note: 'File received. Queued for Bunny upload.',
         fileName,
+        bunnyCollectionId,
       },
     })
 

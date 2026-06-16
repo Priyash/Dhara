@@ -395,6 +395,10 @@ export async function togglePublishContent(id, publish) {
   })
 }
 
+export async function deleteAdminContent(id) {
+  return request(`/api/admin/content/${id}`, { method: 'DELETE' })
+}
+
 export async function getAdminTransactions(params = {}) {
   const qs = new URLSearchParams(params).toString()
   return request(`/api/admin/transactions${qs ? `?${qs}` : ''}`)
