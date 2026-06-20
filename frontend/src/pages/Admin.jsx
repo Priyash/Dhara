@@ -585,7 +585,8 @@ export default function Admin() {
   const [mapVideoError, setMapVideoError]     = useState('')
   const [file, setFile]                       = useState(null)
   const [busy, setBusy]                       = useState(false)
-  const [uploadProgress, setUploadProgress]   = useState(0)
+  const [activeUploads, setActiveUploads]     = useState([])
+  const activeUploadUidRef                    = useRef(0)
   const [notice, setNotice]                   = useState('')
   const [error, setError]                     = useState('')
   const [dragOver, setDragOver]               = useState(false)
@@ -1458,9 +1459,10 @@ export default function Admin() {
 
     setNotice(''); setError(''); setBusy(true)
     const fileToUpload = file
+    const uploadTitle = isSeries && episodeTitle.trim() ? episodeTitle.trim() : title
     try {
       const job = await createUploadJob({
-        title:           isSeries && episodeTitle.trim() ? episodeTitle.trim() : title,
+        title:           uploadTitle,
         collectionId:    selectedCollectionId,
         contentId:       selectedContentId || null,
         seasonNumber:    isSeries ? Number(seasonNumber)  : null,
@@ -1468,26 +1470,84 @@ export default function Admin() {
         episodeTitle:    isSeries ? episodeTitle.trim()   : '',
         episodeDuration: isSeries ? episodeDuration.trim() : '',
       })
-      // Reset the form as soon as the job is queued so admin can start the next upload
+      // Reset the form immediately so admin can queue the next upload
       setTitle(''); setSelectedContentId(''); setFile(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
       setSeasonNumber('1')
       setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration(''); setSeriesEpisodes([])
-      setNotice('Sending to server… 0%')
-      setUploadProgress(0)
-      await uploadJobFile(job._id, fileToUpload, {
-        onProgress: (p) => {
-          setUploadProgress(p)
-          setNotice(`Sending to server… ${p}%`)
-        },
-      })
-      setUploadProgress(0)
-      setNotice('Upload accepted — video is processing asynchronously.')
-      await loadData()
+      setBusy(false)
+
+      // Track this transfer in the active uploads panel; store full job for retry
+      const uid = activeUploadUidRef.current++
+      setActiveUploads((prev) => [...prev, { uid, job, title: uploadTitle, progress: 0, status: 'uploading', xhr: null, file: fileToUpload }])
+      fireUploadJob(uid, job._id, fileToUpload)
     } catch (err) {
-      setUploadProgress(0)
+      setBusy(false)
       setError(err?.message || 'Upload failed.')
-    } finally { setBusy(false) }
+    }
+  }
+
+  // Shared helper: fires uploadJobFile and keeps activeUploads in sync.
+  // Separated so retryUpload can reuse the same flow with a fresh job ID.
+  function fireUploadJob(uid, jobId, file) {
+    uploadJobFile(jobId, file, {
+      onProgress: (p) => setActiveUploads((prev) => prev.map((u) => u.uid === uid ? { ...u, progress: p } : u)),
+      onXhr:      (xhr) => setActiveUploads((prev) => prev.map((u) => u.uid === uid ? { ...u, xhr }      : u)),
+    }).then(() => {
+      setActiveUploads((prev) => prev.map((u) => u.uid === uid ? { ...u, progress: 100, status: 'done', xhr: null } : u))
+      loadData()
+      setTimeout(() => setActiveUploads((prev) => prev.filter((u) => u.uid !== uid)), 8000)
+    }).catch((err) => {
+      const wasCancelled = err.message === 'Upload cancelled'
+      setActiveUploads((prev) => prev.map((u) => u.uid === uid
+        ? { ...u, status: wasCancelled ? 'cancelled' : 'error', error: wasCancelled ? '' : (err.message || 'Upload failed'), xhr: null }
+        : u))
+    })
+  }
+
+  const cancelUpload = (uid) => {
+    setActiveUploads((prev) => {
+      const item = prev.find((u) => u.uid === uid)
+      if (item?.xhr) item.xhr.abort()
+      return prev
+    })
+  }
+
+  // Retry creates a FRESH job — the backend rejects file uploads to failed/cancelled
+  // jobs (status must be 'awaiting_file'), so we can never reuse the original job ID.
+  const retryUpload = async (uid) => {
+    const item = activeUploads.find((u) => u.uid === uid)
+    if (!item) return
+    setActiveUploads((prev) => prev.map((u) => u.uid === uid
+      ? { ...u, status: 'uploading', progress: 0, error: '', xhr: null }
+      : u))
+    try {
+      const j = item.job
+      const newJob = await createUploadJob({
+        title:           j.title,
+        collectionId:    String(j.collectionId?._id || j.collectionId),
+        contentId:       j.contentId  || null,
+        seasonNumber:    j.seasonNumber  ?? null,
+        episodeNumber:   j.episodeNumber ?? null,
+        episodeTitle:    j.episodeTitle  || '',
+        episodeDuration: j.episodeDuration || '',
+      })
+      // Point this panel item at the new job so a second retry also works
+      setActiveUploads((prev) => prev.map((u) => u.uid === uid ? { ...u, job: newJob } : u))
+      fireUploadJob(uid, newJob._id, item.file)
+    } catch (err) {
+      setActiveUploads((prev) => prev.map((u) => u.uid === uid
+        ? { ...u, status: 'error', error: err?.message || 'Could not queue retry', xhr: null }
+        : u))
+    }
+  }
+
+  const dismissUpload = (uid) => {
+    setActiveUploads((prev) => {
+      const item = prev.find((u) => u.uid === uid)
+      if (item?.xhr) item.xhr.abort()
+      return prev.filter((u) => u.uid !== uid)
+    })
   }
 
   const handleImportFromCdn = async () => {
@@ -1668,11 +1728,6 @@ export default function Admin() {
       {(notice || error) && (
         <div className={`${styles.message} ${error ? styles.error : styles.notice}`}>
           {error || notice}
-          {!error && uploadProgress > 0 && (
-            <div className={styles.uploadProgressTrack}>
-              <div className={styles.uploadProgressFill} style={{ width: `${uploadProgress}%` }} />
-            </div>
-          )}
         </div>
       )}
 
@@ -2181,7 +2236,7 @@ export default function Admin() {
 
                 {uploadMode === 'single' && (
                   <button className={styles.primaryBtn} type="submit" disabled={busy || !selectedCollection}>
-                    {busy ? 'Uploading…' : 'Upload Video'}
+                    {busy ? 'Queuing…' : 'Upload Video'}
                   </button>
                 )}
               </form>
@@ -2268,6 +2323,61 @@ export default function Admin() {
                 Live
               </span>
             </div>
+
+            {/* ── Active transfers (in-browser) ── */}
+            {activeUploads.length > 0 && (
+              <div className={styles.activeUploadsPanel}>
+                <div className={styles.activeUploadsPanelHeader}>
+                  <span className={styles.activeUploadsPanelTitle}>
+                    <UploadCloud size={11} /> ACTIVE UPLOADS
+                  </span>
+                </div>
+                {activeUploads.map((u) => {
+                  const isDone      = u.status === 'done'
+                  const isCancelled = u.status === 'cancelled'
+                  const isError     = u.status === 'error'
+                  const isUploading = u.status === 'uploading'
+                  const isForwarding = isUploading && u.progress >= 100
+                  const barColor    = isDone ? '#4ade80' : isError ? '#f87171' : isCancelled ? '#94a3b8' : isForwarding ? '#a78bfa' : '#fde047'
+                  return (
+                    <div key={u.uid} className={styles.activeUploadItem}>
+                      <p className={styles.activeUploadTitle} title={u.title}>{u.title}</p>
+                      <div className={styles.activeUploadActions}>
+                        {isUploading && (
+                          <button type="button" className={styles.activeUploadCancelBtn} onClick={() => cancelUpload(u.uid)}>
+                            Cancel
+                          </button>
+                        )}
+                        {(isCancelled || isError) && (
+                          <button type="button" className={styles.activeUploadRetryBtn} onClick={() => retryUpload(u.uid)}>
+                            Retry
+                          </button>
+                        )}
+                        {(isDone || isCancelled || isError) && (
+                          <button type="button" className={styles.activeUploadDismissBtn} onClick={() => dismissUpload(u.uid)} aria-label="Dismiss">
+                            ×
+                          </button>
+                        )}
+                      </div>
+                      <div className={styles.activeUploadProgressTrack}>
+                        <div
+                          className={`${styles.activeUploadProgressFill} ${isForwarding ? styles.activeUploadProgressPulse : ''}`}
+                          style={{ width: `${u.progress}%`, background: barColor }}
+                        />
+                      </div>
+                      <p className={styles.activeUploadStatus}>
+                        {isDone      ? 'Upload accepted — transcoding in progress' :
+                         isCancelled ? 'Cancelled' :
+                         isError     ? (u.error || 'Upload failed') :
+                         u.progress >= 100 ? 'Forwarding to CDN…' :
+                                            `${u.progress}% transferred`}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
             <div className={styles.jobsList}>
               {jobs.length === 0 && <p className={styles.empty}>No uploads yet.</p>}
               {jobs.map((job) => (
@@ -2283,6 +2393,11 @@ export default function Admin() {
                       {job.collectionName || job.collectionId?.name || 'Unknown'}
                       {job.episodeDuration ? ` · ${job.episodeDuration}` : ''}
                       {job.bunnyVideoId ? ` · ${job.bunnyVideoId}` : ''}
+                      {job.updatedAt && (() => {
+                        const ts = new Date(job.updatedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        const label = job.status === 'failed' ? 'Failed' : job.status === 'ready' ? 'Ready' : job.status === 'processing' ? 'Processing since' : 'Updated'
+                        return ` · ${label} ${ts}`
+                      })()}
                     </p>
                   </div>
                   <div className={styles.jobSide}>
