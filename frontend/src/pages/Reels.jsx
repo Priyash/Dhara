@@ -12,6 +12,7 @@ import {
   fetchReelComments, postReelComment, deleteReelComment,
   recordInteractionEvent, getMe,
 } from '../services/api'
+import VerifiedBadge from '../components/VerifiedBadge'
 import styles from './Reels.module.css'
 
 const VIEW_THRESHOLD = 5
@@ -285,6 +286,7 @@ function ReelCard({ reel, onClick, showGate = false }) {
             : <div className={styles.cardAvatarFb}>{studioName[0]?.toUpperCase()}</div>
           }
           <span className={styles.cardCreator}>{studioName}</span>
+          <VerifiedBadge size={11} />
         </div>
         {reel.title && <p className={styles.cardTitle}>{reel.title}</p>}
         {reel.hashtags?.length > 0 && (
@@ -729,6 +731,7 @@ function ReelSlide({ reel, isActive, hlsUrl, muted, liked, reelStats, onLike, on
             }
           </div>
           <span className={styles.creatorName}>{studioName}</span>
+          <VerifiedBadge size={15} style={{ boxShadow: '0 0 0 1.5px rgba(167,139,250,0.35), 0 0 8px rgba(167,139,250,0.7)' }} />
         </div>
         {reel.title && <p className={styles.caption}>{reel.title}</p>}
         {reel.hashtags?.length > 0 && (
