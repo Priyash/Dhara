@@ -92,7 +92,7 @@ export async function processUploadJob(jobId, fileBuffer, fileSize = 0) {
     })
 
     await UploadJob.findByIdAndUpdate(jobId, {
-      $set: { status: 'processing', progress: 70, note: 'Upload complete. Bunny is transcoding...' },
+      $set: { status: 'processing', progress: 70, note: 'Bunny received the file. Transcoding will begin shortly.' },
     })
   } catch (err) {
     await UploadJob.findByIdAndUpdate(jobId, {

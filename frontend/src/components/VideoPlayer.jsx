@@ -808,7 +808,9 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     const v  = videoRef.current
     if (!el) return
     const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement)
-    if (!isFs) {
+    // `fullscreen` state also tracks iOS native video fullscreen (webkitEnterFullscreen),
+    // which doesn't set document.fullscreenElement.
+    if (!isFs && !fullscreen) {
       // Standard → webkit prefixed → iOS video-level fallback
       if      (el.requestFullscreen)            el.requestFullscreen()
       else if (el.webkitRequestFullscreen)      el.webkitRequestFullscreen()
@@ -816,6 +818,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     } else {
       if      (document.exitFullscreen)         document.exitFullscreen()
       else if (document.webkitExitFullscreen)   document.webkitExitFullscreen()
+      else if (v?.webkitExitFullscreen)         v.webkitExitFullscreen()
     }
   }
 
@@ -1182,8 +1185,9 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current)
       clickTimerRef.current = null
-      if (!document.fullscreenElement) containerRef.current?.requestFullscreen?.()
-      else document.exitFullscreen?.()
+      if (!document.fullscreenElement && !fullscreen) containerRef.current?.requestFullscreen?.()
+      else if (document.fullscreenElement) document.exitFullscreen?.()
+      else if (fullscreen) videoRef.current?.webkitExitFullscreen?.()
     } else {
       clickTimerRef.current = setTimeout(() => {
         clickTimerRef.current = null

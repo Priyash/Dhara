@@ -357,4 +357,14 @@ export const useStore = create((set, get) => ({
     showVerifyEmail: false,
     verifyEmailIntent: null,
   }),
+
+  // ── Admin upload tracking — global so progress survives navigation ──────────
+  activeUploads: [],
+  addActiveUpload:    (upload) => set((s) => ({ activeUploads: [...s.activeUploads, upload] })),
+  patchActiveUpload:  (uid, patch) => set((s) => ({
+    activeUploads: s.activeUploads.map((u) => u.uid === uid ? { ...u, ...patch } : u),
+  })),
+  removeActiveUpload: (uid) => set((s) => ({
+    activeUploads: s.activeUploads.filter((u) => u.uid !== uid),
+  })),
 }))
