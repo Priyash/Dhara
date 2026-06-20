@@ -310,6 +310,10 @@ export async function listUploadJobs(limit = 30) {
   return request(`/api/admin/upload-jobs?limit=${limit}`)
 }
 
+export async function getUploadJob(id) {
+  return request(`/api/admin/upload-jobs/${id}`)
+}
+
 export async function createUploadJob(payload) {
   return request('/api/admin/upload-jobs', {
     method: 'POST',

@@ -1,4 +1,9 @@
 import { Router } from 'express'
+import { pipeline } from 'stream/promises'
+import { createWriteStream, createReadStream, unlink } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { randomUUID } from 'crypto'
 import { Content } from '../models/Content.js'
 import { CuratedShelf } from '../models/CuratedShelf.js'
 import { StreamCollection } from '../models/StreamCollection.js'
@@ -106,7 +111,9 @@ async function syncProcessingJob(job) {
         $set: {
           status: nextStatus,
           progress: nextProgress,
-          note: isReady ? 'Video is ready to stream.' : 'Bunny is transcoding your video.',
+          note: isReady        ? 'Video is ready to stream.'
+             : encodeProgress > 0 ? `Bunny is transcoding… ${encodeProgress}% encoded.`
+             :                      'Bunny received the file. Transcoding will begin shortly.',
           error: '',
         },
       },
@@ -719,7 +726,20 @@ router.post('/upload-jobs', async (req, res, next) => {
   }
 })
 
+router.get('/upload-jobs/:id', async (req, res, next) => {
+  try {
+    const job = await UploadJob.findById(req.params.id)
+      .populate('collectionId', 'name bunnyCollectionId')
+      .lean()
+    if (!job) return res.status(404).json({ error: 'Upload job not found' })
+    res.json(job)
+  } catch (err) {
+    next(err)
+  }
+})
+
 router.put('/upload-jobs/:id/file', async (req, res, next) => {
+  let tmpPath = null
   try {
     const job = await UploadJob.findById(req.params.id)
     if (!job) return res.status(404).json({ error: 'Upload job not found' })
@@ -737,6 +757,14 @@ router.put('/upload-jobs/:id/file', async (req, res, next) => {
     }
 
     const fileName = String(req.headers['x-file-name'] || '').slice(0, 240)
+
+    // Buffer the entire request body to a temp file BEFORE making any Bunny API calls.
+    // Streaming req directly to Bunny caused "TypeError: fetch failed" because the
+    // browser's TCP connection was held open while we made Bunny API calls (500ms–2s),
+    // and any proxy/connection timeout would destroy req mid-transfer, breaking the
+    // downstream fetch. Decoupling browser→server from server→Bunny fixes this.
+    tmpPath = join(tmpdir(), `dhara-upload-${randomUUID()}.tmp`)
+    await pipeline(req, createWriteStream(tmpPath))
 
     // Verify the target Bunny collection still exists; auto-create it if it was deleted.
     let bunnyCollectionId = job.bunnyCollectionId
@@ -768,22 +796,25 @@ router.put('/upload-jobs/:id/file', async (req, res, next) => {
       $set: {
         status: 'queued',
         progress: 10,
-        note: 'Streaming file to Bunny CDN…',
+        note: 'File received. Uploading to Bunny CDN…',
         fileName,
         bunnyCollectionId,
       },
     })
 
-    // Stream req directly to Bunny — no temp file, no second transfer, no disk usage.
-    // We await the full PUT before responding so the XHR result reflects whether Bunny
-    // actually accepted the bytes, not just whether our server received them.
-    // processUploadJob throws on failure after updating the job status to 'failed'.
-    await processUploadJob(job._id, req, contentLength)
+    // Upload from the temp file — a reliable disk read that can't be interrupted
+    // by browser disconnect or proxy timeouts. processUploadJob throws on failure
+    // after updating the job status to 'failed'.
+    await processUploadJob(job._id, createReadStream(tmpPath), contentLength)
 
     res.status(202).json({ success: true, jobId: job._id, message: 'File received. Bunny is transcoding.' })
   } catch (err) {
-    // Job is already marked 'failed' by processUploadJob; surface the error to the client
+    // Job is already marked 'failed' by processUploadJob (if it got that far);
+    // surface the raw error to the client XHR.
     next(err)
+  } finally {
+    // Always clean up the temp file, whether upload succeeded or failed
+    if (tmpPath) unlink(tmpPath, () => {})
   }
 })
 

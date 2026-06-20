@@ -14,7 +14,7 @@ import { useUploadNotifier } from '../hooks/useUploadNotifier'
 import {
   createAdminCollection, createBunnyCollection, createUploadJob, fetchAdminContentById,
   getAdminSession, importFromCdn, syncCdnDeletions, listBunnyCollections, listBunnyVideos,
-  listAdminCollections, listAdminContent, listUploadJobs,
+  listAdminCollections, listAdminContent, listUploadJobs, getUploadJob,
   mapExistingBunnyVideo, createAdminContent, updateAdminContent, togglePublishContent, deleteAdminContent,
   uploadJobFile, getPaymentConfig, updatePaymentConfig,
   listCreatorApplications, approveCreatorApplication, rejectCreatorApplication,
@@ -537,8 +537,73 @@ const statusClass = {
   failed:        styles.statusFailed,
 }
 
+// Module-level counter so UIDs are unique even across unmount/remount cycles
+let _nextUploadUid = 0
+
+// Isolated so only this small component re-renders on every progress tick —
+// preventing the massive Admin page from re-rendering on each XHR event.
+function ActiveUploadsPanel({ onCancel, onRetry, onDismiss }) {
+  const activeUploads = useStore((s) => s.activeUploads)
+  if (!activeUploads.length) return null
+  return (
+    <div className={styles.activeUploadsPanel}>
+      <div className={styles.activeUploadsPanelHeader}>
+        <span className={styles.activeUploadsPanelTitle}>
+          <UploadCloud size={11} /> ACTIVE UPLOADS
+        </span>
+      </div>
+      {activeUploads.map((u) => {
+        const isDone       = u.status === 'done'
+        const isCancelled  = u.status === 'cancelled'
+        const isError      = u.status === 'error'
+        const isUploading  = u.status === 'uploading'
+        const isForwarding = isUploading && u.progress >= 100
+        const barColor     = isDone ? '#4ade80' : isError ? '#f87171' : isCancelled ? '#94a3b8' : isForwarding ? '#a78bfa' : '#fde047'
+        return (
+          <div key={u.uid} className={styles.activeUploadItem}>
+            <p className={styles.activeUploadTitle} title={u.title}>{u.title}</p>
+            <div className={styles.activeUploadActions}>
+              {isUploading && (
+                <button type="button" className={styles.activeUploadCancelBtn} onClick={() => onCancel(u.uid)}>
+                  Cancel
+                </button>
+              )}
+              {(isCancelled || isError) && (
+                <button type="button" className={styles.activeUploadRetryBtn} onClick={() => onRetry(u.uid)}>
+                  Retry
+                </button>
+              )}
+              {(isDone || isCancelled || isError) && (
+                <button type="button" className={styles.activeUploadDismissBtn} onClick={() => onDismiss(u.uid)} aria-label="Dismiss">
+                  ×
+                </button>
+              )}
+            </div>
+            <div className={styles.activeUploadProgressTrack}>
+              <div
+                className={`${styles.activeUploadProgressFill} ${isForwarding ? styles.activeUploadProgressPulse : ''}`}
+                style={{ width: `${u.progress}%`, background: barColor }}
+              />
+            </div>
+            <p className={styles.activeUploadStatus}>
+              {isDone      ? 'Upload accepted — transcoding in progress' :
+               isCancelled ? 'Cancelled' :
+               isError     ? (u.error || 'Upload failed') :
+               isForwarding ? (u.cdnNote || 'Transferring to CDN…') :
+                             `${u.progress}% transferred`}
+            </p>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function Admin() {
-  const { authLoading } = useStore()
+  const authLoading       = useStore((s) => s.authLoading)
+  const addActiveUpload   = useStore((s) => s.addActiveUpload)
+  const patchActiveUpload = useStore((s) => s.patchActiveUpload)
+  const removeActiveUpload = useStore((s) => s.removeActiveUpload)
   const [sessionLoading, setSessionLoading] = useState(true)
   const [adminAllowed, setAdminAllowed]     = useState(false)
   const [sessionError, setSessionError]     = useState('')
@@ -585,8 +650,6 @@ export default function Admin() {
   const [mapVideoError, setMapVideoError]     = useState('')
   const [file, setFile]                       = useState(null)
   const [busy, setBusy]                       = useState(false)
-  const [activeUploads, setActiveUploads]     = useState([])
-  const activeUploadUidRef                    = useRef(0)
   const [notice, setNotice]                   = useState('')
   const [error, setError]                     = useState('')
   const [dragOver, setDragOver]               = useState(false)
@@ -698,6 +761,22 @@ export default function Admin() {
     if (paymentData) setPaymentConfig(paymentData)
     checkTransitions(jobData)
   }
+
+  // Ref so the auto-poll interval always calls the latest loadData closure
+  const loadDataRef = useRef(loadData)
+  loadDataRef.current = loadData
+
+  // While any job is actively in-flight on the backend, poll every 5s so the
+  // job list reflects real Bunny encode progress after a page refresh.
+  const hasInProgressJobs = useMemo(
+    () => jobs.some((j) => ['uploading', 'processing', 'queued'].includes(j.status)),
+    [jobs]
+  )
+  useEffect(() => {
+    if (!adminAllowed || !hasInProgressJobs) return
+    const timer = setInterval(() => { loadDataRef.current().catch(() => {}) }, 5000)
+    return () => clearInterval(timer)
+  }, [adminAllowed, hasInProgressJobs])
 
   const loadBunnyVideos = async (collectionId) => {
     setMapVideoError('')
@@ -1477,9 +1556,9 @@ export default function Admin() {
       setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration(''); setSeriesEpisodes([])
       setBusy(false)
 
-      // Track this transfer in the active uploads panel; store full job for retry
-      const uid = activeUploadUidRef.current++
-      setActiveUploads((prev) => [...prev, { uid, job, title: uploadTitle, progress: 0, status: 'uploading', xhr: null, file: fileToUpload }])
+      // Track this transfer in the active uploads panel (global store survives navigation)
+      const uid = _nextUploadUid++
+      addActiveUpload({ uid, job, title: uploadTitle, progress: 0, status: 'uploading', xhr: null, file: fileToUpload })
       fireUploadJob(uid, job._id, fileToUpload)
     } catch (err) {
       setBusy(false)
@@ -1487,40 +1566,81 @@ export default function Admin() {
     }
   }
 
-  // Shared helper: fires uploadJobFile and keeps activeUploads in sync.
-  // Separated so retryUpload can reuse the same flow with a fresh job ID.
+  // Shared helper: fires uploadJobFile and keeps the global activeUploads store in sync.
+  // Using store actions (not local state) means progress survives navigation.
   function fireUploadJob(uid, jobId, file) {
+    let pollTimer = null
+
+    const stopPolling = () => {
+      if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
+    }
+
+    // Poll the backend job record while the server is uploading to Bunny CDN.
+    // The backend updates job.progress and job.note in real-time inside processUploadJob,
+    // so polling gives the admin live feedback during that otherwise-invisible phase.
+    const pollCdnProgress = async () => {
+      try {
+        const job = await getUploadJob(jobId)
+        if (job) patchActiveUpload(uid, { cdnProgress: job.progress, cdnNote: job.note })
+      } catch { /* non-fatal — server is busy uploading, next tick will retry */ }
+      // Re-schedule only while the XHR is still open (status === 'uploading')
+      const cur = useStore.getState().activeUploads.find((u) => u.uid === uid)
+      if (cur?.status === 'uploading') pollTimer = setTimeout(pollCdnProgress, 3000)
+    }
+
+    // Throttle state updates to ≤7/sec. XHR progress events can fire dozens of
+    // times per second; each patchActiveUpload triggers a Zustand update and a
+    // panel re-render, which blocks the main thread and makes scrolling janky.
+    // p=100 always passes immediately to start CDN polling without delay.
+    let lastProgressEmit = 0
+
     uploadJobFile(jobId, file, {
-      onProgress: (p) => setActiveUploads((prev) => prev.map((u) => u.uid === uid ? { ...u, progress: p } : u)),
-      onXhr:      (xhr) => setActiveUploads((prev) => prev.map((u) => u.uid === uid ? { ...u, xhr }      : u)),
+      onProgress: (p) => {
+        const now = Date.now()
+        if (p < 100 && now - lastProgressEmit < 150) return
+        lastProgressEmit = now
+        patchActiveUpload(uid, { progress: p })
+        // All bytes sent — server is now forwarding to Bunny CDN. Start polling.
+        if (p >= 100 && !pollTimer) pollTimer = setTimeout(pollCdnProgress, 1500)
+      },
+      onXhr: (xhr) => {
+        // 90-minute hard cap: covers even the largest files at slow upload speeds.
+        // processUploadJob already enforces a 30-min Bunny timeout server-side,
+        // so the XHR will resolve (or fail) well before this fires in practice.
+        xhr.timeout = 90 * 60 * 1000
+        xhr.addEventListener('timeout', () => {
+          patchActiveUpload(uid, { status: 'error', error: 'Upload timed out after 90 minutes', xhr: null })
+          stopPolling()
+        })
+        patchActiveUpload(uid, { xhr })
+      },
     }).then(() => {
-      setActiveUploads((prev) => prev.map((u) => u.uid === uid ? { ...u, progress: 100, status: 'done', xhr: null } : u))
+      stopPolling()
+      patchActiveUpload(uid, { progress: 100, status: 'done', xhr: null, cdnNote: '' })
       loadData()
-      setTimeout(() => setActiveUploads((prev) => prev.filter((u) => u.uid !== uid)), 8000)
+      setTimeout(() => removeActiveUpload(uid), 8000)
     }).catch((err) => {
+      stopPolling()
       const wasCancelled = err.message === 'Upload cancelled'
-      setActiveUploads((prev) => prev.map((u) => u.uid === uid
-        ? { ...u, status: wasCancelled ? 'cancelled' : 'error', error: wasCancelled ? '' : (err.message || 'Upload failed'), xhr: null }
-        : u))
+      patchActiveUpload(uid, {
+        status: wasCancelled ? 'cancelled' : 'error',
+        error:  wasCancelled ? '' : (err.message || 'Upload failed'),
+        xhr:    null,
+      })
     })
   }
 
   const cancelUpload = (uid) => {
-    setActiveUploads((prev) => {
-      const item = prev.find((u) => u.uid === uid)
-      if (item?.xhr) item.xhr.abort()
-      return prev
-    })
+    const item = useStore.getState().activeUploads.find((u) => u.uid === uid)
+    if (item?.xhr) item.xhr.abort()
   }
 
   // Retry creates a FRESH job — the backend rejects file uploads to failed/cancelled
   // jobs (status must be 'awaiting_file'), so we can never reuse the original job ID.
   const retryUpload = async (uid) => {
-    const item = activeUploads.find((u) => u.uid === uid)
+    const item = useStore.getState().activeUploads.find((u) => u.uid === uid)
     if (!item) return
-    setActiveUploads((prev) => prev.map((u) => u.uid === uid
-      ? { ...u, status: 'uploading', progress: 0, error: '', xhr: null }
-      : u))
+    patchActiveUpload(uid, { status: 'uploading', progress: 0, error: '', xhr: null })
     try {
       const j = item.job
       const newJob = await createUploadJob({
@@ -1533,21 +1653,17 @@ export default function Admin() {
         episodeDuration: j.episodeDuration || '',
       })
       // Point this panel item at the new job so a second retry also works
-      setActiveUploads((prev) => prev.map((u) => u.uid === uid ? { ...u, job: newJob } : u))
+      patchActiveUpload(uid, { job: newJob })
       fireUploadJob(uid, newJob._id, item.file)
     } catch (err) {
-      setActiveUploads((prev) => prev.map((u) => u.uid === uid
-        ? { ...u, status: 'error', error: err?.message || 'Could not queue retry', xhr: null }
-        : u))
+      patchActiveUpload(uid, { status: 'error', error: err?.message || 'Could not queue retry', xhr: null })
     }
   }
 
   const dismissUpload = (uid) => {
-    setActiveUploads((prev) => {
-      const item = prev.find((u) => u.uid === uid)
-      if (item?.xhr) item.xhr.abort()
-      return prev.filter((u) => u.uid !== uid)
-    })
+    const item = useStore.getState().activeUploads.find((u) => u.uid === uid)
+    if (item?.xhr) item.xhr.abort()
+    removeActiveUpload(uid)
   }
 
   const handleImportFromCdn = async () => {
@@ -2325,58 +2441,7 @@ export default function Admin() {
             </div>
 
             {/* ── Active transfers (in-browser) ── */}
-            {activeUploads.length > 0 && (
-              <div className={styles.activeUploadsPanel}>
-                <div className={styles.activeUploadsPanelHeader}>
-                  <span className={styles.activeUploadsPanelTitle}>
-                    <UploadCloud size={11} /> ACTIVE UPLOADS
-                  </span>
-                </div>
-                {activeUploads.map((u) => {
-                  const isDone      = u.status === 'done'
-                  const isCancelled = u.status === 'cancelled'
-                  const isError     = u.status === 'error'
-                  const isUploading = u.status === 'uploading'
-                  const isForwarding = isUploading && u.progress >= 100
-                  const barColor    = isDone ? '#4ade80' : isError ? '#f87171' : isCancelled ? '#94a3b8' : isForwarding ? '#a78bfa' : '#fde047'
-                  return (
-                    <div key={u.uid} className={styles.activeUploadItem}>
-                      <p className={styles.activeUploadTitle} title={u.title}>{u.title}</p>
-                      <div className={styles.activeUploadActions}>
-                        {isUploading && (
-                          <button type="button" className={styles.activeUploadCancelBtn} onClick={() => cancelUpload(u.uid)}>
-                            Cancel
-                          </button>
-                        )}
-                        {(isCancelled || isError) && (
-                          <button type="button" className={styles.activeUploadRetryBtn} onClick={() => retryUpload(u.uid)}>
-                            Retry
-                          </button>
-                        )}
-                        {(isDone || isCancelled || isError) && (
-                          <button type="button" className={styles.activeUploadDismissBtn} onClick={() => dismissUpload(u.uid)} aria-label="Dismiss">
-                            ×
-                          </button>
-                        )}
-                      </div>
-                      <div className={styles.activeUploadProgressTrack}>
-                        <div
-                          className={`${styles.activeUploadProgressFill} ${isForwarding ? styles.activeUploadProgressPulse : ''}`}
-                          style={{ width: `${u.progress}%`, background: barColor }}
-                        />
-                      </div>
-                      <p className={styles.activeUploadStatus}>
-                        {isDone      ? 'Upload accepted — transcoding in progress' :
-                         isCancelled ? 'Cancelled' :
-                         isError     ? (u.error || 'Upload failed') :
-                         u.progress >= 100 ? 'Forwarding to CDN…' :
-                                            `${u.progress}% transferred`}
-                      </p>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+            <ActiveUploadsPanel onCancel={cancelUpload} onRetry={retryUpload} onDismiss={dismissUpload} />
 
             <div className={styles.jobsList}>
               {jobs.length === 0 && <p className={styles.empty}>No uploads yet.</p>}
@@ -2405,6 +2470,17 @@ export default function Admin() {
                     <span className={styles.progress}>{job.progress || 0}%</span>
                   </div>
                   <p className={styles.jobNote}>{job.error || job.note || 'Pending update...'}</p>
+                  {['queued', 'uploading', 'processing'].includes(job.status) && (
+                    <div className={styles.jobProgressTrack}>
+                      <div
+                        className={`${styles.jobProgressFill} ${job.status === 'processing' ? styles.activeUploadProgressPulse : ''}`}
+                        style={{
+                          width: `${job.progress || 0}%`,
+                          background: job.status === 'uploading' ? '#fde047' : job.status === 'processing' ? '#a78bfa' : '#60a5fa',
+                        }}
+                      />
+                    </div>
+                  )}
                 </article>
               ))}
             </div>
