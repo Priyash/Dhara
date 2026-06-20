@@ -317,11 +317,12 @@ export async function createUploadJob(payload) {
   })
 }
 
-export function uploadJobFile(jobId, file, { onProgress } = {}) {
+export function uploadJobFile(jobId, file, { onProgress, onXhr } = {}) {
   return new Promise((resolve, reject) => {
     auth.currentUser?.getIdToken()
       .then((token) => {
         const xhr = new XMLHttpRequest()
+        if (onXhr) onXhr(xhr)
         if (onProgress) {
           xhr.upload.addEventListener('progress', (e) => {
             if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))

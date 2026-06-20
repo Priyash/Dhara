@@ -812,6 +812,152 @@
   transition: width 0.3s ease;
 }
 
+/* ── Active uploads panel ────────────────────────────────────────────────── */
+.activeUploadsPanel {
+  border: 1px solid rgba(234,179,8,0.22);
+  border-radius: var(--radius-md);
+  background: rgba(234,179,8,0.04);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.activeUploadsPanelHeader {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.activeUploadsPanelTitle {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #fde047;
+  font-family: var(--font-body);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.activeUploadItem {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto auto;
+  gap: 3px 10px;
+  align-items: start;
+}
+
+.activeUploadItem:last-child {
+  border-bottom: none;
+}
+
+.activeUploadTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  grid-column: 1;
+  grid-row: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activeUploadActions {
+  grid-column: 2;
+  grid-row: 1 / 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+}
+
+.activeUploadProgressTrack {
+  grid-column: 1;
+  grid-row: 2;
+  height: 3px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.activeUploadProgressFill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+
+.activeUploadProgressPulse {
+  animation: uploadPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes uploadPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
+.activeUploadStatus {
+  grid-column: 1;
+  grid-row: 3;
+  font-size: 11px;
+  color: var(--color-text-dim);
+  font-family: var(--font-body);
+  margin-top: 2px;
+}
+
+.activeUploadCancelBtn {
+  background: none;
+  border: 1px solid rgba(248,113,113,0.35);
+  border-radius: 4px;
+  color: #f87171;
+  font-size: 11px;
+  font-family: var(--font-body);
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.activeUploadCancelBtn:hover {
+  background: rgba(248,113,113,0.12);
+}
+
+.activeUploadRetryBtn {
+  background: none;
+  border: 1px solid rgba(167,139,250,0.35);
+  border-radius: 4px;
+  color: #a78bfa;
+  font-size: 11px;
+  font-family: var(--font-body);
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.activeUploadRetryBtn:hover {
+  background: rgba(167,139,250,0.12);
+}
+
+.activeUploadDismissBtn {
+  background: none;
+  border: none;
+  color: var(--color-text-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.activeUploadDismissBtn:hover {
+  opacity: 1;
+}
+
 /* ── Content type tab bar (matches navbar link style) ────────────────────── */
 .contentTypeTabs {
   display: flex;
