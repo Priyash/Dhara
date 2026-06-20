@@ -438,15 +438,25 @@
 
 .stage {
   position: relative;
-  /* Width is driven by viewport height to maintain 9:16, capped at 430px and 100vw */
+  /* Width scales with viewport height to maintain 9:16, capped at 430px on desktop */
   width: min(430px, calc(100dvh * 9 / 16), 100%);
   aspect-ratio: 9 / 16;
-  overflow: hidden;
+  /* overflow:visible so absolute-positioned controls (nav, buttons) are not clipped */
+  overflow: visible;
   background: #000;
 }
 
-.slide { position: absolute; inset: 0; display: none; background: #000; }
+/* Each slide clips its own content — replaces stage overflow:hidden */
+.slide { position: absolute; inset: 0; display: none; background: #000; overflow: hidden; }
 .on    { display: block; }
+
+/* Wider stage on large desktop / TV */
+@media (min-width: 1440px) {
+  .stage { width: min(560px, calc(100dvh * 9 / 16), 100%); }
+}
+@media (min-width: 1920px) {
+  .stage { width: min(calc(100dvh * 9 / 16), 800px, 100%); }
+}
 
 .vid  { width: 100%; height: 100%; object-fit: cover; display: block; }
 
@@ -616,7 +626,10 @@
 .actionPillIcon { display: none; }
 .actionPillCount { display: none; }
 
-.btnFloat   { position: fixed; z-index: 20; width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; background: rgba(0,0,0,0.4); backdrop-filter: blur(10px); transition: background 0.15s, transform 0.12s; }
+/* Overlay controls — position:absolute so they track the stage on all screen sizes.
+   On wide screens (desktop/TV) the stage is centred; fixed positioning would push
+   these to the viewport edge instead of staying over the video. */
+.btnFloat   { position: absolute; z-index: 20; width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; background: rgba(0,0,0,0.4); backdrop-filter: blur(10px); transition: background 0.15s, transform 0.12s; }
 .btnFloat:hover { background: rgba(0,0,0,0.62); transform: scale(1.06); }
 
 /* Create reel button */
@@ -624,7 +637,7 @@
 .createBtn:hover  { background: #6d28d9; transform: scale(1.08); }
 .createBtn:active { transform: scale(0.93); }
 
-.navCol     { position: fixed; right: 12px; bottom: 36px; display: flex; flex-direction: column; align-items: center; gap: 3px; z-index: 20; }
+.navCol     { position: absolute; right: 12px; bottom: 36px; display: flex; flex-direction: column; align-items: center; gap: 3px; z-index: 20; }
 .navArrow   { width: 38px; height: 38px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; background: rgba(255,255,255,0.10); backdrop-filter: blur(8px); transition: background 0.15s, opacity 0.15s, transform 0.12s; }
 .navArrow:hover    { background: rgba(255,255,255,0.20); transform: scale(1.06); }
 .navArrow:active   { transform: scale(0.93); }

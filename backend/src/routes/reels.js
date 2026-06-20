@@ -1,5 +1,10 @@
-import express, { Router } from 'express'
+import { Router } from 'express'
 import { createRequire } from 'module'
+import { pipeline } from 'stream/promises'
+import { createWriteStream, createReadStream, unlink } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { randomUUID } from 'crypto'
 import { Reel } from '../models/Reel.js'
 import { User } from '../models/User.js'
 import { Comment, COMMENT_MAX_LENGTH } from '../models/Comment.js'
@@ -339,34 +344,47 @@ router.post('/:id/upload-job', requireAuth, async (req, res, next) => {
   }
 })
 
-router.put('/:id/file',
-  requireAuth,
-  express.raw({ type: 'application/octet-stream', limit: '512mb' }),
-  async (req, res, next) => {
-    try {
-      if (!req.user.isCreator || req.user.creatorStatus !== 'approved') {
-        return res.status(403).json({ error: 'Creator access required' })
-      }
-      const reel = await Reel.findOne({ _id: req.params.id, creatorId: req.user._id }).lean()
-      if (!reel) return res.status(404).json({ error: 'Reel not found' })
-      const job = await UploadJob.findOne({ reelId: reel._id, status: 'awaiting_file' })
-      if (!job) {
-        return res.status(409).json({ error: 'No pending upload job. Call POST /api/reels/:id/upload-job first.' })
-      }
-      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
-        return res.status(400).json({ error: 'Binary file body is required' })
-      }
-      const fileName = String(req.headers['x-file-name'] || '').slice(0, 240)
-      await UploadJob.findByIdAndUpdate(job._id, {
-        $set: { status: 'queued', progress: 10, note: 'File received. Queued for upload.', fileName },
-      })
-      const fileBuffer = Buffer.from(req.body)
-      setImmediate(() => { void processUploadJob(job._id, fileBuffer, fileBuffer.length).catch(() => {}) })
-      res.status(202).json({ success: true, jobId: job._id, message: 'File accepted and queued.' })
-    } catch (err) {
-      next(err)
+router.put('/:id/file', requireAuth, async (req, res, next) => {
+  let tmpPath = null
+  try {
+    if (!req.user.isCreator || req.user.creatorStatus !== 'approved') {
+      return res.status(403).json({ error: 'Creator access required' })
     }
+
+    // Stream body to disk first — avoids holding up to 512 MB in RAM per upload.
+    tmpPath = join(tmpdir(), `dhara-reel-${randomUUID()}.tmp`)
+    const contentLength = parseInt(req.headers['content-length'] || '0', 10)
+    await pipeline(req, createWriteStream(tmpPath))
+
+    const reel = await Reel.findOne({ _id: req.params.id, creatorId: req.user._id }).lean()
+    if (!reel) return res.status(404).json({ error: 'Reel not found' })
+    const job = await UploadJob.findOne({ reelId: reel._id, status: 'awaiting_file' })
+    if (!job) {
+      return res.status(409).json({ error: 'No pending upload job. Call POST /api/reels/:id/upload-job first.' })
+    }
+
+    const fileName = String(req.headers['x-file-name'] || '').slice(0, 240)
+    await UploadJob.findByIdAndUpdate(job._id, {
+      $set: { status: 'queued', progress: 10, note: 'File received. Queued for upload.', fileName },
+    })
+
+    const capturedTmpPath = tmpPath
+    tmpPath = null // processUploadJob callback owns cleanup from here
+
+    setImmediate(async () => {
+      try {
+        await processUploadJob(job._id, createReadStream(capturedTmpPath), contentLength)
+      } catch { /* status already set to 'failed' by processUploadJob */ } finally {
+        unlink(capturedTmpPath, () => {})
+      }
+    })
+
+    res.status(202).json({ success: true, jobId: job._id, message: 'File accepted and queued.' })
+  } catch (err) {
+    next(err)
+  } finally {
+    if (tmpPath) unlink(tmpPath, () => {})
   }
-)
+})
 
 export default router

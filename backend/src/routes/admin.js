@@ -121,8 +121,17 @@ async function syncProcessingJob(job) {
     )
 
     if (isReady && updated?.reelId) {
-      // Reel upload — link directly to Reel.bunnyVideoId
-      await Reel.findByIdAndUpdate(updated.reelId, { $set: { bunnyVideoId: updated.bunnyVideoId } })
+      // Reel upload — link bunnyVideoId and backfill thumbnailUrl from Bunny if reel has none.
+      // Bunny generates thumbnail.jpg for every encoded video; use it as fallback so the
+      // grid card always has a poster even when the Cloudinary auto-thumb upload raced.
+      const existingReel = await Reel.findById(updated.reelId).select('thumbnailUrl').lean()
+      const reelPatch = { bunnyVideoId: updated.bunnyVideoId }
+      if (!existingReel?.thumbnailUrl) {
+        const pullZone        = process.env.BUNNY_CDN_PULL_ZONE
+        const thumbnailFile   = video?.thumbnailFileName || 'thumbnail.jpg'
+        if (pullZone) reelPatch.thumbnailUrl = `https://${pullZone}/${updated.bunnyVideoId}/${thumbnailFile}`
+      }
+      await Reel.findByIdAndUpdate(updated.reelId, { $set: reelPatch })
     } else if (isReady && updated?.contentId) {
       if (updated.episodeNumber) {
         // Series / Serial Drama — link to the correct season→episode.

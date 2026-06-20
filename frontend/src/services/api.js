@@ -571,11 +571,12 @@ export async function createReelUploadJob(reelId) {
 }
 
 // XHR-based so callers can track upload progress via onProgress(0–100).
-export function uploadReelFile(reelId, file, { onProgress } = {}) {
+export function uploadReelFile(reelId, file, { onProgress, onXhr } = {}) {
   return new Promise((resolve, reject) => {
     auth.currentUser?.getIdToken()
       .then((token) => {
         const xhr = new XMLHttpRequest()
+        if (onXhr) onXhr(xhr)
         if (onProgress) {
           xhr.upload.addEventListener('progress', (e) => {
             if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))

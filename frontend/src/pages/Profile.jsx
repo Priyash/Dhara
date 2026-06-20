@@ -21,6 +21,7 @@ import {
 import { useStore } from '../store/useStore'
 import { fetchWatchlistItems, applyAsCreator, getPaymentHistory, cancelSubscription } from '../services/api'
 import PosterCard from '../components/PosterCard'
+import VerifiedBadge from '../components/VerifiedBadge'
 import styles from './Profile.module.css'
 
 function formatJoinDate(user) {
@@ -323,7 +324,10 @@ export default function Profile() {
 
         <div className={styles.heroContent}>
           <p className={styles.eyebrow}>My Profile</p>
-          <h1 className={styles.name}>{user?.displayName || 'Dhara Member'}</h1>
+          <div className={styles.nameRow}>
+            <h1 className={styles.name}>{user?.displayName || 'Dhara Member'}</h1>
+            {isCreator && creatorStatus === 'approved' && <VerifiedBadge size={20} />}
+          </div>
           <p className={styles.email}>{user?.email}</p>
 
           <div className={styles.metaRow}>
@@ -614,7 +618,7 @@ export default function Profile() {
           {creatorStatus === 'approved' && isCreator && (
             <>
               <span className={styles.creatorStatusPill} style={{ color: '#4ade80', background: 'rgba(74,222,128,0.1)', borderColor: 'rgba(74,222,128,0.25)' }}>
-                ✓ Approved Creator
+                ✓ Creator account active
               </span>
               <p className={styles.creatorCardDesc}>
                 Your creator account is active. Submit films, series, and documentaries from your studio.

@@ -12,6 +12,7 @@ import {
   fetchReelComments, postReelComment, deleteReelComment,
   recordInteractionEvent, getMe,
 } from '../services/api'
+import VerifiedBadge from '../components/VerifiedBadge'
 import styles from './Reels.module.css'
 
 const VIEW_THRESHOLD = 5
@@ -285,6 +286,7 @@ function ReelCard({ reel, onClick, showGate = false }) {
             : <div className={styles.cardAvatarFb}>{studioName[0]?.toUpperCase()}</div>
           }
           <span className={styles.cardCreator}>{studioName}</span>
+          <VerifiedBadge size={11} />
         </div>
         {reel.title && <p className={styles.cardTitle}>{reel.title}</p>}
         {reel.hashtags?.length > 0 && (
@@ -391,16 +393,20 @@ function ReelPlayer({ startId }) {
   }, [reels, navigate])
 
   useEffect(() => {
-    if (commentsFor) return
     const h = (e) => {
+      if (e.key === 'Escape') {
+        if (commentsFor) setCommentsFor(null)
+        else navigate('/reels')
+        return
+      }
+      if (commentsFor) return  // other keys blocked while drawer is open
       if (e.key === 'ArrowDown' || e.key === 'j') goTo(activeIndex + 1)
       if (e.key === 'ArrowUp'   || e.key === 'k') goTo(activeIndex - 1)
       if (e.key === 'm') setMuted((m) => !m)
-      if (e.key === 'Escape') setCommentsFor(null)
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [activeIndex, goTo, commentsFor])
+  }, [activeIndex, goTo, commentsFor, navigate])
 
   const handleLike = async (reelId) => {
     if (!isLoggedIn) { openAuth('signin'); return }
@@ -729,6 +735,7 @@ function ReelSlide({ reel, isActive, hlsUrl, muted, liked, reelStats, onLike, on
             }
           </div>
           <span className={styles.creatorName}>{studioName}</span>
+          <VerifiedBadge size={15} style={{ boxShadow: '0 0 0 1.5px rgba(167,139,250,0.35), 0 0 8px rgba(167,139,250,0.7)' }} />
         </div>
         {reel.title && <p className={styles.caption}>{reel.title}</p>}
         {reel.hashtags?.length > 0 && (
