@@ -11,6 +11,13 @@ import styles from './ReelUploadModal.module.css'
 
 let _nextReelUid = 0
 
+function _clearReelJob(reelId) {
+  try {
+    const stored = JSON.parse(localStorage.getItem('dhara_reel_jobs') || '[]')
+    localStorage.setItem('dhara_reel_jobs', JSON.stringify(stored.filter((j) => j.reelId !== reelId)))
+  } catch {}
+}
+
 const MAX_DURATION_SECS = 30
 const MAX_FILE_MB       = 200
 const ALLOWED_EXT       = ['.mp4', '.mov', '.m4v', '.webm']
@@ -222,6 +229,13 @@ export default function ReelUploadModal({ onClose, onCreated }) {
         })
         await createReelUploadJob(reel._id)
 
+        // Persist to localStorage so the upload toast survives a page refresh
+        try {
+          const stored = JSON.parse(localStorage.getItem('dhara_reel_jobs') || '[]')
+          stored.push({ reelId: reel._id, title: displayTitle, startedAt: Date.now() })
+          localStorage.setItem('dhara_reel_jobs', JSON.stringify(stored))
+        } catch {}
+
         let lastProgressEmit = 0
         await uploadReelFile(reel._id, item.file, {
           onXhr: (xhr) => {
@@ -245,11 +259,13 @@ export default function ReelUploadModal({ onClose, onCreated }) {
         setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'done', progress: 100 } : q))
         patchActiveUpload(uid, { progress: 100, status: 'done', xhr: null })
         setTimeout(() => removeActiveUpload(uid), 8_000)
+        _clearReelJob(reel._id)
         done++
       } catch (err) {
         const msg = err?.message || 'Upload failed'
         setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'error', error: msg } : q))
         patchActiveUpload(uid, { status: 'error', error: msg, xhr: null })
+        if (reel) _clearReelJob(reel._id)
         failed++
       }
     }
