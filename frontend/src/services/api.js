@@ -570,6 +570,10 @@ export async function createReelUploadJob(reelId) {
   return request(`/api/reels/${reelId}/upload-job`, { method: 'POST' })
 }
 
+export async function getReelUploadJob(reelId) {
+  return request(`/api/reels/${reelId}/upload-job`)
+}
+
 // XHR-based so callers can track upload progress via onProgress(0–100).
 export function uploadReelFile(reelId, file, { onProgress, onXhr } = {}) {
   return new Promise((resolve, reject) => {

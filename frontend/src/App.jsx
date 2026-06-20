@@ -11,6 +11,7 @@ import ContentDetailModal from './components/ContentDetailModal'
 import AuthModal from './components/AuthModal'
 import ScreenTransition from './components/ScreenTransition'
 import VerifyEmailModal from './components/VerifyEmailModal'
+import ReelUploadsToast from './components/ReelUploadsToast'
 import styles from './App.module.css'
 
 // Lazy-loaded routes — not part of the initial bundle.
@@ -106,6 +107,7 @@ export default function App() {
       {showAuth        && <AuthModal />}
       {selectedItem    && <ContentDetailModal />}
       <ScreenTransition />
+      <ReelUploadsToast />
     </ErrorBoundary>
   )
 }

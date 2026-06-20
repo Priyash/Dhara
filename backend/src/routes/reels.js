@@ -344,6 +344,24 @@ router.post('/:id/upload-job', requireAuth, async (req, res, next) => {
   }
 })
 
+router.get('/:id/upload-job', requireAuth, async (req, res, next) => {
+  try {
+    if (!req.user.isCreator || req.user.creatorStatus !== 'approved') {
+      return res.status(403).json({ error: 'Creator access required' })
+    }
+    const reel = await Reel.findOne({ _id: req.params.id, creatorId: req.user._id }).select('_id').lean()
+    if (!reel) return res.status(404).json({ error: 'Reel not found' })
+    const job = await UploadJob.findOne({ reelId: reel._id })
+      .sort({ createdAt: -1 })
+      .select('status progress note error')
+      .lean()
+    if (!job) return res.status(404).json({ error: 'No upload job found' })
+    res.json(job)
+  } catch (err) {
+    next(err)
+  }
+})
+
 router.put('/:id/file', requireAuth, async (req, res, next) => {
   let tmpPath = null
   try {
