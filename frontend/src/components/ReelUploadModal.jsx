@@ -101,8 +101,11 @@ export default function ReelUploadModal({ onClose, onCreated }) {
   const [thumbUploading,      setThumbUploading]      = useState(false)
   const [thumbError,          setThumbError]          = useState('')
 
-  const inputRef     = useRef(null)
+  const inputRef      = useRef(null)
   const thumbInputRef = useRef(null)
+  const queueRef      = useRef(queue)
+  queueRef.current    = queue
+  const uploadingRef  = useRef(false)
 
   // ── Add files to queue ────────────────────────────────────────────────────
 
@@ -162,8 +165,10 @@ export default function ReelUploadModal({ onClose, onCreated }) {
   // ── Upload queue sequentially ─────────────────────────────────────────────
 
   const startUpload = async () => {
+    if (uploadingRef.current) return  // prevent double-submit
     const valid = queue.filter((q) => !q.validError)
     if (!valid.length) return
+    uploadingRef.current = true
     setPhase('uploading')
 
     let done = 0, failed = 0
@@ -172,23 +177,41 @@ export default function ReelUploadModal({ onClose, onCreated }) {
     for (const item of valid) {
       setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'uploading', progress: 0 } : q))
       try {
+        // Read freshest queue state so we get autoThumbUrl even if Cloudinary
+        // finished after the user clicked Upload (race window on fast networks).
+        const freshItem = queueRef.current.find((q) => q.id === item.id) || item
+        const thumbToUse = thumbnailUrl.trim() || freshItem.autoThumbUrl || ''
+
         const reel = await createCreatorReel({
           title:        item.title.trim() || cleanName(item.file.name),
           description:  sharedDescription.trim(),
           hashtags:     tags,
           aspectRatio:  sharedAspectRatio || item.aspectRatio,
           durationSecs: item.duration,
-          thumbnailUrl: thumbnailUrl.trim() || item.autoThumbUrl || '',
+          thumbnailUrl: thumbToUse,
         }).catch((err) => {
-          // Surface the daily limit error with a clear message
           if (err?.message?.includes('Daily upload limit')) {
-            throw new Error(`Daily limit reached — you can upload up to 5 reels per day. Remaining items skipped.`)
+            throw new Error('Daily limit reached — you can upload up to 5 reels per day.')
           }
           throw err
         })
         await createReelUploadJob(reel._id)
+
+        let lastProgressEmit = 0
         await uploadReelFile(reel._id, item.file, {
-          onProgress: (p) => setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, progress: p } : q)),
+          onXhr: (xhr) => {
+            xhr.timeout = 90 * 60 * 1000
+            xhr.addEventListener('timeout', () => {
+              setQueue((prev) => prev.map((q) => q.id === item.id
+                ? { ...q, status: 'error', error: 'Upload timed out after 90 minutes' } : q))
+            })
+          },
+          onProgress: (p) => {
+            const now = Date.now()
+            if (p < 100 && now - lastProgressEmit < 150) return
+            lastProgressEmit = now
+            setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, progress: p } : q))
+          },
         })
         setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'done', progress: 100 } : q))
         done++
@@ -198,6 +221,7 @@ export default function ReelUploadModal({ onClose, onCreated }) {
       }
     }
 
+    uploadingRef.current = false
     setSummary({ done, failed })
     setPhase('complete')
     if (done > 0) onCreated?.()
@@ -208,10 +232,25 @@ export default function ReelUploadModal({ onClose, onCreated }) {
   const isUploading  = phase === 'uploading'
   const isComplete   = phase === 'complete'
 
+  // XHR upload continues in the browser even after the modal unmounts —
+  // the backend buffers the file and fires processUploadJob asynchronously,
+  // so the reel always finishes uploading. Confirm before closing mid-upload
+  // so the user doesn't lose visibility into a multi-file batch by accident.
+  const handleClose = () => {
+    if (isUploading) {
+      const ok = window.confirm(
+        'Upload in progress. Close anyway?\n\n' +
+        'Your reel will continue uploading in the background and will be submitted for review once complete.'
+      )
+      if (!ok) return
+    }
+    onClose()
+  }
+
   // Portal renders outside the route pane so CSS transforms on animated
   // parent elements can't break position:fixed on the backdrop.
   return createPortal(
-    <div className={styles.backdrop} onClick={(e) => { if (e.target === e.currentTarget && !isUploading) onClose() }}>
+    <div className={styles.backdrop} onClick={(e) => { if (e.target === e.currentTarget) handleClose() }}>
       <div className={styles.modal}>
 
         {/* ── Header ── */}
@@ -223,7 +262,7 @@ export default function ReelUploadModal({ onClose, onCreated }) {
               <span className={styles.queueBadge}>{queue.length} file{queue.length !== 1 ? 's' : ''}</span>
             )}
           </div>
-          <button className={styles.closeBtn} onClick={onClose} disabled={isUploading} aria-label="Close">
+          <button className={styles.closeBtn} onClick={handleClose} aria-label="Close">
             <X size={16} />
           </button>
         </div>
@@ -472,7 +511,7 @@ export default function ReelUploadModal({ onClose, onCreated }) {
 
         {/* ── Footer ── */}
         <div className={styles.footer}>
-          <button className={styles.cancelBtn} onClick={onClose} disabled={isUploading}>
+          <button className={styles.cancelBtn} onClick={handleClose}>
             {isComplete ? 'Close' : 'Cancel'}
           </button>
 
