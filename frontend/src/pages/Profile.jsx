@@ -326,7 +326,7 @@ export default function Profile() {
           <p className={styles.eyebrow}>My Profile</p>
           <div className={styles.nameRow}>
             <h1 className={styles.name}>{user?.displayName || 'Dhara Member'}</h1>
-            {isCreator && creatorStatus === 'approved' && <VerifiedBadge size={24} />}
+            {isCreator && creatorStatus === 'approved' && <VerifiedBadge size={20} />}
           </div>
           <p className={styles.email}>{user?.email}</p>
 
@@ -617,8 +617,8 @@ export default function Profile() {
           {/* ── Approved ── */}
           {creatorStatus === 'approved' && isCreator && (
             <>
-              <span className={styles.creatorStatusPill} style={{ color: '#a78bfa', background: 'rgba(167,139,250,0.1)', borderColor: 'rgba(167,139,250,0.25)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <VerifiedBadge size={14} /> Verified Creator
+              <span className={styles.creatorStatusPill} style={{ color: '#4ade80', background: 'rgba(74,222,128,0.1)', borderColor: 'rgba(74,222,128,0.25)' }}>
+                ✓ Creator account active
               </span>
               <p className={styles.creatorCardDesc}>
                 Your creator account is active. Submit films, series, and documentaries from your studio.
