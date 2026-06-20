@@ -544,7 +544,9 @@ let _nextUploadUid = 0
 // preventing the massive Admin page from re-rendering on each XHR event.
 function ActiveUploadsPanel({ onCancel, onRetry, onDismiss }) {
   const activeUploads = useStore((s) => s.activeUploads)
-  if (!activeUploads.length) return null
+  // Reel uploads (type:'reel') are shown globally in App.jsx — admin panel shows only admin uploads
+  const filtered = activeUploads.filter((u) => u.type !== 'reel')
+  if (!filtered.length) return null
   return (
     <div className={styles.activeUploadsPanel}>
       <div className={styles.activeUploadsPanelHeader}>
@@ -552,7 +554,7 @@ function ActiveUploadsPanel({ onCancel, onRetry, onDismiss }) {
           <UploadCloud size={11} /> ACTIVE UPLOADS
         </span>
       </div>
-      {activeUploads.map((u) => {
+      {filtered.map((u) => {
         const isDone       = u.status === 'done'
         const isCancelled  = u.status === 'cancelled'
         const isError      = u.status === 'error'

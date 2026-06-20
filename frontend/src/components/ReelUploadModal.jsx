@@ -6,7 +6,10 @@ import {
 } from 'lucide-react'
 import { createCreatorReel, createReelUploadJob, uploadReelFile } from '../services/api'
 import { uploadToCloudinary } from '../services/cloudinary'
+import { useStore } from '../store/useStore'
 import styles from './ReelUploadModal.module.css'
+
+let _nextReelUid = 0
 
 const MAX_DURATION_SECS = 30
 const MAX_FILE_MB       = 200
@@ -101,6 +104,10 @@ export default function ReelUploadModal({ onClose, onCreated }) {
   const [thumbUploading,      setThumbUploading]      = useState(false)
   const [thumbError,          setThumbError]          = useState('')
 
+  const addActiveUpload    = useStore((s) => s.addActiveUpload)
+  const patchActiveUpload  = useStore((s) => s.patchActiveUpload)
+  const removeActiveUpload = useStore((s) => s.removeActiveUpload)
+
   const inputRef      = useRef(null)
   const thumbInputRef = useRef(null)
   const queueRef      = useRef(queue)
@@ -175,6 +182,11 @@ export default function ReelUploadModal({ onClose, onCreated }) {
     const tags = sharedHashtags.split(',').map((t) => t.trim().toLowerCase().replace(/^#/, '')).filter(Boolean)
 
     for (const item of valid) {
+      // Register in the global store immediately — progress survives modal close
+      const uid = `reel-${_nextReelUid++}`
+      const displayTitle = item.title.trim() || cleanName(item.file.name)
+      addActiveUpload({ uid, type: 'reel', title: displayTitle, progress: 0, status: 'uploading', xhr: null })
+
       setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'uploading', progress: 0 } : q))
       try {
         // Wait up to 8 s for the Cloudinary auto-thumb upload to settle before
@@ -196,7 +208,7 @@ export default function ReelUploadModal({ onClose, onCreated }) {
         const thumbToUse = thumbnailUrl.trim() || freshItem.autoThumbUrl || ''
 
         const reel = await createCreatorReel({
-          title:        item.title.trim() || cleanName(item.file.name),
+          title:        displayTitle,
           description:  sharedDescription.trim(),
           hashtags:     tags,
           aspectRatio:  sharedAspectRatio || item.aspectRatio,
@@ -214,9 +226,12 @@ export default function ReelUploadModal({ onClose, onCreated }) {
         await uploadReelFile(reel._id, item.file, {
           onXhr: (xhr) => {
             xhr.timeout = 90 * 60 * 1000
+            patchActiveUpload(uid, { xhr })
             xhr.addEventListener('timeout', () => {
+              const msg = 'Upload timed out after 90 minutes'
               setQueue((prev) => prev.map((q) => q.id === item.id
-                ? { ...q, status: 'error', error: 'Upload timed out after 90 minutes' } : q))
+                ? { ...q, status: 'error', error: msg } : q))
+              patchActiveUpload(uid, { status: 'error', error: msg, xhr: null })
             })
           },
           onProgress: (p) => {
@@ -224,12 +239,17 @@ export default function ReelUploadModal({ onClose, onCreated }) {
             if (p < 100 && now - lastProgressEmit < 150) return
             lastProgressEmit = now
             setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, progress: p } : q))
+            patchActiveUpload(uid, { progress: p })
           },
         })
         setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'done', progress: 100 } : q))
+        patchActiveUpload(uid, { progress: 100, status: 'done', xhr: null })
+        setTimeout(() => removeActiveUpload(uid), 8_000)
         done++
       } catch (err) {
-        setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'error', error: err?.message || 'Upload failed' } : q))
+        const msg = err?.message || 'Upload failed'
+        setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'error', error: msg } : q))
+        patchActiveUpload(uid, { status: 'error', error: msg, xhr: null })
         failed++
       }
     }
