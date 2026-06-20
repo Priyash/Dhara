@@ -177,9 +177,22 @@ export default function ReelUploadModal({ onClose, onCreated }) {
     for (const item of valid) {
       setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'uploading', progress: 0 } : q))
       try {
-        // Read freshest queue state so we get autoThumbUrl even if Cloudinary
-        // finished after the user clicked Upload (race window on fast networks).
-        const freshItem = queueRef.current.find((q) => q.id === item.id) || item
+        // Wait up to 8 s for the Cloudinary auto-thumb upload to settle before
+        // reading autoThumbUrl — closes the race between analyseVideo + Cloudinary
+        // upload and the user clicking "Upload" quickly after adding files.
+        const isStillUploading = () =>
+          !!(queueRef.current.find((q) => q.id === item.id)?.autoThumbUploading)
+        if (isStillUploading()) {
+          await new Promise((resolve) => {
+            const deadline = Date.now() + 8_000
+            const poll = () => {
+              if (!isStillUploading() || Date.now() >= deadline) resolve()
+              else setTimeout(poll, 200)
+            }
+            poll()
+          })
+        }
+        const freshItem  = queueRef.current.find((q) => q.id === item.id) || item
         const thumbToUse = thumbnailUrl.trim() || freshItem.autoThumbUrl || ''
 
         const reel = await createCreatorReel({

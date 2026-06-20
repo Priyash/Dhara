@@ -393,16 +393,20 @@ function ReelPlayer({ startId }) {
   }, [reels, navigate])
 
   useEffect(() => {
-    if (commentsFor) return
     const h = (e) => {
+      if (e.key === 'Escape') {
+        if (commentsFor) setCommentsFor(null)
+        else navigate('/reels')
+        return
+      }
+      if (commentsFor) return  // other keys blocked while drawer is open
       if (e.key === 'ArrowDown' || e.key === 'j') goTo(activeIndex + 1)
       if (e.key === 'ArrowUp'   || e.key === 'k') goTo(activeIndex - 1)
       if (e.key === 'm') setMuted((m) => !m)
-      if (e.key === 'Escape') setCommentsFor(null)
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [activeIndex, goTo, commentsFor])
+  }, [activeIndex, goTo, commentsFor, navigate])
 
   const handleLike = async (reelId) => {
     if (!isLoggedIn) { openAuth('signin'); return }
