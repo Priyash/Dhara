@@ -1204,6 +1204,21 @@
 .librarySearch::placeholder { color: rgba(255,255,255,0.22); }
 .librarySearch:focus { border-color: rgba(219,39,119,0.45); }
 
+/* Row wrapping search input + New Content button */
+.librarySearchRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.libraryNewBtn {
+  padding: 7px 14px;
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .libraryList {
   display: flex;
   flex-direction: column;
@@ -2042,6 +2057,87 @@
 
   .imageGrid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ── Content library responsive ──────────────────────────────────────────── */
+
+/* Tablet: stack library header so search+button don't crowd the title */
+@media (max-width: 768px) {
+  .libraryHeader {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .libraryHeader .cardTitle {
+    margin-bottom: 0;
+  }
+
+  /* Search row stretches full width; search input expands to fill remaining space */
+  .librarySearchRow {
+    width: 100%;
+  }
+
+  .librarySearch {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+/* Phone: stack each content row — title/meta on top, action buttons below */
+@media (max-width: 640px) {
+  /* Tighter card padding on small screens */
+  .card,
+  .jobsCard {
+    padding: 16px;
+  }
+
+  /* Tab bar scrollable — prevents clipping on narrow screens */
+  .tabBar {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    gap: 0;
+  }
+  .tabBar::-webkit-scrollbar { display: none; }
+
+  .tab {
+    flex-shrink: 0;
+    padding: 10px 14px;
+    font-size: 12px;
+  }
+
+  /* Library list: taller on mobile since card has less chrome */
+  .libraryList {
+    max-height: 60dvh;
+  }
+
+  /* Each content row becomes a column: info top, actions bottom */
+  .libraryRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .libraryLeft {
+    width: 100%;
+  }
+
+  /* Action buttons wrap naturally so they never overflow */
+  .libraryActions {
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 6px;
+  }
+
+  /* Give action buttons a bit more padding so they're easier to tap */
+  .proToggleBtn,
+  .editBtn,
+  .deleteBtn {
+    padding: 7px 12px;
+    font-size: 12px;
   }
 }
 
