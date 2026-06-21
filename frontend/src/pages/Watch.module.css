@@ -5,6 +5,12 @@
   box-sizing: border-box;
   color: #fff;
   font-family: var(--font-body, 'DM Sans', sans-serif);
+  transition: padding-top 0.35s ease;
+}
+
+/* Remove the top padding offset when nav is hidden during playback */
+:global(body.video-playing) .page {
+  padding-top: 0;
 }
 
 /* ── Stream unavailable ──────────────────────────────────────────────────────*/
@@ -162,6 +168,12 @@
   background: #000;
   position: relative;
   overflow: hidden;
+  transition: height 0.35s ease;
+}
+
+/* When video is playing, the navbar slides away — expand player to fill full viewport */
+:global(body.video-playing) .playerWrap {
+  height: 100dvh;
 }
 
 .playerWrapLocked {
@@ -172,7 +184,7 @@
 }
 
 .state {
-  min-height: 100vh;
+  min-height: 100dvh;
   padding-top: var(--nav-height, 64px);
   display: flex;
   align-items: center;

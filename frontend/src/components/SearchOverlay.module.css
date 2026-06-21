@@ -357,6 +357,122 @@
   padding: 1px 5px;
 }
 
+/* ── Popular Now grid — shown in empty/default state ────────────────────────*/
+@keyframes popularGridIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.popularGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  animation: popularGridIn 0.22s ease both;
+}
+
+@keyframes popularCardIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.popularCard {
+  background: none;
+  border: none;
+  padding: 0 0 4px;
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--radius-md);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  animation: popularCardIn 0.22s ease both;
+}
+.popularCard:hover {
+  transform: scale(1.03);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.65), 0 0 0 1.5px rgba(219,39,119,0.35);
+}
+
+/* Touch: disable scale-on-hover, use tap feedback */
+@media (hover: none) {
+  .popularCard:hover { transform: none; box-shadow: none; }
+  .popularCard:active { transform: scale(1.04); transition: transform 0.1s ease; }
+}
+
+.popularPoster {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.popularPosterImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.3s ease;
+}
+.popularCard:hover .popularPosterImg { transform: scale(1.05); }
+
+.popularGradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(9,9,11,0.9) 0%, transparent 55%);
+}
+
+.popularPremiumBadge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--color-accent);
+  border-radius: 3px;
+  padding: 2px 5px;
+  font-size: 8px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.5px;
+  z-index: 1;
+}
+
+.popularTitle {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.85);
+  margin: 6px 0 0;
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.popularType {
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.3);
+  margin: 2px 0 0;
+  padding: 0 6px;
+  line-height: 1.4;
+}
+
+/* Mobile — 2 columns */
+@media (max-width: 480px) {
+  .popularGrid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+}
+
+/* TV — 4 columns */
+@media (min-width: 1920px) {
+  .popularGrid { grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .popularTitle { font-size: 13px; }
+  .popularType  { font-size: 10px; }
+}
+
 /* ── Empty state ─────────────────────────────────────────────────────────────*/
 .emptyState  { text-align: center; padding: 56px 24px; }
 .emptyIcon   { color: rgba(255,255,255,0.1); margin: 0 auto 16px; display: block; }

@@ -1160,6 +1160,8 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return
       const v = videoRef.current
       if (!v) return
+      // Show controls whenever any key is used — critical for TV remote navigation
+      resetIdleTimer()
       switch (e.code) {
         case 'Space': case 'KeyK': {
           e.preventDefault()
@@ -1238,7 +1240,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [showHint])
+  }, [showHint, resetIdleTimer])
 
   // Cleanup timers on unmount
   useEffect(() => () => {

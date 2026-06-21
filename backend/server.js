@@ -46,6 +46,9 @@ if (isProd) {
     console.error('[startup] FATAL — BUNNY_CDN_TOKEN_AUTH_KEY must be set in production (premium content would be served unsigned)')
     process.exit(1)
   }
+  if (!process.env.ADMIN_EMAILS) {
+    console.warn('[startup] WARNING — ADMIN_EMAILS not set; admin access relies solely on Firebase custom claims')
+  }
 }
 
 // ── App setup ─────────────────────────────────────────────────────────────────
@@ -184,3 +187,13 @@ function shutdown(signal) {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT',  () => shutdown('SIGINT'))
+
+// Catch async errors that nobody awaited and synchronous throws from background code.
+// Without these, Node exits with code 1 and no graceful cleanup in production.
+process.on('unhandledRejection', (reason) => {
+  console.error('[process] Unhandled rejection:', reason)
+})
+process.on('uncaughtException', (err) => {
+  console.error('[process] Uncaught exception:', err)
+  shutdown('uncaughtException')
+})

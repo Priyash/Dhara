@@ -1,6 +1,6 @@
 .hero {
   position: relative;
-  height: 92vh;
+  height: 92dvh;
   min-height: 520px;
   overflow: hidden;
   display: flex;
@@ -350,7 +350,7 @@
 
 @media (max-width: 768px) {
   .hero {
-    height: 72vh;
+    height: 72dvh;
     min-height: 400px;
   }
 
@@ -436,7 +436,7 @@
 /* TV / 4K */
 @media (min-width: 1920px) {
   .hero {
-    height: 85vh;
+    height: 85dvh;
   }
 
   .content {

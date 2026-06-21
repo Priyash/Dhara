@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { createHash, randomUUID } from 'crypto'
 import { createRequire } from 'module'
 import { Types } from 'mongoose'
+import rateLimit from 'express-rate-limit'
 import { Content } from '../models/Content.js'
 import { CuratedShelf } from '../models/CuratedShelf.js'
 import { User } from '../models/User.js'
@@ -11,6 +12,15 @@ import { ActiveStream } from '../models/ActiveStream.js'
 import { requireAuth, requireSubscription } from '../middleware/auth.js'
 import { withCache } from '../config/cache.js'
 import { getPlanLimits, getPlanTier } from '../config/planLimits.js'
+
+const viewRateLimit = rateLimit({
+  windowMs:        60 * 60 * 1000,
+  max:             120,
+  keyGenerator:    (req) => req.user?._id?.toString() || req.ip,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Too many view events. Please slow down.', code: 'RATE_LIMITED' },
+})
 
 const _require = createRequire(import.meta.url)
 const geoip    = _require('geoip-lite')
@@ -448,7 +458,7 @@ const VIEW_DEDUP_WINDOW_MS   = 24 * 60 * 60 * 1000  // one counted view per user
  * Returns { ok: true, counted: boolean } — counted=false means the view was
  * a duplicate and was not written; the client should treat both as success.
  */
-router.post('/:id/view', requireAuth, async (req, res, next) => {
+router.post('/:id/view', requireAuth, viewRateLimit, async (req, res, next) => {
   try {
     const id             = req.params.id
     const seasonNumber   = req.body.seasonNumber  != null ? Number(req.body.seasonNumber)  : null

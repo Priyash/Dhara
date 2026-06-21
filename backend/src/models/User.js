@@ -51,6 +51,9 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+userSchema.index({ email: 1 })
+userSchema.index({ subscriptionStatus: 1, subscriptionExpiresAt: 1 })
+
 userSchema.virtual('isSubscriptionActive').get(function () {
   const now = new Date()
   switch (this.subscriptionStatus) {

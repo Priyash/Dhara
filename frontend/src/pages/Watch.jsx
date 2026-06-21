@@ -63,18 +63,26 @@ export default function Watch() {
     setShowEndCard(false)
   }, [hlsUrl])
 
-  // Apply / remove sticky on play state change
+  // Apply / remove sticky on play state change; hide navbar + lock scroll while playing
   useEffect(() => {
     const el = playerWrapRef.current
     if (!el) return
     if (playerPlaying && !stickyReleasedRef.current) {
       el.classList.add(styles.playerWrapLocked)
-      // Scroll the player into view if it's not already fully visible
       el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     } else {
       el.classList.remove(styles.playerWrapLocked)
     }
+
+    if (playerPlaying) {
+      document.body.classList.add('video-playing')
+    } else {
+      document.body.classList.remove('video-playing')
+    }
   }, [playerPlaying])
+
+  // Always clean up the body class on unmount
+  useEffect(() => () => { document.body.classList.remove('video-playing') }, [])
 
   // Release lock on user-initiated scroll or resize
   useEffect(() => {

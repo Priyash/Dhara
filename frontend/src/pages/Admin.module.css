@@ -1,5 +1,5 @@
 .page {
-  min-height: 100vh;
+  min-height: 100dvh;
   padding: calc(var(--nav-height, 64px) + 32px) 40px 56px;
   background: var(--color-bg);
   max-width: 1400px;
@@ -458,7 +458,7 @@
 
 /* ── Loading / gate ───────────────────────────────────────────────────────── */
 .state {
-  min-height: calc(100vh - var(--nav-height, 64px));
+  min-height: calc(100dvh - var(--nav-height, 64px));
   display: flex;
   align-items: center;
   justify-content: center;

@@ -87,7 +87,19 @@ export const useStore = create((set, get) => ({
       }
     }
 
+    // Track which Firebase UID this tab last synced.
+    // When a DIFFERENT authenticated user appears (e.g. another tab signed in as someone else),
+    // reload the page so Zustand state, cached content, and subscription context start clean.
+    // A sign-out (nextUid = null) is handled normally — no reload needed.
+    let prevUid = null
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      const nextUid = firebaseUser?.uid ?? null
+      if (prevUid !== null && nextUid !== null && nextUid !== prevUid) {
+        window.location.reload()
+        return
+      }
+      prevUid = nextUid
       await syncSession(firebaseUser, { forceFreshToken: true })
     })
 

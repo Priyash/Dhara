@@ -7,6 +7,7 @@ import {
 import { useStore } from '../store/useStore'
 import {
   searchContent, searchReels, fetchPopularSearches, fetchContinueWatching,
+  fetchRecommendations,
 } from '../services/api'
 import styles from './SearchOverlay.module.css'
 
@@ -51,6 +52,7 @@ export default function SearchOverlay() {
   const [recent,           setRecent]           = useState(loadRecent)
   const [popularTags,      setPopularTags]      = useState(FALLBACK_TAGS)
   const [continueWatching, setContinueWatching] = useState([])
+  const [popularContent,   setPopularContent]   = useState([])
   const [focusedIndex,     setFocusedIndex]     = useState(-1)
 
   const inputRef        = useRef(null)
@@ -100,7 +102,7 @@ export default function SearchOverlay() {
     }
   }, [focusedIndex])
 
-  // Mount: focus input, fetch popular tags + continue watching
+  // Mount: focus input, fetch popular tags + continue watching + popular content grid
   useEffect(() => {
     inputRef.current?.focus()
     fetchPopularSearches()
@@ -111,6 +113,9 @@ export default function SearchOverlay() {
         .then(items => setContinueWatching(items.slice(0, 3)))
         .catch(() => {})
     }
+    fetchRecommendations({ limit: 9 })
+      .then(({ items }) => { if (items.length > 0) setPopularContent(items) })
+      .catch(() => {})
   }, [isLoggedIn])
 
   // Feature 1: keyboard navigation — single mount-only listener reads mutable values via refs
@@ -412,6 +417,36 @@ export default function SearchOverlay() {
                 ))}
               </div>
             </div>
+
+            {/* Popular content grid — Netflix-style browsable tiles */}
+            {popularContent.length > 0 && (
+              <div className={styles.section}>
+                <div className={styles.sectionHeader}>
+                  <p className={styles.sectionLabel}><TrendingUp size={13} /> Popular Now</p>
+                </div>
+                <div className={styles.popularGrid}>
+                  {popularContent.map((item, i) => (
+                    <button
+                      key={item.id}
+                      className={styles.popularCard}
+                      style={{ animationDelay: `${i * 28}ms` }}
+                      onClick={() => handleSelect(item)}
+                    >
+                      <div className={styles.popularPoster}>
+                        {item.posterUrl
+                          ? <img src={item.posterUrl} alt={item.title} className={styles.popularPosterImg} loading="lazy" />
+                          : null
+                        }
+                        <div className={styles.popularGradient} />
+                        {item.isPremium && <span className={styles.popularPremiumBadge}>PRO</span>}
+                      </div>
+                      <p className={styles.popularTitle}>{item.title}</p>
+                      <p className={styles.popularType}>{item.type}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Hashtag hint */}
             {isLoggedIn && (

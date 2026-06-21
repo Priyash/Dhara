@@ -36,7 +36,7 @@
 
 .fullscreen .videoArea {
   aspect-ratio: unset;
-  height: 100vh;
+  height: 100dvh;
 }
 
 .video {
@@ -719,7 +719,8 @@
   .countdownRing { width: 40px; height: 40px; }
 
   .controlsBar {
-    padding: 44px 12px 10px;
+    /* max() picks the larger of the two: 10px floor or iPhone home-indicator height */
+    padding: 44px 12px max(10px, env(safe-area-inset-bottom));
     gap: 6px;
   }
 
@@ -760,8 +761,30 @@
 
   .settingsPanel {
     right: 12px;
-    bottom: 82px;
+    bottom: max(82px, calc(72px + env(safe-area-inset-bottom)));
     width: min(300px, calc(100% - 24px));
+  }
+
+  .skipIntroBtn {
+    bottom: max(80px, calc(70px + env(safe-area-inset-bottom)));
+    left: 12px;
+  }
+}
+
+/* ── iPad (641–1024px) — touch device, slightly tighter than desktop ─────────*/
+@media (min-width: 641px) and (max-width: 1024px) {
+  .controlsBar {
+    padding: 52px 20px 14px;
+    gap: 8px;
+  }
+
+  .ctrlBtn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .volumeSlider {
+    width: 90px;
   }
 }
 
@@ -1300,10 +1323,18 @@
 :global(video::cue) {
   background: rgba(0,0,0,0.75);
   color: #fff;
-  font-size: 17px;
+  font-size: clamp(13px, 2.2vw, 22px);
   font-family: var(--font-body, system-ui, sans-serif);
   border-radius: 3px;
   padding: 2px 6px;
+}
+
+@media (min-width: 1920px) {
+  :global(video::cue) { font-size: 28px; }
+}
+
+@media (max-width: 480px) {
+  :global(video::cue) { font-size: 14px; }
 }
 
 @media (max-width: 720px) {
