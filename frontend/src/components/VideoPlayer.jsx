@@ -83,7 +83,7 @@ const WATERMARK_POSITIONS = [
   { bottom: '22%', left: '50%', transform: 'translateX(-50%)' },
 ]
 
-export default function VideoPlayer({ src, title, poster, storageKey, maxQualityHeight = null, onPlayingChange, onBack, nextEp, onNextEp, introStart, introEnd, subtitleUrl, isLive, theaterMode, onTheaterToggle, onVideoEnded, watermarkText }) {
+export default function VideoPlayer({ src, title, poster, storageKey, maxQualityHeight = null, onPlayingChange, onBack, nextEp, onNextEp, introStart, introEnd, subtitleUrl, isLive, theaterMode, onTheaterToggle, onVideoEnded, watermarkText, fillContainer = false }) {
   const videoRef    = useRef(null)
   const containerRef= useRef(null)
   const progressRef = useRef(null)
@@ -161,6 +161,18 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const clickTimerRef = useRef(null)
   const tapCountRef   = useRef(0)
   const tapTimerRef   = useRef(null)
+
+  // ── Double-tap seek ripple ──────────────────────────────────────────────────
+  const [rippleDir, setRippleDir] = useState(null)
+  const rippleTimerRef = useRef(null)
+
+  // ── Ambient live color from video frame ─────────────────────────────────────
+  const [ambientColor, setAmbientColor] = useState(null)
+  const ambientCanvasRef = useRef(null)
+  const ambientRafRef    = useRef(null)
+
+  // ── Chapter haptic scrub tracking ───────────────────────────────────────────
+  const lastChapterRef = useRef(-1)
 
   // ── showHint ref (avoids adding showHint to attachHlsSource deps) ───────────
   const showHintRef = useRef(null)
@@ -584,6 +596,60 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     }
   }, [])
 
+  // Auto-enter fullscreen when phone rotates to landscape while playing
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.screen?.orientation) return
+    const onOrientationChange = () => {
+      const angle = window.screen.orientation?.angle ?? 0
+      const isLandscape = angle === 90 || angle === 270
+      const el = containerRef.current
+      if (!el) return
+      if (isLandscape && !document.fullscreenElement && !fullscreen) {
+        el.requestFullscreen?.().catch(() => {})
+      }
+    }
+    window.screen.orientation.addEventListener('change', onOrientationChange)
+    return () => window.screen.orientation.removeEventListener('change', onOrientationChange)
+  }, [fullscreen])
+
+  // Sample dominant color from video frame every 2s while playing; drives ambient glow
+  useEffect(() => {
+    if (!playing || !poster) return
+    const canvas = ambientCanvasRef.current
+    const video  = videoRef.current
+    if (!canvas || !video) return
+
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    let cancelled = false
+
+    const sample = () => {
+      if (cancelled) return
+      if (video.readyState >= 2) {
+        try {
+          ctx.drawImage(video, 0, 0, 4, 3)
+          const d = ctx.getImageData(0, 0, 4, 3).data
+          let r = 0, g = 0, b = 0
+          for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i+1]; b += d[i+2] }
+          const n = d.length / 4
+          r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n)
+          const grey = (r + g + b) / 3
+          const boost = 1.6
+          r = Math.min(255, Math.round(grey + (r - grey) * boost))
+          g = Math.min(255, Math.round(grey + (g - grey) * boost))
+          b = Math.min(255, Math.round(grey + (b - grey) * boost))
+          setAmbientColor(`rgba(${r},${g},${b},0.55)`)
+        } catch { /* cross-origin frame — skip */ }
+      }
+      ambientRafRef.current = setTimeout(sample, 2000)
+    }
+    sample()
+    return () => { cancelled = true; clearTimeout(ambientRafRef.current) }
+  }, [playing])
+
+  useEffect(() => {
+    if (!playing) setAmbientColor(null)
+  }, [playing])
+
   useEffect(() => {
     if (videoRef.current) videoRef.current.playbackRate = playbackRate
   }, [playbackRate])
@@ -755,10 +821,22 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         if (!drawFromCache(t)) clearThumbnailCanvas()
         seekThumbTo(t)
       }
+      if (navigator.vibrate && duration > 600) {
+        const rect = progressRef.current?.getBoundingClientRect()
+        if (rect) {
+          const pct = Math.max(0, Math.min(1, (cx - rect.left) / rect.width))
+          const chapter = Math.floor(pct * 10)
+          if (chapter !== lastChapterRef.current) {
+            lastChapterRef.current = chapter
+            if (chapter > 0 && chapter < 10) navigator.vibrate(10)
+          }
+        }
+      }
     }
     const onUp = () => {
       setIsDragging(false)
       hoverTimeRef.current = null
+      lastChapterRef.current = -1
       // Cancel any pending thumb rVFC so it doesn't fire after drag ends
       const tv = thumbVideoRef.current
       if (thumbRVFCRef.current && tv?.cancelVideoFrameCallback) {
@@ -930,9 +1008,10 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     v.setAttribute('x-webkit-airplay', 'allow')
 
     const hasWebKitAirPlay = typeof v.webkitShowPlaybackTargetPicker === 'function'
-    const hasRemotePrompt = v.remote && typeof v.remote.prompt === 'function'
+    const hasRemotePlayback = Boolean(v.remote && typeof v.remote.prompt === 'function')
 
-    setCastAvailable(Boolean(hasWebKitAirPlay || hasRemotePrompt))
+    // Show cast button if any cast API is present — the prompt itself will fail gracefully if no devices found
+    setCastAvailable(Boolean(hasWebKitAirPlay || hasRemotePlayback))
     setCastConnected(Boolean(v.webkitCurrentPlaybackTargetIsWireless))
 
     const onWebKitAvailability = (event) => {
@@ -947,7 +1026,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     v.addEventListener('webkitplaybacktargetavailabilitychanged', onWebKitAvailability)
     v.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', onWebKitTargetChange)
 
-    if (hasRemotePrompt) {
+    if (hasRemotePlayback) {
       v.remote.addEventListener('connect', onConnect)
       v.remote.addEventListener('disconnect', onDisconnect)
 
@@ -974,7 +1053,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     }
 
     return () => {
-      if (hasRemotePrompt) {
+      if (hasRemotePlayback) {
         v.remote.removeEventListener('connect', onConnect)
         v.remote.removeEventListener('disconnect', onDisconnect)
       }
@@ -988,6 +1067,12 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     setShortcutHint(text)
     clearTimeout(shortcutHintTimer.current)
     shortcutHintTimer.current = setTimeout(() => setShortcutHint(null), 800)
+  }, [])
+
+  const showRipple = useCallback((dir) => {
+    setRippleDir(dir)
+    clearTimeout(rippleTimerRef.current)
+    rippleTimerRef.current = setTimeout(() => setRippleDir(null), 600)
   }, [])
 
   // Sync showHint into a ref so HLS event handlers can call it without stale closures
@@ -1164,6 +1249,8 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     clearInterval(stallTimerRef.current)
     clearTimeout(gestureTimerRef.current)
     clearTimeout(longPressTimerRef.current)
+    clearTimeout(rippleTimerRef.current)
+    clearTimeout(ambientRafRef.current)
     if (volumeFadeRef.current) cancelAnimationFrame(volumeFadeRef.current)
   }, [])
 
@@ -1176,8 +1263,13 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         v.webkitShowPlaybackTargetPicker()
       } else if (v.remote && typeof v.remote.prompt === 'function') {
         await v.remote.prompt()
+      } else if (typeof PresentationRequest !== 'undefined' && src) {
+        const req = new PresentationRequest([src])
+        const conn = await req.start()
+        conn.addEventListener('terminate', () => setCastConnected(false))
+        setCastConnected(true)
       }
-    } catch { /* user dismissed */ }
+    } catch { /* user dismissed or no devices */ }
   }
 
   // Double-click to fullscreen; single-click to play/pause
@@ -1218,10 +1310,10 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     const touch = e.touches[0]
     const dx = touch.clientX - start.x
     const dy = touch.clientY - start.y
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) clearTimeout(longPressTimerRef.current)
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) clearTimeout(longPressTimerRef.current)
 
     if (!gestureTypeRef.current) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
+      if (Math.abs(dx) < 14 && Math.abs(dy) < 14) return
       const rect = containerRef.current?.getBoundingClientRect()
       const isLeft = rect && (touch.clientX - rect.left) / rect.width < 0.5
       if (Math.abs(dx) > Math.abs(dy) * 1.3) {
@@ -1298,11 +1390,11 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
       tapCountRef.current = 0
       if (pct < 0.35) {
         v.currentTime = Math.max(0, v.currentTime - 10)
-        showHint('← 10s')
+        showRipple('left')
         if (navigator.vibrate) navigator.vibrate(15)
       } else if (pct > 0.65) {
         v.currentTime = Math.min(v.duration, v.currentTime + 10)
-        showHint('10s →')
+        showRipple('right')
         if (navigator.vibrate) navigator.vibrate(15)
       } else {
         togglePlay()
@@ -1338,17 +1430,21 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const controlsVisible = showControls || !playing || isDragging
 
   return (
-    <div ref={containerRef} className={`${styles.wrapper} ${fullscreen ? styles.fullscreen : ''}`}>
-      {/* Ambient glow — blurred poster bleeds around the player when paused */}
-      {poster && !fullscreen && (
+    <div ref={containerRef} className={`${styles.wrapper} ${fullscreen ? styles.fullscreen : ''} ${fillContainer ? styles.wrapperFill : ''}`}>
+      {/* Ambient glow — live color when playing, blurred poster when paused */}
+      {(poster || ambientColor) && !fullscreen && (
         <div
-          className={`${styles.ambientGlow} ${!playing ? styles.ambientGlowVisible : ''}`}
-          style={{ backgroundImage: `url(${poster})` }}
+          className={`${styles.ambientGlow} ${(!playing || ambientColor) ? styles.ambientGlowVisible : ''}`}
+          style={ambientColor && playing
+            ? { background: ambientColor, backgroundImage: 'none' }
+            : { backgroundImage: `url(${poster})` }
+          }
           aria-hidden="true"
         />
       )}
       {/* Hidden video used only for cross-origin thumbnail capture */}
       <video ref={thumbVideoRef} style={{ display: 'none' }} crossOrigin="anonymous" muted playsInline preload="auto" />
+      <canvas ref={ambientCanvasRef} width={4} height={3} style={{ display: 'none' }} aria-hidden="true" />
 
       {/* ── Video area ── */}
       <div
@@ -1513,6 +1609,15 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
           </div>
         )}
 
+        {rippleDir && (
+          <div key={rippleDir + Date.now()} className={`${styles.seekRipple} ${rippleDir === 'left' ? styles.seekRippleLeft : styles.seekRippleRight}`} aria-hidden="true">
+            <div className={styles.seekRippleArrows}>
+              {rippleDir === 'left' ? '‹‹' : '››'}
+            </div>
+            <span className={styles.seekRippleLabel}>10s</span>
+          </div>
+        )}
+
         {playerError && (
           <div className={styles.errorOverlay}>
             <p className={styles.errorTitle}>Playback Issue</p>
@@ -1628,7 +1733,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
             </div>
           </div>
 
-          {/* Right */}
+          {/* Right — CC, Settings, Fullscreen only; advanced options live in the settings panel */}
           <div className={styles.rightControls}>
             {subtitleUrl && (
               <button
@@ -1638,31 +1743,6 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
                 title="Subtitles / CC"
               >
                 <Captions size={18} />
-              </button>
-            )}
-            {onTheaterToggle && (
-              <button
-                className={`${styles.ctrlBtn} ${theaterMode ? styles.ctrlBtnActive : ''}`}
-                onClick={(e) => { e.stopPropagation(); onTheaterToggle() }}
-                aria-label={theaterMode ? 'Exit theater mode' : 'Theater mode'}
-                title="Theater mode (T)"
-              >
-                <MonitorPlay size={18} />
-              </button>
-            )}
-            {castAvailable && (
-              <button
-                className={styles.ctrlBtn}
-                onClick={handleCast}
-                aria-label={castConnected ? 'Casting — tap to disconnect' : 'Cast to TV or AirPlay'}
-                title={castConnected ? 'Casting…' : 'Cast / AirPlay'}
-              >
-                <Airplay size={18} color={castConnected ? '#db2777' : undefined} />
-              </button>
-            )}
-            {document.pictureInPictureEnabled && (
-              <button className={styles.ctrlBtn} onClick={togglePip} aria-label="Picture in Picture">
-                <PictureInPicture2 size={18} color={pipEnabled ? '#db2777' : undefined} />
               </button>
             )}
             <button className={styles.ctrlBtn} onClick={() => setShowSettings((s) => !s)} aria-label="Settings">
@@ -1755,6 +1835,12 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         {/* Settings panel — anchored to videoArea, not controlsBar, so
             position stays consistent across all aspect ratios and screen sizes */}
         {showSettings && controlsVisible && (
+          <div
+            className={styles.settingsBackdrop}
+            onClick={(e) => { e.stopPropagation(); setShowSettings(false) }}
+          />
+        )}
+        {showSettings && controlsVisible && (
           <div className={styles.settingsPanel} onClick={(e) => e.stopPropagation()}>
             <div className={styles.settingsGroup}>
               <p className={styles.settingsLabel}>Speed</p>
@@ -1770,21 +1856,40 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
                 ))}
               </div>
             </div>
-            {qualityOptions.length > 0 && (
+            {(onTheaterToggle || document.pictureInPictureEnabled || castAvailable) && (
               <div className={styles.settingsGroup}>
-                <p className={styles.settingsLabel}>Quality</p>
-                <div className={styles.settingsChips}>
-                  <button
-                    className={`${styles.chipBtn} ${qualityValue === 'auto' ? styles.chipBtnActive : ''}`}
-                    onClick={() => handleQualityChange('auto')}
-                  >Auto</button>
-                  {qualityOptions.map((opt) => (
+                <p className={styles.settingsLabel}>View</p>
+                <div className={styles.settingsToggles}>
+                  {onTheaterToggle && (
                     <button
-                      key={opt.value}
-                      className={`${styles.chipBtn} ${qualityValue === opt.value ? styles.chipBtnActive : ''}`}
-                      onClick={() => handleQualityChange(opt.value)}
-                    >{opt.label}</button>
-                  ))}
+                      className={`${styles.settingsToggleBtn} ${theaterMode ? styles.settingsToggleBtnActive : ''}`}
+                      onClick={(e) => { e.stopPropagation(); onTheaterToggle(); setShowSettings(false) }}
+                    >
+                      <MonitorPlay size={14} />
+                      <span>Theater mode</span>
+                      {theaterMode && <span className={styles.settingsToggleBadge}>On</span>}
+                    </button>
+                  )}
+                  {document.pictureInPictureEnabled && (
+                    <button
+                      className={`${styles.settingsToggleBtn} ${pipEnabled ? styles.settingsToggleBtnActive : ''}`}
+                      onClick={(e) => { e.stopPropagation(); togglePip() }}
+                    >
+                      <PictureInPicture2 size={14} />
+                      <span>Picture in Picture</span>
+                      {pipEnabled && <span className={styles.settingsToggleBadge}>On</span>}
+                    </button>
+                  )}
+                  {castAvailable && (
+                    <button
+                      className={`${styles.settingsToggleBtn} ${castConnected ? styles.settingsToggleBtnActive : ''}`}
+                      onClick={(e) => { e.stopPropagation(); handleCast() }}
+                    >
+                      <Airplay size={14} />
+                      <span>{castConnected ? 'Casting to TV' : 'Cast / AirPlay'}</span>
+                      {castConnected && <span className={styles.settingsToggleBadge}>Live</span>}
+                    </button>
+                  )}
                 </div>
               </div>
             )}

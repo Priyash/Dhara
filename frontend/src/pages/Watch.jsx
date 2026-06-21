@@ -577,7 +577,7 @@ export default function Watch() {
             </button>
           </div>
         ) : (
-          <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative', height: '100%' }}>
             <VideoPlayer
               src={hlsUrl}
               title={playerTitle}
@@ -593,6 +593,7 @@ export default function Watch() {
               onVideoEnded={!hasNextEp ? () => setShowEndCard(true) : undefined}
               isLive={false}
               watermarkText={user?.email || user?.uid || null}
+              fillContainer
             />
             {/* End card — shown when video finishes and there is no next episode */}
             {showEndCard && !hasNextEp && (

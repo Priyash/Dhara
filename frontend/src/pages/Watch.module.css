@@ -1,7 +1,8 @@
 .page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: #000;
   padding-top: var(--nav-height, 64px);
+  box-sizing: border-box;
   color: #fff;
   font-family: var(--font-body, 'DM Sans', sans-serif);
 }
@@ -157,23 +158,17 @@
 /* ── Player ──────────────────────────────────────────────────────────────────*/
 .playerWrap {
   width: 100%;
-  background: #000;
-  /* Fill the viewport below the navbar so the player takes full focus */
   height: calc(100dvh - var(--nav-height, 64px));
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  background: #000;
+  position: relative;
+  overflow: hidden;
 }
 
-/* Applied while video is playing and user hasn't manually scrolled.
-   Keeps the player pinned below the navbar so it stays visible while
-   the user reads the description / episode list below. */
 .playerWrapLocked {
   position: sticky;
   top: var(--nav-height, 64px);
   z-index: 50;
   box-shadow: 0 4px 32px rgba(0, 0, 0, 0.7);
-  height: auto; /* collapse to natural 16:9 height when sticky */
 }
 
 .state {

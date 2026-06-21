@@ -518,6 +518,14 @@ export async function searchReels(q) {
   return Array.isArray(data) ? data : []
 }
 
+export async function fetchReelHashtags(params = {}) {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  const data = await request(`/api/reels/hashtags${qs ? `?${qs}` : ''}`)
+  return Array.isArray(data) ? data : []
+}
+
 export async function fetchReels(params = {}) {
   const qs = new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))

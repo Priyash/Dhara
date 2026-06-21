@@ -126,6 +126,39 @@ router.get('/search', optionalAuth, async (req, res, next) => {
   }
 })
 
+// ── Hashtags ──────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/reels/hashtags?limit=20&q=comedy
+ * Returns the most-used hashtags across all published reels, aggregated server-side.
+ * Must be registered BEFORE /:id to avoid the literal "hashtags" being treated as an ID.
+ */
+router.get('/hashtags', async (req, res, next) => {
+  try {
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit || 20)))
+    const q     = String(req.query.q || '').toLowerCase().trim()
+
+    const matchBase = { isPublished: true, isDeleted: { $ne: true }, submissionStatus: 'approved' }
+
+    const agg = [
+      { $match: matchBase },
+      { $unwind: '$hashtags' },
+    ]
+    if (q) agg.push({ $match: { hashtags: { $regex: q, $options: 'i' } } })
+    agg.push(
+      { $group: { _id: { $toLower: '$hashtags' }, count: { $sum: 1 } } },
+      { $sort: { count: -1, _id: 1 } },
+      { $limit: limit },
+      { $project: { _id: 0, tag: '$_id', count: 1 } }
+    )
+
+    const tags = await Reel.aggregate(agg)
+    res.json(tags)
+  } catch (err) {
+    next(err)
+  }
+})
+
 // ── Single reel ───────────────────────────────────────────────────────────────
 
 router.get('/:id', optionalAuth, async (req, res, next) => {
@@ -155,9 +188,29 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
     const isOwn    = reel.creatorId && req.user._id.toString() === reel.creatorId.toString()
     const isHidden = !reel.isPublished || reel.isDeleted || reel.submissionStatus !== 'approved'
     if (isHidden && !isOwn) return res.status(404).json({ error: 'Reel not found' })
-    if (!reel.bunnyVideoId)  return res.status(404).json({ error: 'Video not ready yet' })
 
-    res.json({ hlsUrl: buildHlsUrl(reel.bunnyVideoId) })
+    let { bunnyVideoId } = reel
+    if (!bunnyVideoId) {
+      // Self-heal: recover bunnyVideoId from the associated UploadJob if the Reel was
+      // approved before the pipeline backfilled the field (pre-existing uploads).
+      const job = await UploadJob.findOne({
+        reelId:       reel._id,
+        bunnyVideoId: { $exists: true, $ne: '' },
+      }).select('bunnyVideoId').lean()
+      if (job?.bunnyVideoId) {
+        bunnyVideoId = job.bunnyVideoId
+        const healUpdates = { bunnyVideoId }
+        if (!reel.thumbnailUrl) {
+          const pullZone = process.env.BUNNY_CDN_PULL_ZONE || ''
+          if (pullZone) healUpdates.thumbnailUrl = `https://${pullZone}/${bunnyVideoId}/thumbnail.jpg`
+        }
+        Reel.updateOne({ _id: reel._id }, { $set: healUpdates }).catch(() => {})
+      }
+    }
+
+    if (!bunnyVideoId) return res.status(404).json({ error: 'Video not ready yet' })
+
+    res.json({ hlsUrl: buildHlsUrl(bunnyVideoId) })
   } catch (err) {
     next(err)
   }
