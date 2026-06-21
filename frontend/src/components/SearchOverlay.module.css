@@ -393,7 +393,7 @@
 /* Touch: disable scale-on-hover, use tap feedback */
 @media (hover: none) {
   .popularCard:hover { transform: none; box-shadow: none; }
-  .popularCard:active { transform: scale(1.04); transition: transform 0.1s ease; }
+  .popularCard:active { opacity: 0.8; transition: opacity 0.1s ease; }
 }
 
 .popularPoster {

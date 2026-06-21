@@ -185,14 +185,16 @@
   margin-bottom: 20px;
 }
 
-/* Grid — Instagram Reels style: 3 tight columns, edge-to-edge on mobile */
+/* Grid — 2 cols on phone, 3 on tablet, 4 on desktop, 5+ on TV */
 .grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
+@media (max-width: 640px)  { .grid { grid-template-columns: repeat(2, 1fr); gap: 4px; } }
 @media (min-width: 1440px) { .grid { grid-template-columns: repeat(4, 1fr); gap: 8px; } }
-@media (max-width: 640px)  { .grid { gap: 2px; } }
+@media (min-width: 1920px) { .grid { grid-template-columns: repeat(5, 1fr); gap: 10px; } }
+@media (min-width: 2560px) { .grid { grid-template-columns: repeat(6, 1fr); gap: 12px; } }
 
 /* Skeleton */
 .gridSkeleton {
@@ -200,8 +202,10 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
-@media (min-width: 1440px) { .gridSkeleton { grid-template-columns: repeat(4, 1fr); } }
-@media (max-width: 640px)  { .gridSkeleton { gap: 2px; } }
+@media (max-width: 640px)  { .gridSkeleton { grid-template-columns: repeat(2, 1fr); gap: 4px; } }
+@media (min-width: 1440px) { .gridSkeleton { grid-template-columns: repeat(4, 1fr); gap: 8px; } }
+@media (min-width: 1920px) { .gridSkeleton { grid-template-columns: repeat(5, 1fr); } }
+@media (min-width: 2560px) { .gridSkeleton { grid-template-columns: repeat(6, 1fr); } }
 
 .skelCard {
   aspect-ratio: 9/16;
@@ -456,7 +460,7 @@
   .card:hover .cardPosterImg { transform: none; }
   .card:hover .cardPlayBtn   { opacity: 0; }
   .card { border-left: 2px solid rgba(219,39,119,0.28); }
-  .card:active { transform: scale(1.03); transition: transform 0.12s ease; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+  .card:active { opacity: 0.8; transition: opacity 0.1s ease; }
 }
 
 
