@@ -134,6 +134,13 @@
   z-index: 1;
 }
 
+/* iPad — tighter than desktop but wider than phone */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .header { padding: 0 24px; }
+  .row    { padding: 8px 24px 12px; gap: 12px; }
+  .title  { font-size: 20px; }
+}
+
 @media (max-width: 768px) {
   .header {
     padding: 0 16px;

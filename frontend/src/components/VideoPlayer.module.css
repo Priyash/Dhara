@@ -4,6 +4,17 @@
   width: 100%;
   position: relative;
   color: #fff;
+  overflow: hidden;
+}
+
+/* Fill parent container (used on Watch page where parent has explicit height) */
+.wrapperFill {
+  height: 100%;
+}
+
+.wrapperFill .videoArea {
+  height: 100%;
+  aspect-ratio: unset;
 }
 
 .fullscreen {
@@ -25,7 +36,7 @@
 
 .fullscreen .videoArea {
   aspect-ratio: unset;
-  height: 100vh;
+  height: 100dvh;
 }
 
 .video {
@@ -85,19 +96,21 @@
 /* ── Buffering / error overlays ──────────────────────────────────────────────*/
 .bufferingBadge {
   position: absolute;
-  top: 16px;
-  left: 16px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   z-index: 7;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 8px 16px;
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 999px;
   background: rgba(10,10,14,0.75);
   color: rgba(255,255,255,0.85);
-  font-size: 12px;
-  backdrop-filter: blur(8px);
+  font-size: 13px;
+  backdrop-filter: blur(12px);
+  pointer-events: none;
 }
 
 .spin {
@@ -230,9 +243,24 @@
 .progressBuffer {
   position: absolute;
   top: 0; left: 0; bottom: 0;
-  background: rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.22);
   border-radius: 2px;
   transition: width 0.5s linear;
+  overflow: hidden;
+}
+
+.progressBuffer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
+  animation: bufferShimmer 1.6s ease-in-out infinite;
+  transform: translateX(-100%);
+}
+
+@keyframes bufferShimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 .progressFill {
@@ -537,6 +565,13 @@
   margin-right: 4px;
 }
 
+/* ── Settings backdrop — closes panel when clicking outside ──────────────────*/
+.settingsBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+}
+
 /* ── Settings panel ──────────────────────────────────────────────────────────*/
 /* Positioned relative to videoArea (not controlsBar) so it stays in the same
    spot regardless of screen aspect ratio, orientation, or controls bar height. */
@@ -545,59 +580,128 @@
   right: 24px;
   bottom: 110px;
   z-index: 9;
-  width: min(320px, calc(100% - 48px));
+  width: min(260px, calc(100% - 48px));
   border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 10px;
-  background:
-    linear-gradient(180deg, rgba(22,22,26,0.98), rgba(10,10,12,0.98));
-  padding: 14px;
+  border-radius: 14px;
+  background: rgba(12,12,16,0.96);
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  backdrop-filter: blur(16px);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  gap: 16px;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
 }
 
 .settingsGroup {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .settingsLabel {
-  font-size: 11px;
-  color: rgba(255,255,255,0.4);
+  font-size: 10px;
+  color: rgba(255,255,255,0.35);
   text-transform: uppercase;
-  letter-spacing: 0.8px;
+  letter-spacing: 1px;
+  font-weight: 600;
+  padding: 0 2px;
 }
 
+/* ── Speed — segmented control ───────────────────────────────────────────────*/
 .settingsChips {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.1);
 }
 
 .chipBtn {
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 999px;
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.75);
-  padding: 5px 12px;
+  flex: 1;
+  border: none;
+  border-right: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.55);
+  padding: 9px 0;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s;
+  font-family: var(--font-body, sans-serif);
 }
 
+.chipBtn:last-child { border-right: none; }
+
 .chipBtn:hover {
-  background: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.1);
   color: #fff;
 }
 
 .chipBtnActive {
-  border-color: rgba(219,39,119,0.55);
-  background: rgba(219,39,119,0.14);
+  background: rgba(219,39,119,0.2);
   color: #f9a8d4;
+}
+
+/* ── View toggle rows ────────────────────────────────────────────────────────*/
+.settingsToggles {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.07);
+}
+
+.settingsToggleBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border: none;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-radius: 0;
+  background: rgba(255,255,255,0.03);
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-body, sans-serif);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.settingsToggleBtn:last-child { border-bottom: none; }
+
+.settingsToggleBtn:hover {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}
+
+.settingsToggleBtnActive {
+  background: rgba(219,39,119,0.1);
+  color: #f9a8d4;
+}
+
+.settingsToggleBtnActive:hover {
+  background: rgba(219,39,119,0.16);
+}
+
+.settingsToggleBtn > span:first-of-type {
+  flex: 1;
+}
+
+.settingsToggleBadge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: #f9a8d4;
+  background: rgba(219,39,119,0.18);
+  border: 1px solid rgba(219,39,119,0.3);
+  border-radius: 4px;
+  padding: 2px 7px;
+  flex-shrink: 0;
 }
 
 @media (max-width: 720px) {
@@ -615,26 +719,28 @@
   .countdownRing { width: 40px; height: 40px; }
 
   .controlsBar {
-    padding: 48px 12px 12px;
-    gap: 8px;
+    /* max() picks the larger of the two: 10px floor or iPhone home-indicator height */
+    padding: 44px 12px max(10px, env(safe-area-inset-bottom));
+    gap: 6px;
   }
 
   .controlRow {
-    gap: 8px;
+    gap: 4px;
   }
 
   .ctrlBtn {
-    width: 34px;
-    height: 34px;
+    width: 36px;
+    height: 36px;
   }
 
   .ctrlBtnPrimary {
-    width: 40px;
-    height: 40px;
+    width: 42px;
+    height: 42px;
   }
 
-  .volumeSlider {
-    width: 54px;
+  /* Hide volume group on mobile — device buttons + swipe gesture control volume */
+  .volumeGroup {
+    display: none;
   }
 
   .timeRemaining {
@@ -655,18 +761,36 @@
 
   .settingsPanel {
     right: 12px;
-    bottom: 88px;
+    bottom: max(82px, calc(72px + env(safe-area-inset-bottom)));
     width: min(300px, calc(100% - 24px));
+  }
+
+  .skipIntroBtn {
+    bottom: max(80px, calc(70px + env(safe-area-inset-bottom)));
+    left: 12px;
+  }
+}
+
+/* ── iPad (641–1024px) — touch device, slightly tighter than desktop ─────────*/
+@media (min-width: 641px) and (max-width: 1024px) {
+  .controlsBar {
+    padding: 52px 20px 14px;
+    gap: 8px;
+  }
+
+  .ctrlBtn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .volumeSlider {
+    width: 90px;
   }
 }
 
 @media (max-width: 520px) {
   .leftControls {
     gap: 0;
-  }
-
-  .volumeGroup {
-    display: none;
   }
 
   .rightControls {
@@ -684,14 +808,50 @@
   }
 }
 
-/* Touch devices: progress thumb always visible (no hover) */
+/* Touch devices: larger, always-visible thumb + generous hit area */
 @media (hover: none) {
   .progressThumb {
-    transform: translate(-50%, -50%) scale(1) !important;
+    width: 16px;
+    height: 16px;
+    transform: translate(-50%, -50%) scale(1.15) !important;
+  }
+
+  /* Grows further when actively grabbed — clear "you have it" feedback */
+  .progressThumbDragging {
+    transform: translate(-50%, -50%) scale(1.65) !important;
+    box-shadow: 0 0 0 8px rgba(219,39,119,0.18), 0 2px 10px rgba(0,0,0,0.4);
   }
 
   .progressTrack {
     height: 5px;
+  }
+
+  /* Transparent hit-zone extends 14px above/below the visible bar
+     so the track is ~33px tall for touch without changing the visual */
+  .progressTrack::before {
+    content: '';
+    position: absolute;
+    inset: -14px 0;
+    cursor: pointer;
+    z-index: 1;
+  }
+
+  /* Mobile scrub tooltip: drop the heavy canvas, show a clean time pill */
+  .thumbnailCanvas {
+    display: none;
+  }
+
+  .progressTooltip {
+    padding: 8px 16px;
+    bottom: calc(100% + 22px);
+    gap: 0;
+    border-radius: 10px;
+  }
+
+  .tooltipTime {
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
   }
 
   .ctrlBtn,
@@ -1163,10 +1323,18 @@
 :global(video::cue) {
   background: rgba(0,0,0,0.75);
   color: #fff;
-  font-size: 17px;
+  font-size: clamp(13px, 2.2vw, 22px);
   font-family: var(--font-body, system-ui, sans-serif);
   border-radius: 3px;
   padding: 2px 6px;
+}
+
+@media (min-width: 1920px) {
+  :global(video::cue) { font-size: 28px; }
+}
+
+@media (max-width: 480px) {
+  :global(video::cue) { font-size: 14px; }
 }
 
 @media (max-width: 720px) {
@@ -1229,4 +1397,46 @@
     right: 48px;
     bottom: 140px;
   }
+}
+
+/* ── Double-tap seek ripple ──────────────────────────────────────────────────*/
+.seekRipple {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 36%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 9;
+  animation: rippleExpand 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.seekRippleLeft  { left: 0;  border-radius: 0 999px 999px 0;  background: radial-gradient(ellipse at left, rgba(255,255,255,0.14) 0%, transparent 70%); }
+.seekRippleRight { right: 0; border-radius: 999px 0 0 999px;  background: radial-gradient(ellipse at right, rgba(255,255,255,0.14) 0%, transparent 70%); }
+
+.seekRippleArrows {
+  font-size: 28px;
+  font-weight: 900;
+  color: rgba(255,255,255,0.9);
+  letter-spacing: -4px;
+  line-height: 1;
+}
+
+.seekRippleLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.7);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+@keyframes rippleExpand {
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  75%  { opacity: 1; }
+  100% { opacity: 0; }
 }

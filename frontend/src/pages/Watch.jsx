@@ -63,18 +63,26 @@ export default function Watch() {
     setShowEndCard(false)
   }, [hlsUrl])
 
-  // Apply / remove sticky on play state change
+  // Apply / remove sticky on play state change; hide navbar + lock scroll while playing
   useEffect(() => {
     const el = playerWrapRef.current
     if (!el) return
     if (playerPlaying && !stickyReleasedRef.current) {
       el.classList.add(styles.playerWrapLocked)
-      // Scroll the player into view if it's not already fully visible
       el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     } else {
       el.classList.remove(styles.playerWrapLocked)
     }
+
+    if (playerPlaying) {
+      document.body.classList.add('video-playing')
+    } else {
+      document.body.classList.remove('video-playing')
+    }
   }, [playerPlaying])
+
+  // Always clean up the body class on unmount
+  useEffect(() => () => { document.body.classList.remove('video-playing') }, [])
 
   // Release lock on user-initiated scroll or resize
   useEffect(() => {
@@ -577,7 +585,7 @@ export default function Watch() {
             </button>
           </div>
         ) : (
-          <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative', height: '100%' }}>
             <VideoPlayer
               src={hlsUrl}
               title={playerTitle}
@@ -593,6 +601,7 @@ export default function Watch() {
               onVideoEnded={!hasNextEp ? () => setShowEndCard(true) : undefined}
               isLive={false}
               watermarkText={user?.email || user?.uid || null}
+              fillContainer
             />
             {/* End card — shown when video finishes and there is no next episode */}
             {showEndCard && !hasNextEp && (

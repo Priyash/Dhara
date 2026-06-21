@@ -55,8 +55,14 @@ router.post('/apply', requireAuth, async (req, res, next) => {
 
     if (!studioName?.trim())
       return res.status(400).json({ error: 'Studio name is required' })
+    if (String(studioName).length > 120)
+      return res.status(400).json({ error: 'Studio name must be 120 characters or fewer' })
     if (!sampleWorkUrl?.trim())
       return res.status(400).json({ error: 'A link to your sample work is required' })
+    if (String(sampleWorkUrl).length > 500)
+      return res.status(400).json({ error: 'Sample work URL must be 500 characters or fewer' })
+    if (bio && String(bio).length > 1000)
+      return res.status(400).json({ error: 'Bio must be 1000 characters or fewer' })
     if (!Array.isArray(contentTypes) || contentTypes.length === 0)
       return res.status(400).json({ error: 'Select at least one content type you plan to upload' })
 
@@ -70,10 +76,10 @@ router.post('/apply', requireAuth, async (req, res, next) => {
       {
         $set: {
           creatorStatus:                 'applied',
-          'creatorProfile.studioName':   studioName.trim(),
-          'creatorProfile.bio':          (bio || '').trim(),
-          'creatorProfile.portfolioUrl': (portfolioUrl || '').trim(),
-          'creatorProfile.sampleWorkUrl': sampleWorkUrl.trim(),
+          'creatorProfile.studioName':   String(studioName).trim().slice(0, 120),
+          'creatorProfile.bio':          String(bio || '').trim().slice(0, 1000),
+          'creatorProfile.portfolioUrl': String(portfolioUrl || '').trim().slice(0, 500),
+          'creatorProfile.sampleWorkUrl': String(sampleWorkUrl).trim().slice(0, 500),
           'creatorProfile.contentTypes': sanitizedTypes,
           'creatorProfile.appliedAt':    new Date(),
           creatorRejectionReason:        '',
@@ -116,11 +122,22 @@ router.patch('/profile', requireAuth, requireCreator, async (req, res, next) => 
   try {
     const { studioName, bio, portfolioUrl, sampleWorkUrl, contentTypes } = req.body
     const updates = {}
-    if (studioName    !== undefined) updates['creatorProfile.studioName']    = studioName.trim()
-    if (bio           !== undefined) updates['creatorProfile.bio']            = bio.trim()
-    if (portfolioUrl  !== undefined) updates['creatorProfile.portfolioUrl']   = portfolioUrl.trim()
-    if (sampleWorkUrl !== undefined) updates['creatorProfile.sampleWorkUrl']  = sampleWorkUrl.trim()
-    if (contentTypes  !== undefined && Array.isArray(contentTypes)) {
+    if (studioName !== undefined) {
+      if (String(studioName).length > 120) return res.status(400).json({ error: 'Studio name must be 120 characters or fewer' })
+      updates['creatorProfile.studioName'] = String(studioName).trim().slice(0, 120)
+    }
+    if (bio !== undefined) {
+      if (String(bio).length > 1000) return res.status(400).json({ error: 'Bio must be 1000 characters or fewer' })
+      updates['creatorProfile.bio'] = String(bio).trim().slice(0, 1000)
+    }
+    if (portfolioUrl !== undefined) {
+      updates['creatorProfile.portfolioUrl'] = String(portfolioUrl).trim().slice(0, 500)
+    }
+    if (sampleWorkUrl !== undefined) {
+      if (String(sampleWorkUrl).length > 500) return res.status(400).json({ error: 'Sample work URL must be 500 characters or fewer' })
+      updates['creatorProfile.sampleWorkUrl'] = String(sampleWorkUrl).trim().slice(0, 500)
+    }
+    if (contentTypes !== undefined && Array.isArray(contentTypes)) {
       const VALID = ['Film', 'Series', 'Serial Drama', 'Documentary']
       updates['creatorProfile.contentTypes'] = contentTypes.filter((t) => VALID.includes(t))
     }

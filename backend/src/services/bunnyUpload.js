@@ -6,6 +6,7 @@
  */
 import { Readable } from 'stream'
 import { UploadJob } from '../models/UploadJob.js'
+import { Reel } from '../models/Reel.js'
 
 const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID
 const accessKey = process.env.BUNNY_STREAM_API_KEY
@@ -78,6 +79,15 @@ export async function processUploadJob(jobId, fileBuffer, fileSize = 0) {
     await UploadJob.findByIdAndUpdate(jobId, {
       $set: { bunnyVideoId, progress: 45, note: 'Uploading source file to Bunny Stream...' },
     })
+
+    // Persist bunnyVideoId + thumbnailUrl on the Reel immediately so the stream URL
+    // and card thumbnail work while Bunny is still transcoding.
+    if (job.reelId) {
+      const pullZone    = process.env.BUNNY_CDN_PULL_ZONE || ''
+      const thumbnailUrl = pullZone ? `https://${pullZone}/${bunnyVideoId}/thumbnail.jpg` : ''
+      const reelUpdates = { bunnyVideoId, ...(thumbnailUrl && { thumbnailUrl }) }
+      Reel.findByIdAndUpdate(job.reelId, { $set: reelUpdates }).catch(() => {})
+    }
 
     // Content-Length is required — without it Bunny accepts HTTP 200 but internally
     // marks the upload as failed (status 5) because it can't verify the file was complete.

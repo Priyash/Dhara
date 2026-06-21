@@ -766,6 +766,11 @@ router.put('/upload-jobs/:id/file', async (req, res, next) => {
     }
 
     const fileName = String(req.headers['x-file-name'] || '').slice(0, 240)
+    const allowedExtensions = ['.mp4', '.mov', '.mkv', '.avi', '.webm', '.m4v', '.ts', '.mts']
+    const fileExt = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')).toLowerCase() : ''
+    if (fileName && !allowedExtensions.includes(fileExt)) {
+      return res.status(415).json({ error: `Unsupported file type "${fileExt}". Allowed: ${allowedExtensions.join(', ')}` })
+    }
 
     // Buffer the entire request body to a temp file BEFORE making any Bunny API calls.
     // Streaming req directly to Bunny caused "TypeError: fetch failed" because the

@@ -1,19 +1,13 @@
 .routePane {
-  animation: pageFadeIn 180ms ease both;
+  animation: pageFadeIn 180ms ease backwards;
 }
 
 @keyframes pageFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .pageFallback {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--color-bg);
 }

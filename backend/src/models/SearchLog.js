@@ -11,5 +11,6 @@ const searchLogSchema = new mongoose.Schema(
 
 searchLogSchema.index({ query: 1, createdAt: -1 })
 searchLogSchema.index({ resultCount: 1, createdAt: -1 })
+searchLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 })
 
 export const SearchLog = mongoose.model('SearchLog', searchLogSchema)

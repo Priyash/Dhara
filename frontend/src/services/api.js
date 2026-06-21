@@ -204,11 +204,12 @@ export async function recordInteractionEvent(payload) {
 }
 
 export async function fetchRecommendations(params = {}) {
-  const qs = new URLSearchParams({
-    sessionId: getRecommendationSessionId(),
-    ...Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== '')),
-  }).toString()
-  const data = await request(`/api/recommendations${qs ? `?${qs}` : ''}`)
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  const data = await request(`/api/recommendations${qs ? `?${qs}` : ''}`, {
+    headers: { 'X-Rec-Session': getRecommendationSessionId() },
+  })
   return {
     ...data,
     items: Array.isArray(data?.items) ? data.items.map(normalizeItem) : [],
@@ -216,8 +217,9 @@ export async function fetchRecommendations(params = {}) {
 }
 
 export async function fetchRecommendationShelves() {
-  const qs = new URLSearchParams({ sessionId: getRecommendationSessionId() }).toString()
-  const data = await request(`/api/recommendations/shelves?${qs}`)
+  const data = await request('/api/recommendations/shelves', {
+    headers: { 'X-Rec-Session': getRecommendationSessionId() },
+  })
   return (data.shelves || []).map(shelf => ({
     ...shelf,
     items: Array.isArray(shelf.items) ? shelf.items.map(normalizeItem) : [],
@@ -515,6 +517,14 @@ export async function recordView(id, episodeNumber = null, positionSecs = 30, se
 
 export async function searchReels(q) {
   const data = await request(`/api/reels/search?q=${encodeURIComponent(q)}`)
+  return Array.isArray(data) ? data : []
+}
+
+export async function fetchReelHashtags(params = {}) {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  const data = await request(`/api/reels/hashtags${qs ? `?${qs}` : ''}`)
   return Array.isArray(data) ? data : []
 }
 

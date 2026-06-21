@@ -1,5 +1,5 @@
 .page {
-  min-height: 100vh;
+  min-height: 100dvh;
   padding: calc(var(--nav-height, 64px) + 0px) 0 80px;
   font-family: var(--font-body, 'DM Sans', sans-serif);
 }

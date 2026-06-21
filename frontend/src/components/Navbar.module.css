@@ -10,7 +10,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 32px;
-  transition: background var(--transition), border-color var(--transition), backdrop-filter var(--transition);
+  transition: background var(--transition), border-color var(--transition),
+              backdrop-filter var(--transition), transform 0.35s ease, opacity 0.35s ease;
+}
+
+/* Slide nav off-screen while a video is actively playing */
+:global(body.video-playing) .nav {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .scrolled {

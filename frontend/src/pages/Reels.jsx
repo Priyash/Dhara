@@ -3,14 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   Heart, MessageCircle, ArrowLeft, Volume2, VolumeX,
   ChevronUp, ChevronDown, Send, Loader2, Hash, X, Trash2,
-  Play, Eye, TrendingUp, Zap,
+  Play, Eye, TrendingUp, Zap, Share2,
 } from 'lucide-react'
 import Hls from 'hls.js'
 import { useStore } from '../store/useStore'
 import {
   fetchReels, fetchReelById, fetchReelStreamUrl, recordReelView, likeReel,
   fetchReelComments, postReelComment, deleteReelComment,
-  recordInteractionEvent, getMe,
+  recordInteractionEvent, getMe, fetchReelHashtags,
 } from '../services/api'
 import VerifiedBadge from '../components/VerifiedBadge'
 import styles from './Reels.module.css'
@@ -54,18 +54,16 @@ function ReelGrid() {
   const [hasMore,     setHasMore]     = useState(false)
   const [loading,     setLoading]     = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [topHashtags, setTopHashtags] = useState([])
 
-  const [showTopics,   setShowTopics]   = useState(false)
-  const [topicSearch,  setTopicSearch]  = useState('')
+  const sentinelRef = useRef(null)
 
-  // Derive hashtags with counts, sorted by frequency
-  const hashtagCounts = reels.reduce((acc, r) => {
-    ;(r.hashtags || []).forEach(t => { acc[t] = (acc[t] || 0) + 1 })
-    return acc
-  }, {})
-  const allHashtags = Object.entries(hashtagCounts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([tag]) => tag)
+  // Fetch top hashtags from backend — handles thousands of tags without client-side aggregation
+  useEffect(() => {
+    fetchReelHashtags({ limit: 15 })
+      .then(tags => setTopHashtags(tags))
+      .catch(() => {})
+  }, [])
 
   const load = useCallback(async (sort, tag, pg) => {
     try {
@@ -92,13 +90,25 @@ function ReelGrid() {
     load(tab, hashtag, 1)
   }, [tab, hashtag, load, authLoading])
 
-  const loadMore = () => {
+  const loadMore = useCallback(() => {
     if (loadingMore || !hasMore) return
     const next = page + 1
     setPage(next)
     setLoadingMore(true)
     load(tab, hashtag, next)
-  }
+  }, [loadingMore, hasMore, page, tab, hashtag, load])
+
+  // Infinite scroll — trigger loadMore when sentinel enters viewport
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) loadMore() },
+      { rootMargin: '400px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [loadMore])
 
   const handleReelClick = (reel) => {
     if (!isLoggedIn) {
@@ -136,62 +146,22 @@ function ReelGrid() {
         </button>
       </div>
 
-      {/* ── Topic filter bar ── */}
-      {allHashtags.length > 0 && (
+      {/* ── Topic filter bar — chips sourced from backend aggregation ── */}
+      {topHashtags.length > 0 && (
         <div className={styles.topicBar}>
-          {/* Active filter chip — shown when a hashtag is selected */}
           {hashtag && (
             <button className={`${styles.chip} ${styles.chipActive}`} onClick={() => setHashtag('')}>
               <Hash size={10} />{hashtag} <X size={10} />
             </button>
           )}
-
-          {/* Show top 5 most-used hashtags inline for quick access */}
-          {!hashtag && allHashtags.slice(0, 5).map((t) => (
-            <button key={t} className={styles.chip} onClick={() => setHashtag(t)}>
-              <Hash size={10} />{t}
-              <span className={styles.chipCount}>{hashtagCounts[t]}</span>
-            </button>
-          ))}
-
-          {/* "Browse topics" popover for all hashtags */}
-          {allHashtags.length > 5 && !hashtag && (
-            <div className={styles.topicsMenu}>
-              <button
-                className={`${styles.chip} ${showTopics ? styles.chipActive : ''}`}
-                onClick={() => { setShowTopics(v => !v); setTopicSearch('') }}
-              >
-                <Hash size={10} /> Browse topics
-                {showTopics ? <X size={10} /> : <span className={styles.chipCount}>+{allHashtags.length - 5}</span>}
+          {topHashtags
+            .filter(({ tag }) => tag !== hashtag)
+            .map(({ tag, count }) => (
+              <button key={tag} className={styles.chip} onClick={() => setHashtag(tag)}>
+                <Hash size={10} />{tag}
+                <span className={styles.chipCount}>{count}</span>
               </button>
-              {showTopics && (
-                <div className={styles.topicsDropdown}>
-                  <div className={styles.topicsSearch}>
-                    <input
-                      className={styles.topicsInput}
-                      value={topicSearch}
-                      onChange={e => setTopicSearch(e.target.value.toLowerCase())}
-                      placeholder="Search topics…"
-                      autoFocus
-                    />
-                  </div>
-                  <div className={styles.topicsList}>
-                    {allHashtags
-                      .filter(t => !topicSearch || t.includes(topicSearch))
-                      .slice(0, 50)
-                      .map(t => (
-                        <button key={t} className={styles.topicsItem}
-                          onClick={() => { setHashtag(t); setShowTopics(false) }}>
-                          <Hash size={11} />
-                          <span>{t}</span>
-                          <span className={styles.topicsCount}>{hashtagCounts[t]}</span>
-                        </button>
-                      ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+            ))}
         </div>
       )}
 
@@ -222,11 +192,10 @@ function ReelGrid() {
               <ReelCard key={reel._id} reel={reel} showGate={!isLoggedIn} onClick={() => handleReelClick(reel)} />
             ))}
           </div>
-          {hasMore && (
-            <div className={styles.loadMoreWrap}>
-              <button className={styles.loadMoreBtn} onClick={loadMore} disabled={loadingMore}>
-                {loadingMore ? <><Loader2 size={14} className={styles.spin} /> Loading…</> : 'Load more'}
-              </button>
+          {hasMore && <div ref={sentinelRef} className={styles.sentinel} />}
+          {loadingMore && (
+            <div className={styles.feedLoader}>
+              <Loader2 size={20} className={styles.spin} />
             </div>
           )}
         </>
@@ -238,62 +207,67 @@ function ReelGrid() {
 
 // ── Individual grid card ──────────────────────────────────────────────────────
 
-const ASPECT_RATIO_MAP = { '16:9': '16/9', '1:1': '1/1', '9:16': '9/16' }
-
 function ReelCard({ reel, onClick, showGate = false }) {
   const creator    = reel.creatorId
-  const studioName = creator?.creatorProfile?.studioName || creator?.displayName || 'Creator'
-  const aspectRatio = ASPECT_RATIO_MAP[reel.aspectRatio] || '9/16'
+  const studioName = creator?.creatorProfile?.studioName || creator?.displayName || ''
 
   return (
-    <article className={styles.card} onClick={onClick} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}>
-      <div
-        className={styles.cardPoster}
-        style={{
-          aspectRatio,
-          ...(reel.thumbnailUrl
-            ? { backgroundImage: `url(${reel.thumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-            : { background: 'linear-gradient(160deg,#1e1b4b 0%,#4c1d95 50%,#7c3aed 100%)' }),
-        }}
-      >
-        <div className={styles.cardScrim} />
+    <article
+      className={styles.card}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      aria-label={reel.title || 'Reel'}
+      onKeyDown={(e) => e.key === 'Enter' && onClick()}
+    >
+      <div className={styles.cardPoster}>
+        {reel.thumbnailUrl && (
+          <img
+            src={reel.thumbnailUrl}
+            alt={reel.title || 'Reel'}
+            className={styles.cardPosterImg}
+            loading="lazy"
+            decoding="async"
+            onError={(e) => { e.currentTarget.style.display = 'none' }}
+          />
+        )}
 
-        {/* Play button — gate hint for signed-out users, plain play for signed-in */}
-        <div className={styles.cardPlay}>
-          {showGate
-            ? <span className={styles.cardGateBadge}>Sign in to watch</span>
-            : <Play size={18} fill="#fff" />
-          }
-        </div>
+        <div className={styles.cardGradient} aria-hidden="true" />
 
-        {/* Engagement stats — always visible */}
-        <div className={styles.cardStats}>
-          <span><Eye size={10} />{fmt(reel.viewCount || 0)}</span>
-          <span><Heart size={10} />{fmt(reel.likeCount || 0)}</span>
-          <span><MessageCircle size={10} />{fmt(reel.commentCount || 0)}</span>
-        </div>
+        {/* Views — top left */}
+        {(reel.viewCount || 0) > 0 && (
+          <div className={styles.cardInfoViews} aria-hidden="true">
+            <Eye size={10} />{fmt(reel.viewCount)}
+          </div>
+        )}
 
-        {/* Duration badge — top right */}
+        {/* Duration — top right */}
         {reel.durationSecs > 0 && (
-          <span className={styles.cardDur}>{reel.durationSecs}s</span>
+          <div className={styles.cardDur}>{reel.durationSecs}s</div>
         )}
-      </div>
 
-      <div className={styles.cardMeta}>
-        <div className={styles.cardCreatorRow}>
-          {creator?.photoURL
-            ? <img src={creator.photoURL} alt={studioName} className={styles.cardAvatar} />
-            : <div className={styles.cardAvatarFb}>{studioName[0]?.toUpperCase()}</div>
-          }
-          <span className={styles.cardCreator}>{studioName}</span>
-          <VerifiedBadge size={11} />
+        {/* Hover play button */}
+        <div className={styles.cardPlayBtn} aria-hidden="true">
+          <Play size={17} fill="#fff" style={{ marginLeft: 2 }} />
         </div>
-        {reel.title && <p className={styles.cardTitle}>{reel.title}</p>}
-        {reel.hashtags?.length > 0 && (
-          <p className={styles.cardTags}>
-            {reel.hashtags.slice(0, 2).map((t) => `#${t}`).join(' ')}
-          </p>
+
+        {/* Gate */}
+        {showGate && (
+          <div className={styles.cardGate}>Sign in to watch</div>
         )}
+
+        {/* Info panel */}
+        <div className={styles.cardInfo}>
+          {studioName && <p className={styles.cardInfoCreator}>{studioName}</p>}
+          {reel.title && <p className={styles.cardInfoTitle}>{reel.title}</p>}
+          {reel.hashtags?.length > 0 && (
+            <div className={styles.cardInfoTags}>
+              {reel.hashtags.slice(0, 2).map(t => (
+                <span key={t} className={styles.cardInfoTag}>#{t}</span>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </article>
   )
@@ -321,9 +295,17 @@ function ReelPlayer({ startId }) {
   const [commentLoading, setCommentLoading] = useState(false)
   const [postingComment, setPostingComment] = useState(false)
 
+  const [userPaused, setUserPaused] = useState(false)
+  const [feedPage,    setFeedPage]    = useState(1)
+  const [feedHasMore, setFeedHasMore] = useState(true)
+  const feedLoadingRef  = useRef(false)
+  const streamFetchRef  = useRef(new Set())
+
   const viewRecordedRef = useRef(new Set())
   const milestoneRef    = useRef(new Set())
   const commentInputRef = useRef(null)
+  const stageRef        = useRef(null)
+  const swipeStartRef   = useRef(null)
 
   useEffect(() => {
     if (authLoading || !isLoggedIn) return
@@ -379,18 +361,112 @@ function ReelPlayer({ startId }) {
       .filter((i) => i >= 0 && i < reels.length)
       .forEach((i) => {
         const reel = reels[i]
-        if (!reel || streamUrls[reel._id]) return
-        fetchReelStreamUrl(reel._id)
-          .then(({ hlsUrl }) => setStreamUrls((p) => ({ ...p, [reel._id]: hlsUrl })))
-          .catch(() => {})
+        if (!reel) return
+        const id = String(reel._id || reel.id)
+        if (id in streamUrls || streamFetchRef.current.has(id)) return
+        if (reel.videoUrl) {
+          setStreamUrls((p) => ({ ...p, [id]: reel.videoUrl }))
+          return
+        }
+        streamFetchRef.current.add(id)
+        fetchReelStreamUrl(id)
+          .then(({ hlsUrl, videoUrl }) => {
+            const url = hlsUrl || videoUrl
+            setStreamUrls((p) => ({ ...p, [id]: url || null }))
+          })
+          .catch((err) => {
+            console.error('[reel:stream]', id, err?.message)
+            setStreamUrls((p) => ({ ...p, [id]: null }))
+          })
+          .finally(() => streamFetchRef.current.delete(id))
       })
-  }, [activeIndex, reels])
+  }, [activeIndex, reels]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-load more reels when approaching the end of the current batch
+  useEffect(() => {
+    if (!feedHasMore || feedLoadingRef.current || !reels.length) return
+    if (activeIndex < reels.length - 4) return
+    feedLoadingRef.current = true
+    const nextPage = feedPage + 1
+    fetchReels({ limit: 20, page: nextPage })
+      .then((data) => {
+        const items = data?.items || []
+        if (!items.length || (data.page || 1) >= (data.pages || 1)) { setFeedHasMore(false); return }
+        setReels((prev) => {
+          const seen = new Set(prev.map((r) => String(r._id || r.id)))
+          return [...prev, ...items.filter((r) => !seen.has(String(r._id || r.id)))]
+        })
+        setStats((prev) => {
+          const s = { ...prev }
+          items.forEach((r) => {
+            const id = String(r._id || r.id)
+            if (!s[id]) s[id] = { viewCount: r.viewCount || 0, likeCount: r.likeCount || 0, commentCount: r.commentCount || 0 }
+          })
+          return s
+        })
+        setFeedPage(nextPage)
+      })
+      .catch(() => {})
+      .finally(() => { feedLoadingRef.current = false })
+  }, [activeIndex, reels.length, feedHasMore, feedPage])
 
   const goTo = useCallback((idx) => {
     if (idx < 0 || idx >= reels.length) return
     setActiveIndex(idx)
+    setUserPaused(false)
     navigate(`/reels/${reels[idx]._id}`, { replace: true })
   }, [reels, navigate])
+
+  const handleStageTouchStart = useCallback((e) => {
+    if (commentsFor) return
+    const t = e.touches[0]
+    swipeStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() }
+  }, [commentsFor])
+
+  const handleStageTouchEnd = useCallback((e) => {
+    const start = swipeStartRef.current
+    swipeStartRef.current = null
+    if (!start || commentsFor) return
+    const touch = e.changedTouches[0]
+    const dx = touch.clientX - start.x
+    const dy = touch.clientY - start.y
+    const elapsed = Date.now() - start.t
+    const rect = stageRef.current?.getBoundingClientRect()
+
+    // Exclude edges where UI elements live:
+    //   right 20 %  → like / comment / view buttons
+    //   top  18 %   → back / mute floating buttons
+    //   bottom 24 % → nav arrows + creator meta
+    if (rect) {
+      const rx = (start.x - rect.left)  / rect.width
+      const ry = (start.y - rect.top)   / rect.height
+      if (rx > 0.80 || ry < 0.18 || ry > 0.76) return
+    }
+
+    // Tap (small movement, quick) → toggle pause
+    if (Math.abs(dx) < 14 && Math.abs(dy) < 14 && elapsed < 300) {
+      setUserPaused(p => !p)
+      return
+    }
+
+    // Swipe right → native share
+    if (dx > 80 && Math.abs(dx) > Math.abs(dy) * 1.5 && elapsed < 500 && navigator.share) {
+      const reel = reels[activeIndex]
+      if (reel) {
+        navigator.share({
+          title: reel.title || 'Check this out on Dhara',
+          url: window.location.href,
+        }).catch(() => {})
+      }
+      return
+    }
+
+    // Vertical swipe → navigate
+    if (Math.abs(dy) > Math.abs(dx) * 1.3 && Math.abs(dy) > 55 && elapsed < 500) {
+      if (dy < 0) goTo(activeIndex + 1)
+      else        goTo(activeIndex - 1)
+    }
+  }, [commentsFor, activeIndex, goTo, reels])
 
   useEffect(() => {
     const h = (e) => {
@@ -515,13 +591,19 @@ function ReelPlayer({ startId }) {
 
   return (
     <div className={styles.root}>
-      <div className={styles.stage}>
+      <div
+        ref={stageRef}
+        className={styles.stage}
+        onTouchStart={handleStageTouchStart}
+        onTouchEnd={handleStageTouchEnd}
+      >
         {reels.map((reel, i) => (
           <ReelSlide
             key={reel._id}
             reel={reel}
             isActive={i === activeIndex}
-            hlsUrl={streamUrls[String(reel._id)] || null}
+            userPaused={i === activeIndex && userPaused}
+            hlsUrl={streamUrls[String(reel._id)]}
             muted={muted}
             liked={likedIds.has(String(reel._id))}
             reelStats={stats[String(reel._id)] || {}}
@@ -534,10 +616,10 @@ function ReelPlayer({ startId }) {
         ))}
 
         {/* Back to grid */}
-        <button className={styles.btnFloat} style={{ top: 68, left: 16 }} onClick={() => navigate('/reels')} aria-label="Back to Reels">
+        <button className={`${styles.btnFloat} ${styles.btnFloatNav}`} style={{ left: 16 }} onClick={() => navigate('/reels')} aria-label="Back to Reels">
           <ArrowLeft size={16} />
         </button>
-        <button className={styles.btnFloat} style={{ top: 68, right: 60 }} onClick={() => setMuted((m) => !m)} aria-label="Mute">
+        <button className={`${styles.btnFloat} ${styles.btnFloatNav}`} style={{ right: 16 }} onClick={() => setMuted((m) => !m)} aria-label="Mute">
           {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
         </button>
 
@@ -547,7 +629,7 @@ function ReelPlayer({ startId }) {
             <ChevronUp size={18} />
           </button>
           <span className={styles.navNum}>{activeIndex + 1}<em>/{reels.length}</em></span>
-          <button className={styles.navArrow} onClick={() => goTo(activeIndex + 1)} disabled={activeIndex === reels.length - 1}>
+          <button className={styles.navArrow} onClick={() => goTo(activeIndex + 1)} disabled={activeIndex === reels.length - 1 && !feedHasMore}>
             <ChevronDown size={18} />
           </button>
         </div>
@@ -604,32 +686,88 @@ function ReelPlayer({ startId }) {
 
 // ── Slide ─────────────────────────────────────────────────────────────────────
 
-function ReelSlide({ reel, isActive, hlsUrl, muted, liked, reelStats, onLike, onComment, viewRecordedRef, milestoneRef, onViewCounted }) {
-  const videoRef   = useRef(null)
-  const hlsRef     = useRef(null)
-  const pollRef    = useRef(null)
-  const lastPosRef = useRef(0)
-  const lastDurRef = useRef(0)
-  const [progress,  setProgress]  = useState(0)
-  const [heartPop,  setHeartPop]  = useState(false)   // one-shot animation trigger
+function ReelSlide({ reel, isActive, userPaused, hlsUrl, muted, liked, reelStats, onLike, onComment, viewRecordedRef, milestoneRef, onViewCounted }) {
+  const videoRef      = useRef(null)
+  const hlsRef        = useRef(null)
+  const pollRef       = useRef(null)
+  const lastPosRef    = useRef(0)
+  const lastDurRef    = useRef(0)
+  const isActiveRef   = useRef(isActive)
+  const userPausedRef = useRef(userPaused)
+  const [progress,    setProgress]    = useState(0)
+  const [heartPop,    setHeartPop]    = useState(false)
+  const [slowMode,    setSlowMode]    = useState(false)
+  const [loopCount,   setLoopCount]   = useState(0)
+  const [hlsError,    setHlsError]    = useState(false)
+  const slowPressRef = useRef(null)
+
+  useEffect(() => { isActiveRef.current   = isActive   }, [isActive])
+  useEffect(() => { userPausedRef.current = userPaused }, [userPaused])
+
+  // Reset error state when a new URL arrives
+  useEffect(() => { if (hlsUrl) setHlsError(false) }, [hlsUrl])
 
   useEffect(() => {
-    const v = videoRef.current; if (!v || !hlsUrl) return
-    if (v.canPlayType('application/vnd.apple.mpegurl')) { v.src = hlsUrl }
-    else if (Hls.isSupported()) {
-      const h = new Hls({ maxBufferLength: 20, startLevel: 0 })
-      h.loadSource(hlsUrl); h.attachMedia(v); hlsRef.current = h
+    const v = videoRef.current
+    if (!v || !hlsUrl) return
+    setHlsError(false)
+
+    if (v.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari — native HLS
+      v.src = hlsUrl
+      if (isActiveRef.current && !userPausedRef.current) {
+        v.play().catch(() => {})
+      }
+    } else if (Hls.isSupported()) {
+      const h = new Hls({
+        maxBufferLength:    20,
+        startLevel:         0,
+        enableWorker:       true,
+        lowLatencyMode:     false,
+      })
+      h.loadSource(hlsUrl)
+      h.attachMedia(v)
+      h.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (isActiveRef.current && !userPausedRef.current) v.play().catch(() => {})
+      })
+      h.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) {
+          console.error('[hls:fatal]', reel._id, data.type, data.details)
+          setHlsError(true)
+          h.destroy()
+          hlsRef.current = null
+        }
+      })
+      hlsRef.current = h
+    } else {
+      // Fallback: try direct src (some browsers handle HLS natively without the API)
+      v.src = hlsUrl
+      v.play().catch(() => {})
     }
-    return () => { hlsRef.current?.destroy(); hlsRef.current = null; v.src = '' }
-  }, [hlsUrl])
+    return () => {
+      hlsRef.current?.destroy()
+      hlsRef.current = null
+      if (v) { v.pause(); v.src = '' }
+    }
+  }, [hlsUrl]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const v = videoRef.current; if (!v) return
-    if (isActive && hlsUrl) { v.play().catch(() => {}) }
-    else { v.pause(); v.currentTime = 0; setProgress(0) }
-  }, [isActive, hlsUrl])
+    if (isActive && hlsUrl) {
+      if (userPaused) v.pause()
+      else v.play().catch(() => {})
+    } else {
+      v.pause(); v.currentTime = 0; setProgress(0); setLoopCount(0)
+    }
+  }, [isActive, hlsUrl, userPaused])
 
   useEffect(() => { if (videoRef.current) videoRef.current.muted = muted }, [muted])
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    v.playbackRate = slowMode ? 0.5 : 1
+  }, [slowMode])
 
   useEffect(() => {
     const v = videoRef.current; if (!v || !isActive) return
@@ -681,26 +819,89 @@ function ReelSlide({ reel, isActive, hlsUrl, muted, liked, reelStats, onLike, on
     }
   }, [isActive, hlsUrl, reel._id])
 
+  const handleShare = useCallback(async () => {
+    const shareData = { title: reel.title || 'Dhara', url: window.location.href }
+    if (navigator.share) {
+      navigator.share(shareData).catch(() => {})
+    } else {
+      try { await navigator.clipboard.writeText(window.location.href) } catch {}
+    }
+  }, [reel.title])
+
   const creator    = reel.creatorId
   const studioName = creator?.creatorProfile?.studioName || creator?.displayName || 'Creator'
   const vc = reelStats.viewCount || 0, lc = reelStats.likeCount || 0, cc = reelStats.commentCount || 0
 
   return (
-    <div className={`${styles.slide} ${isActive ? styles.on : ''}`}>
-      <video ref={videoRef} className={styles.vid} muted={muted} playsInline loop preload="metadata" poster={reel.thumbnailUrl || undefined} />
+    <div
+      className={`${styles.slide} ${isActive ? styles.on : ''}`}
+      onTouchStart={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect()
+        const rx = (e.touches[0].clientX - rect.left) / rect.width
+        if (rx > 0.80) return
+        slowPressRef.current = setTimeout(() => {
+          if (navigator.vibrate) navigator.vibrate(20)
+          setSlowMode(true)
+        }, 600)
+      }}
+      onTouchEnd={() => {
+        clearTimeout(slowPressRef.current)
+        setSlowMode(false)
+      }}
+    >
+      <video
+        ref={videoRef}
+        className={styles.vid}
+        muted={muted}
+        playsInline
+        loop
+        preload={isActive ? 'auto' : 'metadata'}
+        poster={reel.thumbnailUrl || undefined}
+        onEnded={() => setLoopCount(c => c + 1)}
+      />
 
-      {/* Bottom gradient — heavier at base for text legibility */}
       <div className={styles.scrim} />
 
-      {/* Thin progress bar at the very bottom */}
+      {/* Loading spinner — shown while stream URL is being fetched */}
+      {isActive && hlsUrl === undefined && !hlsError && (
+        <div className={styles.slideLoader} aria-hidden="true">
+          <Loader2 size={28} className={styles.spin} />
+        </div>
+      )}
+
+      {/* Error state — stream URL returned null (404 / not ready) or HLS fatal error */}
+      {isActive && (hlsUrl === null || hlsError) && (
+        <div className={styles.slideUnavailable} aria-hidden="true">
+          <Play size={22} strokeWidth={1.5} />
+          <span>Video not available</span>
+        </div>
+      )}
+
+      {userPaused && (
+        <div className={styles.pauseOverlay} aria-hidden="true">
+          <div className={styles.pauseIcon}>
+            <Play size={30} fill="#fff" style={{ marginLeft: 3 }} />
+          </div>
+        </div>
+      )}
+
+      {slowMode && (
+        <div className={styles.slowBadge} aria-hidden="true">½× Slow</div>
+      )}
+
+      {loopCount > 0 && (
+        <div className={styles.loopBadge} aria-hidden="true">
+          <span>↺</span> {loopCount > 1 ? `×${loopCount}` : '2nd watch'}
+        </div>
+      )}
+
       <div className={styles.bar}><div className={styles.fill} style={{ width: `${progress * 100}%` }} /></div>
 
-      {/* ── Right sidebar actions (Instagram style: icon above, count below) ── */}
+      {/* ── Right sidebar: Like · Comment · Share · Views ── */}
       <div className={styles.actions}>
         <button
           className={`${styles.igAction} ${liked ? styles.igActionLiked : ''}`}
           onClick={() => {
-            // Fire pop only when going liked→true (not when unliking)
             if (!liked) { setHeartPop(true); setTimeout(() => setHeartPop(false), 400) }
             onLike()
           }}
@@ -712,11 +913,17 @@ function ReelSlide({ reel, isActive, hlsUrl, muted, liked, reelStats, onLike, on
             strokeWidth={liked ? 0 : 1.6}
             className={heartPop ? styles.igHeartPop : ''}
           />
+          <span>{fmt(lc)}</span>
         </button>
 
         <button className={styles.igAction} onClick={onComment} aria-label="Comments">
           <MessageCircle size={27} strokeWidth={1.6} />
           <span>{fmt(cc)}</span>
+        </button>
+
+        <button className={styles.igAction} onClick={handleShare} aria-label="Share">
+          <Share2 size={25} strokeWidth={1.6} />
+          <span>Share</span>
         </button>
 
         <div className={styles.igActionStat}>
@@ -735,7 +942,7 @@ function ReelSlide({ reel, isActive, hlsUrl, muted, liked, reelStats, onLike, on
             }
           </div>
           <span className={styles.creatorName}>{studioName}</span>
-          <VerifiedBadge size={15} style={{ boxShadow: '0 0 0 1.5px rgba(167,139,250,0.35), 0 0 8px rgba(167,139,250,0.7)' }} />
+          <VerifiedBadge size={15} />
         </div>
         {reel.title && <p className={styles.caption}>{reel.title}</p>}
         {reel.hashtags?.length > 0 && (

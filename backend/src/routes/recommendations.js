@@ -146,10 +146,11 @@ router.get('/', optionalAuth, async (req, res, next) => {
       .map((id) => parseObjectId(id.trim()))
       .filter(Boolean)
 
+    const rawSession = req.headers['x-rec-session'] || req.query.sessionId || ''
     const identity = req.user?._id
       ? { userId: req.user._id }
-      : req.query.sessionId
-      ? { sessionId: String(req.query.sessionId).slice(0, 120) }
+      : rawSession
+      ? { sessionId: String(rawSession).slice(0, 120) }
       : null
 
     const recentEvents = identity
@@ -473,8 +474,9 @@ async function buildGenreRows(identity, usedIds) {
 // ── GET /api/recommendations/shelves ─────────────────────────────────────────
 router.get('/shelves', optionalAuth, async (req, res, next) => {
   try {
-    const sessionId = String(req.query.sessionId || '').slice(0, 120)
-    const identity  = req.user?._id
+    const rawSession = req.headers['x-rec-session'] || req.query.sessionId || ''
+    const sessionId  = String(rawSession).slice(0, 120)
+    const identity   = req.user?._id
       ? { userId: req.user._id }
       : sessionId ? { sessionId } : null
 

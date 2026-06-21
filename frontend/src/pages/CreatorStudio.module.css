@@ -7,7 +7,7 @@
 
 /* ── Page ─────────────────────────────────────────────────────────────────── */
 .page {
-  min-height: 100vh;
+  min-height: 100dvh;
   padding: 0 0 64px;
   background: var(--color-bg);
 }
@@ -1665,7 +1665,11 @@
 @media (max-width: 768px) {
   .hero         { padding: calc(var(--nav-height, 64px) + 28px) 20px 32px; }
   .pipelineStrip { padding: 0 20px; }
-  .tabBar       { padding: 0 20px; }
+  /* Zero horizontal padding so tabs can scroll edge-to-edge */
+  .tabBar       { padding: 0; }
+  /* First/last tab get 20px inset to avoid flush-edge feel */
+  .tab:first-child { padding-left: 20px; }
+  .tab:last-child  { padding-right: 20px; }
   .submissions  { padding: 24px 20px 48px; }
 
   .submissionRow {
@@ -1677,8 +1681,12 @@
   .rowDate    { display: none; }
   .rowActions { grid-column: 2; }
 
-  .pipeline      { flex-direction: column; gap: 12px; }
-  .pipelineArrow { display: none; }
+  /* Pipeline: horizontal scroll strip instead of stacking vertically */
+  .pipelineStrip { padding: 0; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+  .pipelineStrip::-webkit-scrollbar { display: none; }
+  .pipeline      { padding: 14px 20px; flex-wrap: nowrap; gap: 0; min-width: max-content; }
+  .pipelineStage { flex-shrink: 0; min-width: 140px; }
+  .pipelineArrow { display: flex; opacity: 0.35; }
 
   .formGrid { grid-template-columns: 1fr; }
   .heroStats { gap: 12px; }
@@ -1833,7 +1841,11 @@
   gap: 0;
   max-width: 1100px;
   margin: 0 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.tabBarInner::-webkit-scrollbar { display: none; }
 
 .tab {
   display: inline-flex;

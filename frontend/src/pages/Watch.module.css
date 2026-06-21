@@ -1,9 +1,16 @@
 .page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: #000;
   padding-top: var(--nav-height, 64px);
+  box-sizing: border-box;
   color: #fff;
   font-family: var(--font-body, 'DM Sans', sans-serif);
+  transition: padding-top 0.35s ease;
+}
+
+/* Remove the top padding offset when nav is hidden during playback */
+:global(body.video-playing) .page {
+  padding-top: 0;
 }
 
 /* ── Stream unavailable ──────────────────────────────────────────────────────*/
@@ -157,27 +164,27 @@
 /* ── Player ──────────────────────────────────────────────────────────────────*/
 .playerWrap {
   width: 100%;
-  background: #000;
-  /* Fill the viewport below the navbar so the player takes full focus */
   height: calc(100dvh - var(--nav-height, 64px));
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  background: #000;
+  position: relative;
+  overflow: hidden;
+  transition: height 0.35s ease;
 }
 
-/* Applied while video is playing and user hasn't manually scrolled.
-   Keeps the player pinned below the navbar so it stays visible while
-   the user reads the description / episode list below. */
+/* When video is playing, the navbar slides away — expand player to fill full viewport */
+:global(body.video-playing) .playerWrap {
+  height: 100dvh;
+}
+
 .playerWrapLocked {
   position: sticky;
   top: var(--nav-height, 64px);
   z-index: 50;
   box-shadow: 0 4px 32px rgba(0, 0, 0, 0.7);
-  height: auto; /* collapse to natural 16:9 height when sticky */
 }
 
 .state {
-  min-height: 100vh;
+  min-height: 100dvh;
   padding-top: var(--nav-height, 64px);
   display: flex;
   align-items: center;

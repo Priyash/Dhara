@@ -29,7 +29,7 @@
   background: #141414;
   border-radius: 8px;
   width: min(880px, 100%);
-  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   overflow-y: auto;
   overflow-x: hidden;
   box-shadow: 0 48px 120px rgba(0, 0, 0, 0.9);
