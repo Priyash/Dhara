@@ -14,8 +14,9 @@
               backdrop-filter var(--transition), transform 0.35s ease, opacity 0.35s ease;
 }
 
-/* Slide nav off-screen while a video is actively playing */
-:global(body.video-playing) .nav {
+/* Slide nav off-screen while a video is actively playing or reel player is open */
+:global(body.video-playing) .nav,
+:global(body.reel-playing) .nav {
   transform: translateY(-100%);
   opacity: 0;
   pointer-events: none;

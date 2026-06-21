@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Heart, MessageCircle, ArrowLeft, Volume2, VolumeX,
+  Heart, MessageCircle, ChevronLeft, Volume2, VolumeX,
   ChevronUp, ChevronDown, Send, Loader2, Hash, X, Trash2,
   Play, Eye, TrendingUp, Zap, Share2,
 } from 'lucide-react'
@@ -304,8 +304,17 @@ function ReelPlayer({ startId }) {
   const viewRecordedRef = useRef(new Set())
   const milestoneRef    = useRef(new Set())
   const commentInputRef = useRef(null)
-  const stageRef        = useRef(null)
-  const swipeStartRef   = useRef(null)
+  const stageRef         = useRef(null)
+  const swipeStartRef    = useRef(null)
+  const mouseDownRef     = useRef(null)   // desktop drag/click tracking
+  const lastTouchRef     = useRef(0)      // suppress synthetic mouse events after touch
+  const wheelCooldownRef = useRef(false)  // debounce wheel navigation
+
+  // Hide the global navbar while the full-screen reel player is active
+  useEffect(() => {
+    document.body.classList.add('reel-playing')
+    return () => document.body.classList.remove('reel-playing')
+  }, [])
 
   useEffect(() => {
     if (authLoading || !isLoggedIn) return
@@ -418,10 +427,54 @@ function ReelPlayer({ startId }) {
   }, [reels, navigate])
 
   const handleStageTouchStart = useCallback((e) => {
+    lastTouchRef.current = Date.now() // mark so mouseDown ignores synthetic events
     if (commentsFor) return
     const t = e.touches[0]
     swipeStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() }
   }, [commentsFor])
+
+  // ── Desktop mouse: click to pause, drag to navigate ──────────────────────────
+  const handleMouseDown = useCallback((e) => {
+    if (e.button !== 0) return
+    if (Date.now() - lastTouchRef.current < 700) return // ignore synthesized mouse events from touch
+    mouseDownRef.current = { x: e.clientX, y: e.clientY }
+  }, [])
+
+  const handleMouseUp = useCallback((e) => {
+    const start = mouseDownRef.current
+    mouseDownRef.current = null
+    if (!start || commentsFor) return
+    if (Date.now() - lastTouchRef.current < 700) return
+    if (e.target.closest('button, a, input')) return // UI elements handle themselves
+
+    const dx = e.clientX - start.x
+    const dy = e.clientY - start.y
+    const dist = Math.max(Math.abs(dx), Math.abs(dy))
+
+    if (dist < 10) {
+      // Click — toggle pause
+      setUserPaused(p => !p)
+    } else if (dist > 50) {
+      // Drag — navigate; support both vertical and horizontal drag
+      const isHorizontal = Math.abs(dx) >= Math.abs(dy)
+      if (isHorizontal) {
+        if (dx < 0) goTo(activeIndex + 1) // drag left  = next
+        else        goTo(activeIndex - 1) // drag right = previous
+      } else {
+        if (dy < 0) goTo(activeIndex + 1) // drag up   = next
+        else        goTo(activeIndex - 1) // drag down  = previous
+      }
+    }
+  }, [commentsFor, goTo, activeIndex])
+
+  // ── Desktop scroll wheel: navigate reels ─────────────────────────────────────
+  const handleWheel = useCallback((e) => {
+    if (commentsFor || wheelCooldownRef.current) return
+    wheelCooldownRef.current = true
+    setTimeout(() => { wheelCooldownRef.current = false }, 700)
+    if (e.deltaY > 0 || e.deltaX > 0) goTo(activeIndex + 1)
+    else                               goTo(activeIndex - 1)
+  }, [commentsFor, goTo, activeIndex])
 
   const handleStageTouchEnd = useCallback((e) => {
     const start = swipeStartRef.current
@@ -476,8 +529,8 @@ function ReelPlayer({ startId }) {
         return
       }
       if (commentsFor) return  // other keys blocked while drawer is open
-      if (e.key === 'ArrowDown' || e.key === 'j') goTo(activeIndex + 1)
-      if (e.key === 'ArrowUp'   || e.key === 'k') goTo(activeIndex - 1)
+      if (e.key === 'ArrowDown'  || e.key === 'j' || e.key === 'ArrowRight') goTo(activeIndex + 1)
+      if (e.key === 'ArrowUp'    || e.key === 'k' || e.key === 'ArrowLeft')  goTo(activeIndex - 1)
       if (e.key === 'm') setMuted((m) => !m)
     }
     window.addEventListener('keydown', h)
@@ -596,6 +649,9 @@ function ReelPlayer({ startId }) {
         className={styles.stage}
         onTouchStart={handleStageTouchStart}
         onTouchEnd={handleStageTouchEnd}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onWheel={handleWheel}
       >
         {reels.map((reel, i) => (
           <ReelSlide
@@ -609,21 +665,19 @@ function ReelPlayer({ startId }) {
             reelStats={stats[String(reel._id)] || {}}
             onLike={() => handleLike(String(reel._id))}
             onComment={() => openComments(String(reel._id))}
+            onMuteToggle={() => setMuted(m => !m)}
             viewRecordedRef={viewRecordedRef}
             milestoneRef={milestoneRef}
             onViewCounted={(s) => setStats((p) => ({ ...p, [String(reel._id)]: { ...(p[String(reel._id)] || {}), ...s } }))}
           />
         ))}
 
-        {/* Back to grid */}
-        <button className={`${styles.btnFloat} ${styles.btnFloatNav}`} style={{ left: 16 }} onClick={() => navigate('/reels')} aria-label="Back to Reels">
-          <ArrowLeft size={16} />
-        </button>
-        <button className={`${styles.btnFloat} ${styles.btnFloatNav}`} style={{ right: 16 }} onClick={() => setMuted((m) => !m)} aria-label="Mute">
-          {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+        {/* Back — "< Reels" label style (YouTube Shorts / TikTok) */}
+        <button className={styles.btnBack} onClick={() => navigate('/reels')} aria-label="Back to Reels">
+          <ChevronLeft size={24} /> Reels
         </button>
 
-        {/* Nav */}
+        {/* Nav arrows */}
         <div className={styles.navCol}>
           <button className={styles.navArrow} onClick={() => goTo(activeIndex - 1)} disabled={activeIndex === 0}>
             <ChevronUp size={18} />
@@ -633,60 +687,61 @@ function ReelPlayer({ startId }) {
             <ChevronDown size={18} />
           </button>
         </div>
-      </div>
 
-      {commentsFor && (
-        <div className={styles.backdrop} onClick={() => setCommentsFor(null)}>
-          <div className={styles.drawer} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.drawerPill} />
-            <div className={styles.drawerHead}>
-              <span className={styles.drawerLabel}>
-                Comments
-                {commentsTotal > 0 && <span className={styles.drawerBadge}>{commentsTotal.toLocaleString()}</span>}
-              </span>
-              <button className={styles.drawerX} onClick={() => setCommentsFor(null)}><X size={17} /></button>
+        {/* Comment drawer inside stage — keeps actions sidebar (z:30) above backdrop (z:25) */}
+        {commentsFor && (
+          <div className={styles.backdrop} onClick={() => setCommentsFor(null)}>
+            <div className={styles.drawer} onClick={(e) => e.stopPropagation()}>
+              <div className={styles.drawerPill} />
+              <div className={styles.drawerHead}>
+                <span className={styles.drawerLabel}>
+                  Comments
+                  {commentsTotal > 0 && <span className={styles.drawerBadge}>{commentsTotal.toLocaleString()}</span>}
+                </span>
+                <button className={styles.drawerX} onClick={() => setCommentsFor(null)}><X size={17} /></button>
+              </div>
+              <div className={styles.commentScroll}>
+                {commentLoading && !comments.length
+                  ? <div className={styles.center}><Loader2 size={20} className={styles.spin} /></div>
+                  : !comments.length
+                  ? <p className={styles.emptyMsg}>No comments yet. Be the first.</p>
+                  : <>
+                      {comments.map((c) => (
+                        <CommentRow key={c._id} comment={c} currentUserId={user?._id || user?.id} onDelete={() => deleteComment(c._id)} />
+                      ))}
+                      {comments.length < commentsTotal && (
+                        <button className={styles.loadMore} onClick={loadMoreComments} disabled={commentLoading}>
+                          {commentLoading ? <Loader2 size={13} className={styles.spin} /> : 'Load more'}
+                        </button>
+                      )}
+                    </>
+                }
+              </div>
+              <form className={styles.commentBar} onSubmit={submitComment}>
+                <input
+                  ref={commentInputRef}
+                  className={styles.commentInput}
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  placeholder="Add a comment…"
+                  maxLength={500}
+                  autoComplete="off"
+                />
+                <button className={styles.commentSend} type="submit" disabled={!commentText.trim() || postingComment}>
+                  {postingComment ? <Loader2 size={15} className={styles.spin} /> : <Send size={15} />}
+                </button>
+              </form>
             </div>
-            <div className={styles.commentScroll}>
-              {commentLoading && !comments.length
-                ? <div className={styles.center}><Loader2 size={20} className={styles.spin} /></div>
-                : !comments.length
-                ? <p className={styles.emptyMsg}>No comments yet. Be the first.</p>
-                : <>
-                    {comments.map((c) => (
-                      <CommentRow key={c._id} comment={c} currentUserId={user?._id || user?.id} onDelete={() => deleteComment(c._id)} />
-                    ))}
-                    {comments.length < commentsTotal && (
-                      <button className={styles.loadMore} onClick={loadMoreComments} disabled={commentLoading}>
-                        {commentLoading ? <Loader2 size={13} className={styles.spin} /> : 'Load more'}
-                      </button>
-                    )}
-                  </>
-              }
-            </div>
-            <form className={styles.commentBar} onSubmit={submitComment}>
-              <input
-                ref={commentInputRef}
-                className={styles.commentInput}
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                placeholder="Add a comment…"
-                maxLength={500}
-                autoComplete="off"
-              />
-              <button className={styles.commentSend} type="submit" disabled={!commentText.trim() || postingComment}>
-                {postingComment ? <Loader2 size={15} className={styles.spin} /> : <Send size={15} />}
-              </button>
-            </form>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
 
 // ── Slide ─────────────────────────────────────────────────────────────────────
 
-function ReelSlide({ reel, isActive, userPaused, hlsUrl, muted, liked, reelStats, onLike, onComment, viewRecordedRef, milestoneRef, onViewCounted }) {
+function ReelSlide({ reel, isActive, userPaused, hlsUrl, muted, liked, reelStats, onLike, onComment, onMuteToggle, viewRecordedRef, milestoneRef, onViewCounted }) {
   const videoRef      = useRef(null)
   const hlsRef        = useRef(null)
   const pollRef       = useRef(null)
@@ -897,8 +952,11 @@ function ReelSlide({ reel, isActive, userPaused, hlsUrl, muted, liked, reelStats
 
       <div className={styles.bar}><div className={styles.fill} style={{ width: `${progress * 100}%` }} /></div>
 
-      {/* ── Right sidebar: Like · Comment · Share · Views ── */}
+      {/* ── Right sidebar: Volume · Like · Comment · Share · Views ── */}
       <div className={styles.actions}>
+        <button className={styles.igAction} onClick={onMuteToggle} aria-label={muted ? 'Unmute' : 'Mute'}>
+          {muted ? <VolumeX size={25} strokeWidth={1.6} /> : <Volume2 size={25} strokeWidth={1.6} />}
+        </button>
         <button
           className={`${styles.igAction} ${liked ? styles.igActionLiked : ''}`}
           onClick={() => {
