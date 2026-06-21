@@ -1204,6 +1204,21 @@
 .librarySearch::placeholder { color: rgba(255,255,255,0.22); }
 .librarySearch:focus { border-color: rgba(219,39,119,0.45); }
 
+/* Row wrapping search input + New Content button */
+.librarySearchRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.libraryNewBtn {
+  padding: 7px 14px;
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .libraryList {
   display: flex;
   flex-direction: column;
@@ -2045,6 +2060,144 @@
   }
 }
 
+/* ── Content library responsive ──────────────────────────────────────────── */
+
+/* Tablet: stack section headers so title + controls don't crowd each other */
+@media (max-width: 768px) {
+  .libraryHeader,
+  .creatorAppHeader {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .libraryHeader .cardTitle,
+  .creatorAppHeader .cardTitle {
+    margin-bottom: 0;
+  }
+
+  /* Search row stretches full width; search input expands to fill remaining space */
+  .librarySearchRow {
+    width: 100%;
+  }
+
+  .librarySearch {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Filter buttons wrap naturally on tablet */
+  .appFilterRow {
+    flex-wrap: wrap;
+  }
+}
+
+/* Phone: stack each content row — title/meta on top, action buttons below */
+@media (max-width: 640px) {
+  /* Tighter card padding on small screens */
+  .card,
+  .jobsCard {
+    padding: 16px;
+  }
+
+  /* Tab bar scrollable — prevents clipping on narrow screens */
+  .tabBar {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    gap: 0;
+  }
+  .tabBar::-webkit-scrollbar { display: none; }
+
+  .tab {
+    flex-shrink: 0;
+    padding: 10px 14px;
+    font-size: 12px;
+  }
+
+  /* Library list: taller on mobile since card has less chrome */
+  .libraryList {
+    max-height: 60dvh;
+  }
+
+  /* Each content row becomes a column: info top, actions bottom */
+  .libraryRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .libraryLeft {
+    width: 100%;
+  }
+
+  /* Action buttons wrap naturally so they never overflow */
+  .libraryActions {
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 6px;
+  }
+
+  /* Give action buttons a bit more padding so they're easier to tap */
+  .proToggleBtn,
+  .editBtn,
+  .deleteBtn {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+
+  /* Creator app rows: switch from 4-col grid to flex column so name is never crushed */
+  .creatorAppRow {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+
+  .creatorAppInfo {
+    width: 100%;
+  }
+
+  /* Name can now use full row width — allow wrapping instead of hard ellipsis */
+  .creatorAppName {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+  }
+
+  .creatorAppDate {
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+  }
+
+  /* Action buttons in creator rows */
+  .creatorAppRow .libraryActions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Reel review rows: keep thumbnail column, stack actions below info */
+  .reelRow {
+    grid-template-columns: 52px 1fr;
+    grid-template-rows: auto auto;
+    gap: 10px 12px;
+  }
+
+  .reelActions {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+    padding-left: 4px;
+  }
+
+  /* Reel title: uncap max-width so it uses available space */
+  .reelTitle {
+    max-width: none;
+  }
+}
+
 /* ── Payment Provider ─────────────────────────────────────────────────────── */
 
 .providerList {
@@ -2420,6 +2573,47 @@
   background: rgba(219,39,119,0.1);
   border-color: var(--color-accent);
 }
+
+/* ── Creator application header ───────────────────────────────────────────── */
+.creatorAppHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.creatorAppHeader .cardTitle { margin-bottom: 0; }
+
+/* Filter pill row */
+.appFilterRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.appFilterBtn {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.appFilterBtn:hover { background: rgba(255,255,255,0.08); color: var(--color-text); }
+
+.appFilterBtnActive {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+.appFilterBtnActive:hover { background: var(--color-accent); opacity: 0.9; }
 
 /* ── Creator application rows ─────────────────────────────────────────────── */
 .creatorAppRow {

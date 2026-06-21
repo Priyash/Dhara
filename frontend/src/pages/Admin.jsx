@@ -1854,7 +1854,7 @@ export default function Admin() {
         <section className={styles.jobsCard}>
           <div className={styles.libraryHeader}>
             <h2 className={styles.cardTitle}><Library size={16} /> Content Library</h2>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div className={styles.librarySearchRow}>
               <input
                 className={styles.librarySearch}
                 placeholder="Search title or type…"
@@ -1862,8 +1862,7 @@ export default function Admin() {
                 onChange={(e) => setContentSearch(e.target.value)}
               />
               <button
-                className={styles.primaryBtn}
-                style={{ padding: '7px 14px', fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
+                className={`${styles.primaryBtn} ${styles.libraryNewBtn}`}
                 onClick={openCreateModal}
               >
                 <Plus size={13} /> New Content
@@ -2888,9 +2887,9 @@ export default function Admin() {
           {/* ── Applications sub-tab ── */}
           {creatorHubTab === 'applications' && (
             <section className={styles.jobsCard}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div className={styles.creatorAppHeader}>
                 <h2 className={styles.cardTitle}><UserCheck size={16} /> Creator Applications</h2>
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div className={styles.appFilterRow}>
                   {[
                     { id: 'all',      label: 'All' },
                     { id: 'applied',  label: 'Pending' },
@@ -2899,8 +2898,7 @@ export default function Admin() {
                   ].map(({ id, label }) => (
                     <button
                       key={id}
-                      className={appStatusFilter === id ? styles.primaryBtn : styles.secondaryBtn}
-                      style={{ padding: '4px 12px', fontSize: 12 }}
+                      className={`${styles.appFilterBtn} ${appStatusFilter === id ? styles.appFilterBtnActive : ''}`}
                       onClick={() => { setAppStatusFilter(id); void loadCreatorApplications(id) }}
                     >
                       {label}
