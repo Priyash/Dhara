@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Search, Crown, Clapperboard } from 'lucide-react'
 import { useStore } from '../store/useStore'
@@ -38,6 +39,30 @@ export default function Navbar() {
 
   const avatarLetter = user?.displayName?.[0] || user?.email?.[0] || '?'
 
+  // Scroll the active nav link into view on mobile (prevents items like "Reels" from being cut off)
+  const linksRef = useRef(null)
+  useEffect(() => {
+    const list = linksRef.current
+    if (!list) return
+    // rAF ensures layout is complete before reading offsetLeft
+    const raf = requestAnimationFrame(() => {
+      const active = list.querySelector('[data-navactive]')
+      if (!active) return
+      const li = active.closest('li')
+      if (!li) return
+      const itemLeft  = li.offsetLeft
+      const itemRight = itemLeft + li.offsetWidth
+      const visible   = list.clientWidth
+      const scroll    = list.scrollLeft
+      if (itemRight > scroll + visible) {
+        list.scrollLeft = itemRight - visible + 16
+      } else if (itemLeft < scroll) {
+        list.scrollLeft = Math.max(0, itemLeft - 16)
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [activeLink])
+
   return (
     <nav
       className={`${styles.nav} ${scrolled ? styles.scrolled : ''}`}
@@ -54,11 +79,12 @@ export default function Navbar() {
       </button>
 
       {/* Nav links */}
-      <ul className={styles.links} role="list">
+      <ul ref={linksRef} className={styles.links} role="list">
         {NAV_LINKS.map((link) => (
           <li key={link}>
             <button
               className={`${styles.link} ${activeLink === link ? styles.linkActive : ''}`}
+              data-navactive={activeLink === link || undefined}
               onClick={() => navigate(NAV_ROUTES[link] || '/')}
             >
               {link}
