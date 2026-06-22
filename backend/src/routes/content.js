@@ -570,30 +570,44 @@ router.post('/:id/like', requireAuth, async (req, res, next) => {
     const contentId = String(req.params.id)
     const userId    = req.user._id
 
-    const userReact = await User.findById(userId).select('likedContent dislikedContent').lean()
-    const alreadyLiked    = (userReact?.likedContent    ?? []).includes(contentId)
-    const alreadyDisliked = (userReact?.dislikedContent ?? []).includes(contentId)
+    // Atomic toggle — the query filter (already-liked or not) guarantees only
+    // one of two concurrent requests can match, so we know for certain which
+    // direction *this* request moved the user's state in and can increment
+    // Content's counters without a read-then-increment race.
+    const contentInc = {}
+    let liked
 
-    const contentInc = alreadyLiked
-      ? { likeCount: -1 }
-      : { likeCount: 1, ...(alreadyDisliked ? { dislikeCount: -1 } : {}) }
+    const added = await User.findOneAndUpdate(
+      { _id: userId, likedContent: { $ne: contentId } },
+      { $addToSet: { likedContent: contentId }, $pull: { dislikedContent: contentId } },
+      { new: false }
+    ).select('dislikedContent').lean()
 
-    // Separate $addToSet and $push on likedContent — combining them causes a MongoDB conflict error
-    const userOp = alreadyLiked
-      ? { $pull: { likedContent: contentId } }
-      : { $addToSet: { likedContent: contentId }, $pull: { dislikedContent: contentId } }
+    if (added) {
+      liked = true
+      contentInc.likeCount = 1
+      if ((added.dislikedContent ?? []).includes(contentId)) contentInc.dislikeCount = -1
+    } else {
+      const removed = await User.findOneAndUpdate(
+        { _id: userId, likedContent: contentId },
+        { $pull: { likedContent: contentId } },
+        { new: false }
+      ).select('_id').lean()
+      liked = false
+      if (removed) contentInc.likeCount = -1
+    }
 
     const [content, user] = await Promise.all([
-      Content.findByIdAndUpdate(contentId, { $inc: contentInc }, { new: true })
-        .select('likeCount dislikeCount').lean(),
-      User.findByIdAndUpdate(userId, userOp, { new: true })
-        .select('likedContent dislikedContent').lean(),
+      Object.keys(contentInc).length
+        ? Content.findByIdAndUpdate(contentId, { $inc: contentInc }, { new: true }).select('likeCount dislikeCount').lean()
+        : Content.findById(contentId).select('likeCount dislikeCount').lean(),
+      User.findById(userId).select('likedContent dislikedContent').lean(),
     ])
 
     if (!content) return res.status(404).json({ error: 'Content not found' })
 
     // Trim likedContent cap in a separate fire-and-forget step
-    if (!alreadyLiked) {
+    if (liked) {
       User.findByIdAndUpdate(userId, { $push: { likedContent: { $each: [], $slice: -2000 } } }).catch(() => {})
     }
 
@@ -618,28 +632,40 @@ router.post('/:id/dislike', requireAuth, async (req, res, next) => {
     const contentId = String(req.params.id)
     const userId    = req.user._id
 
-    const userReact = await User.findById(userId).select('likedContent dislikedContent').lean()
-    const alreadyLiked    = (userReact?.likedContent    ?? []).includes(contentId)
-    const alreadyDisliked = (userReact?.dislikedContent ?? []).includes(contentId)
+    // Atomic toggle — see /like above for why the read-then-increment pattern is unsafe.
+    const contentInc = {}
+    let disliked
 
-    const contentInc = alreadyDisliked
-      ? { dislikeCount: -1 }
-      : { dislikeCount: 1, ...(alreadyLiked ? { likeCount: -1 } : {}) }
+    const added = await User.findOneAndUpdate(
+      { _id: userId, dislikedContent: { $ne: contentId } },
+      { $addToSet: { dislikedContent: contentId }, $pull: { likedContent: contentId } },
+      { new: false }
+    ).select('likedContent').lean()
 
-    const userOp = alreadyDisliked
-      ? { $pull: { dislikedContent: contentId } }
-      : { $addToSet: { dislikedContent: contentId }, $pull: { likedContent: contentId } }
+    if (added) {
+      disliked = true
+      contentInc.dislikeCount = 1
+      if ((added.likedContent ?? []).includes(contentId)) contentInc.likeCount = -1
+    } else {
+      const removed = await User.findOneAndUpdate(
+        { _id: userId, dislikedContent: contentId },
+        { $pull: { dislikedContent: contentId } },
+        { new: false }
+      ).select('_id').lean()
+      disliked = false
+      if (removed) contentInc.dislikeCount = -1
+    }
 
     const [content, user] = await Promise.all([
-      Content.findByIdAndUpdate(contentId, { $inc: contentInc }, { new: true })
-        .select('likeCount dislikeCount').lean(),
-      User.findByIdAndUpdate(userId, userOp, { new: true })
-        .select('likedContent dislikedContent').lean(),
+      Object.keys(contentInc).length
+        ? Content.findByIdAndUpdate(contentId, { $inc: contentInc }, { new: true }).select('likeCount dislikeCount').lean()
+        : Content.findById(contentId).select('likeCount dislikeCount').lean(),
+      User.findById(userId).select('likedContent dislikedContent').lean(),
     ])
 
     if (!content) return res.status(404).json({ error: 'Content not found' })
 
-    if (!alreadyDisliked) {
+    if (disliked) {
       User.findByIdAndUpdate(userId, { $push: { dislikedContent: { $each: [], $slice: -2000 } } }).catch(() => {})
     }
 
