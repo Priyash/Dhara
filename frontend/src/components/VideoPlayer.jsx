@@ -26,6 +26,24 @@ function formatRemaining(secs) {
 
 function gcd(a, b) { return b ? gcd(b, a % b) : a }
 
+// Caps the per-second scrub-thumbnail cache so a long film (3+ hours →
+// thousands of harvested frames) can't grow the in-memory bitmap cache
+// without bound. Evicts the oldest insertion (Map preserves insertion
+// order) and releases its GPU-backed bitmap via close() when present.
+const MAX_FRAME_CACHE_ENTRIES = 1800   // ~30 min of distinct seconds
+function setCachedFrame(cache, sec, val) {
+  if (cache.size >= MAX_FRAME_CACHE_ENTRIES && !cache.has(sec)) {
+    const oldestKey = cache.keys().next().value
+    cache.get(oldestKey)?.close?.()
+    cache.delete(oldestKey)
+  }
+  cache.set(sec, val)
+}
+function clearFrameCache(cache) {
+  for (const val of cache.values()) val?.close?.()
+  cache.clear()
+}
+
 function aspectRatioLabel(w, h) {
   if (!w || !h) return ''
   const d  = gcd(w, h)
@@ -442,7 +460,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   // Clear all thumbnail caches when src changes
   useEffect(() => {
     imgCacheRef.current.clear()
-    frameCacheRef.current.clear()
+    clearFrameCache(frameCacheRef.current)
   }, [src])
 
   // Load src into the hidden thumbnail video (crossOrigin allows canvas capture)
@@ -530,11 +548,11 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
         try {
           const bmp = await createImageBitmap(tv, { resizeWidth: 160, resizeHeight: 90 })
-          frameCacheRef.current.set(sec, bmp)
+          setCachedFrame(frameCacheRef.current, sec, bmp)
         } catch {
           const c = document.createElement('canvas')
           c.width = 160; c.height = 90
-          try { c.getContext('2d').drawImage(tv, 0, 0, 160, 90); frameCacheRef.current.set(sec, c) } catch {}
+          try { c.getContext('2d').drawImage(tv, 0, 0, 160, 90); setCachedFrame(frameCacheRef.current, sec, c) } catch {}
         }
       }
     }
@@ -548,7 +566,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   useEffect(() => {
     if (thumbUrlFor) return   // JPEG approach covers this
     const v = videoRef.current
-    frameCacheRef.current.clear()
+    clearFrameCache(frameCacheRef.current)
     if (!v?.requestVideoFrameCallback) return
 
     let lastSec = -1
@@ -557,12 +575,12 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
       if (sec !== lastSec && !frameCacheRef.current.has(sec)) {
         lastSec = sec
         createImageBitmap(v, { resizeWidth: 160, resizeHeight: 90 })
-          .then(bmp => frameCacheRef.current.set(sec, bmp))
+          .then(bmp => setCachedFrame(frameCacheRef.current, sec, bmp))
           .catch(() => {
             // createImageBitmap with resize options unsupported — fall back to canvas
             const c = document.createElement('canvas')
             c.width = 160; c.height = 90
-            try { c.getContext('2d').drawImage(v, 0, 0, 160, 90); frameCacheRef.current.set(sec, c) } catch {}
+            try { c.getContext('2d').drawImage(v, 0, 0, 160, 90); setCachedFrame(frameCacheRef.current, sec, c) } catch {}
           })
       }
       rVFCRef.current = v.requestVideoFrameCallback(onFrame)

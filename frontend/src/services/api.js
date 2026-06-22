@@ -92,8 +92,8 @@ export async function saveWatchProgress(payload) {
   })
 }
 
-export async function fetchContinueWatching() {
-  const data = await request('/api/user/continue-watching')
+export async function fetchContinueWatching({ signal } = {}) {
+  const data = await request('/api/user/continue-watching', { signal })
   return data.map((item) => {
     const normalized = normalizeItem(item)
     const { positionSecs = 0, durationSecs = 0 } = item._progress || {}
@@ -117,12 +117,12 @@ export async function fetchContinueWatching() {
 
 // ── Content ───────────────────────────────────────────────────────────────────
 
-export async function fetchContent(params = {}) {
+export async function fetchContent(params = {}, { signal } = {}) {
   const qs = new URLSearchParams(
     // strip undefined / null / empty-string values so they don't pollute the query string
     Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
   ).toString()
-  const data = await request(`/api/content${qs ? `?${qs}` : ''}`)
+  const data = await request(`/api/content${qs ? `?${qs}` : ''}`, { signal })
   // Paginated response { items, total, page, pages, limit }
   if (data && typeof data === 'object' && !Array.isArray(data) && Array.isArray(data.items)) {
     return { ...data, items: data.items.map(normalizeItem) }
@@ -216,9 +216,10 @@ export async function fetchRecommendations(params = {}) {
   }
 }
 
-export async function fetchRecommendationShelves() {
+export async function fetchRecommendationShelves({ signal } = {}) {
   const data = await request('/api/recommendations/shelves', {
     headers: { 'X-Rec-Session': getRecommendationSessionId() },
+    signal,
   })
   return (data.shelves || []).map(shelf => ({
     ...shelf,
@@ -676,8 +677,8 @@ export async function rejectSubmission(id, reason) {
 
 // ── Curated Shelves (public) ──────────────────────────────────────────────────
 
-export async function fetchShelves() {
-  const shelves = await request('/api/content/shelves')
+export async function fetchShelves({ signal } = {}) {
+  const shelves = await request('/api/content/shelves', { signal })
   // Normalize _id → id on populated items so PosterCard / navigation work correctly
   return shelves.map((s) => ({
     ...s,

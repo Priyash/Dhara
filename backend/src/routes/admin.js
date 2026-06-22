@@ -27,6 +27,12 @@ import { SearchLog } from '../models/SearchLog.js'
 import { Reel, REEL_MAX_DURATION_SECS } from '../models/Reel.js'
 import { SUPPORTED_PROVIDERS, getProviderStatus } from '../providers/index.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
+import { calculateMonthlyEarnings } from '../config/earningsJob.js'
+
+// Hard cap for unpaginated admin list endpoints — prevents an unbounded
+// collection scan/response as data grows, without changing the response
+// shape for the current frontend (which expects a plain array).
+const ADMIN_LIST_CAP = 500
 
 // Escape HTML entities to prevent XSS when admin-supplied text is rendered in emails or UI
 function escapeHtml(str) {
@@ -989,6 +995,7 @@ router.get('/creator-applications', async (req, res, next) => {
     const users = await User.find(filter)
       .sort({ 'creatorProfile.appliedAt': -1, createdAt: -1 })
       .select('email displayName creatorStatus isCreator creatorProfile creatorRejectionReason creatorRejectedAt createdAt')
+      .limit(ADMIN_LIST_CAP)
       .lean()
 
     res.json(users)
@@ -1075,6 +1082,7 @@ router.get('/submissions', async (req, res, next) => {
       .sort({ updatedAt: -1 })
       .populate('creatorId', 'email displayName creatorProfile')
       .select('title type genre submissionStatus rejectionReason revisionCount posterUrl bunnyVideoId creatorId createdAt updatedAt isPremium')
+      .limit(ADMIN_LIST_CAP)
       .lean()
 
     res.json(items)
@@ -1236,57 +1244,13 @@ router.post('/revenue/calculate', requireAuth, requireAdmin, async (req, res, ne
     const rate  = Number(req.body.ratePerViewPaise ?? 50)
 
     if (month < 1 || month > 12) return res.status(400).json({ error: 'month must be 1–12' })
-
-    // All approved creator content (excludes admin-uploaded content with null creatorId)
-    const pieces = await Content
-      .find({ submissionStatus: 'approved', creatorId: { $ne: null } })
-      .select('_id title creatorId viewCount viewCountSnapshot')
-      .lean()
-
-    // Fetch total views per creator for tier calculation
-    const creatorViewTotals = new Map()
-    for (const p of pieces) {
-      const cid = String(p.creatorId)
-      creatorViewTotals.set(cid, (creatorViewTotals.get(cid) ?? 0) + (p.viewCount ?? 0))
+    if (!Number.isFinite(rate) || rate <= 0) {
+      return res.status(400).json({ error: 'ratePerViewPaise must be a positive number' })
     }
 
-    let created = 0, skipped = 0
-    const ops = []
-
-    for (const piece of pieces) {
-      const monthlyViews = (piece.viewCount ?? 0) - (piece.viewCountSnapshot ?? 0)
-      if (monthlyViews <= 0) { skipped++; continue }
-
-      // Skip if already calculated for this period
-      const exists = await CreatorEarning.exists({ contentId: piece._id, year, month })
-      if (exists) { skipped++; continue }
-
-      const creatorTotalViews = creatorViewTotals.get(String(piece.creatorId)) ?? 0
-      const tier              = tierFor(creatorTotalViews)
-      const grossPaise        = monthlyViews * rate
-      const netPaise          = Math.round(grossPaise * (tier.share / 100))
-
-      ops.push(
-        CreatorEarning.create({
-          creatorId:        piece.creatorId,
-          contentId:        piece._id,
-          month, year,
-          viewCount:        monthlyViews,
-          ratePerViewPaise: rate,
-          grossAmountPaise: grossPaise,
-          revenueSharePct:  tier.share,
-          netAmountPaise:   netPaise,
-          status:           'pending',
-          calculatedAt:     new Date(),
-        }).then(() => {
-          // Advance snapshot so next month starts from here
-          return Content.findByIdAndUpdate(piece._id, { viewCountSnapshot: piece.viewCount })
-        })
-      )
-      created++
-    }
-
-    await Promise.all(ops)
+    // Shared with the scheduled job (earningsJob.js) — batches the idempotency
+    // check into one query and safely ignores concurrent-run duplicate-key errors.
+    const { created, skipped } = await calculateMonthlyEarnings(month, year, rate)
 
     res.json({
       month, year,
@@ -1413,6 +1377,7 @@ router.get('/creator-payouts', requireAuth, requireAdmin, async (req, res, next)
     const payouts = await CreatorPayout.find()
       .sort({ createdAt: -1 })
       .populate('creatorId', 'email creatorProfile')
+      .limit(ADMIN_LIST_CAP)
       .lean()
 
     res.json(payouts.map((p) => ({

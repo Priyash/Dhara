@@ -14,10 +14,12 @@
 
 import { User } from '../models/User.js'
 import { emailSubscriptionRenewalReminder } from './email.js'
+import { withJobLock } from './jobLock.js'
 
 const INTERVAL_MS        = 6 * 60 * 60 * 1000   // run every 6 hours
 const REMINDER_WINDOW_MS = 3  * 86_400_000       // send reminder 3 days before expiry
 const REMINDER_COOLDOWN  = 2  * 86_400_000       // don't re-send within 2 days
+const LOCK_TTL_MS        = 30 * 60 * 1000        // covers a slow run; auto-expires if an instance crashes mid-job
 
 async function runRenewalReminders() {
   try {
@@ -91,11 +93,18 @@ async function runExpiryCheck() {
   }
 }
 
+function runExpiryCheckLocked() {
+  // Only one instance should run this at a time — otherwise N instances all
+  // send the same renewal reminder emails to the same users every 6 hours.
+  return withJobLock('subscription-expiry', LOCK_TTL_MS, runExpiryCheck)
+    .catch((err) => console.error('[expiry] lock acquisition failed:', err.message))
+}
+
 export function startSubscriptionExpiryJob() {
   // Run immediately on startup to catch anything that expired during downtime
-  runExpiryCheck()
+  runExpiryCheckLocked()
   // Then every 6 hours
-  const timer = setInterval(runExpiryCheck, INTERVAL_MS)
+  const timer = setInterval(runExpiryCheckLocked, INTERVAL_MS)
   // Don't keep the process alive just for this timer
   timer.unref()
 }
