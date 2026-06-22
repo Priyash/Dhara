@@ -21,29 +21,36 @@ export default function Home() {
   const [contentLoading,        setContentLoading]        = useState(true)
 
   useEffect(() => {
-    fetchContent({ sort: 'popular', page: 1, limit: 48 })
+    const controller = new AbortController()
+    const { signal } = controller
+
+    fetchContent({ sort: 'popular', page: 1, limit: 48 }, { signal })
       .then((res) => setContent(Array.isArray(res) ? res : (res.items ?? [])))
       .catch(() => {})
       .finally(() => setContentLoading(false))
-    fetchShelves().then(setShelves).catch(() => {})
-    fetchRecommendationShelves().then(setRecommendationShelves).catch(() => {})
+    fetchShelves({ signal }).then(setShelves).catch(() => {})
+    fetchRecommendationShelves({ signal }).then(setRecommendationShelves).catch(() => {})
+
+    return () => controller.abort()
   }, [])
 
   useEffect(() => {
     if (!isLoggedIn) { setContinueWatching([]); return }
+    const controller = new AbortController()
     // Small delay so Watch.jsx's unmount save completes before we read from the backend
     const t = setTimeout(() => {
-      fetchContinueWatching().then(setContinueWatching).catch(() => {})
+      fetchContinueWatching({ signal: controller.signal }).then(setContinueWatching).catch(() => {})
     }, 350)
-    return () => clearTimeout(t)
+    return () => { clearTimeout(t); controller.abort() }
   }, [isLoggedIn])
 
   // Re-fetch when the tab regains focus (user returns from another tab after watching)
   useEffect(() => {
     if (!isLoggedIn) return
-    const onFocus = () => fetchContinueWatching().then(setContinueWatching).catch(() => {})
+    const controller = new AbortController()
+    const onFocus = () => fetchContinueWatching({ signal: controller.signal }).then(setContinueWatching).catch(() => {})
     window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
+    return () => { window.removeEventListener('focus', onFocus); controller.abort() }
   }, [isLoggedIn])
 
   const movies      = content.filter(c => c.type === 'Film')

@@ -17,8 +17,10 @@
 
 import { Content }        from '../models/Content.js'
 import { CreatorEarning } from '../models/CreatorEarning.js'
+import { withJobLock }    from './jobLock.js'
 
 const RATE_PER_VIEW_PAISE = 50   // ₹0.50 per view — matches admin default
+const LOCK_TTL_MS         = 30 * 60 * 1000   // covers a slow run; auto-expires if an instance crashes mid-job
 
 const TIERS = [
   { name: 'Newcomer',    maxViews: 999,      share: 60 },
@@ -31,7 +33,7 @@ function tierFor(totalViews) {
   return TIERS.find((t) => totalViews <= t.maxViews) ?? TIERS[TIERS.length - 1]
 }
 
-export async function calculateMonthlyEarnings(month, year) {
+export async function calculateMonthlyEarnings(month, year, ratePerViewPaise = RATE_PER_VIEW_PAISE) {
   const pieces = await Content
     .find({ submissionStatus: 'approved', creatorId: { $ne: null } })
     .select('_id creatorId viewCount viewCountSnapshot')
@@ -63,7 +65,7 @@ export async function calculateMonthlyEarnings(month, year) {
     if (alreadyDone.has(String(piece._id))) { skipped++; continue }
 
     const tier       = tierFor(creatorTotals.get(String(piece.creatorId)) ?? 0)
-    const grossPaise = monthlyViews * RATE_PER_VIEW_PAISE
+    const grossPaise = monthlyViews * ratePerViewPaise
     const netPaise   = Math.round(grossPaise * (tier.share / 100))
 
     ops.push(
@@ -72,7 +74,7 @@ export async function calculateMonthlyEarnings(month, year) {
         contentId:        piece._id,
         month, year,
         viewCount:        monthlyViews,
-        ratePerViewPaise: RATE_PER_VIEW_PAISE,
+        ratePerViewPaise,
         grossAmountPaise: grossPaise,
         revenueSharePct:  tier.share,
         netAmountPaise:   netPaise,
@@ -115,18 +117,27 @@ function msUntilNextRun() {
   return next.getTime() - now.getTime()
 }
 
+function runEarningsCheckLocked() {
+  // Only one instance should run this at a time — redundant on correctness
+  // grounds (calculateMonthlyEarnings is already safe under concurrent
+  // calls via the unique contentId+year+month index) but avoids every
+  // instance redoing the same full-catalog aggregation each run.
+  return withJobLock('earnings-calculation', LOCK_TTL_MS, runEarningsCheck)
+    .catch((err) => console.error('[earnings] lock acquisition failed:', err.message))
+}
+
 export function startEarningsJob() {
   if (process.env.NODE_ENV === 'test') return
 
   // Run once at startup to catch any month that was missed during downtime
-  runEarningsCheck()
+  runEarningsCheckLocked()
 
   // Schedule the next run, then repeat monthly
   function scheduleNext() {
     const delay = msUntilNextRun()
     console.log(`[earnings] next run in ${Math.round(delay / 86_400_000)} day(s)`)
     setTimeout(() => {
-      runEarningsCheck()
+      runEarningsCheckLocked()
       scheduleNext()   // re-schedule for the month after that
     }, delay).unref()
   }

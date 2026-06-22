@@ -658,6 +658,7 @@ function ReelPlayer({ startId }) {
             key={reel._id}
             reel={reel}
             isActive={i === activeIndex}
+            isNearby={Math.abs(i - activeIndex) <= 1}
             userPaused={i === activeIndex && userPaused}
             hlsUrl={streamUrls[String(reel._id)]}
             muted={muted}
@@ -741,7 +742,7 @@ function ReelPlayer({ startId }) {
 
 // ── Slide ─────────────────────────────────────────────────────────────────────
 
-function ReelSlide({ reel, isActive, userPaused, hlsUrl, muted, liked, reelStats, onLike, onComment, onMuteToggle, viewRecordedRef, milestoneRef, onViewCounted }) {
+function ReelSlide({ reel, isActive, isNearby, userPaused, hlsUrl, muted, liked, reelStats, onLike, onComment, onMuteToggle, viewRecordedRef, milestoneRef, onViewCounted }) {
   const videoRef      = useRef(null)
   const hlsRef        = useRef(null)
   const pollRef       = useRef(null)
@@ -762,9 +763,12 @@ function ReelSlide({ reel, isActive, userPaused, hlsUrl, muted, liked, reelStats
   // Reset error state when a new URL arrives
   useEffect(() => { if (hlsUrl) setHlsError(false) }, [hlsUrl])
 
+  // Only the active slide and its immediate neighbours keep a live HLS instance —
+  // the feed never unmounts old slides (no virtualization), so without this every
+  // reel ever scrolled past would keep its own decoder + buffered segments in memory.
   useEffect(() => {
     const v = videoRef.current
-    if (!v || !hlsUrl) return
+    if (!v || !hlsUrl || !isNearby) return
     setHlsError(false)
 
     if (v.canPlayType('application/vnd.apple.mpegurl')) {
@@ -804,7 +808,7 @@ function ReelSlide({ reel, isActive, userPaused, hlsUrl, muted, liked, reelStats
       hlsRef.current = null
       if (v) { v.pause(); v.src = '' }
     }
-  }, [hlsUrl]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hlsUrl, isNearby]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const v = videoRef.current; if (!v) return
