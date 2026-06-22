@@ -344,14 +344,23 @@ router.post('/:id/comments', requireAuth, async (req, res, next) => {
 
 router.delete('/:id/comments/:commentId', requireAuth, async (req, res, next) => {
   try {
-    const comment = await Comment.findById(req.params.commentId)
-    if (!comment || comment.isDeleted) return res.status(404).json({ error: 'Comment not found' })
-    const isOwner = comment.userId.toString() === req.user._id.toString()
     const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase())
     const isAdmin = adminEmails.includes((req.user.email || '').toLowerCase())
-    if (!isOwner && !isAdmin) return res.status(403).json({ error: 'Cannot delete this comment' })
-    comment.isDeleted = true
-    await comment.save()
+
+    // Atomic delete — filtering on isDeleted:{$ne:true} means only one of two
+    // concurrent delete requests for the same comment can match, so
+    // commentCount can't be double-decremented.
+    const comment = await Comment.findOneAndUpdate(
+      { _id: req.params.commentId, isDeleted: { $ne: true }, ...(isAdmin ? {} : { userId: req.user._id }) },
+      { $set: { isDeleted: true } }
+    )
+
+    if (!comment) {
+      const existing = await Comment.findById(req.params.commentId).select('isDeleted').lean()
+      if (!existing || existing.isDeleted) return res.status(404).json({ error: 'Comment not found' })
+      return res.status(403).json({ error: 'Cannot delete this comment' })
+    }
+
     await Reel.findByIdAndUpdate(req.params.id, { $inc: { commentCount: -1 } })
     res.json({ success: true })
   } catch (err) {

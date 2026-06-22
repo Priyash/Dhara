@@ -5,10 +5,12 @@ import compression from 'compression'
 import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
+import { RedisStore } from 'rate-limit-redis'
 import { randomUUID } from 'crypto'
 import mongoose from 'mongoose'
 
 import './src/config/firebase.js'
+import { redisClient } from './src/config/redis.js'
 import { connectMongoDB, dbStatus } from './src/config/mongodb.js'
 import { syncAdminClaims } from './src/config/adminSync.js'
 import { startSubscriptionExpiryJob } from './src/config/subscriptionExpiry.js'
@@ -79,6 +81,18 @@ app.use('/api/payments/webhook', express.raw({ type: 'application/json' }))
 app.use(express.json({ limit: '1mb' }))
 
 // ── Rate limiters ─────────────────────────────────────────────────────────────
+// Backed by Redis (via REDIS_URL) when configured, so limits are enforced
+// correctly across multiple instances — each instance hitting its own
+// in-memory MemoryStore would otherwise let through N× the intended limit.
+// Falls back to the default in-memory store when REDIS_URL is unset.
+function redisStore(prefix) {
+  if (!redisClient) return undefined
+  return new RedisStore({
+    prefix,
+    sendCommand: (...args) => redisClient.call(...args),
+  })
+}
+
 // Auth: tighter per-IP limit. Firebase blocks credential brute-force at source;
 // this protects against token-replay abuse and hammering our login endpoint.
 app.use('/api/auth', rateLimit({
@@ -87,6 +101,7 @@ app.use('/api/auth', rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   message:         { error: 'Too many requests. Please wait and try again.', code: 'RATE_LIMITED' },
+  store:           redisStore('rl:auth:'),
 }))
 
 // Admin routes: higher limit — dashboard polls frequently, users are trusted
@@ -95,6 +110,7 @@ app.use('/api/admin', rateLimit({
   max:             2000,
   standardHeaders: true,
   legacyHeaders:   false,
+  store:           redisStore('rl:admin:'),
 }))
 
 // General API limit
@@ -104,6 +120,7 @@ app.use('/api', rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   message:         { error: 'Too many requests. Please wait and try again.', code: 'RATE_LIMITED' },
+  store:           redisStore('rl:api:'),
 }))
 
 // ── DB guard ──────────────────────────────────────────────────────────────────
@@ -136,6 +153,9 @@ app.get('/health', (_req, res) => {
     status: ok ? 'ok' : 'degraded',
     db:     ok ? 'connected' : 'disconnected',
     ...(dbStatus.lastError ? { dbError: dbStatus.lastError } : {}),
+    // Redis is best-effort (cache/rate-limit fall back to in-memory if down),
+    // so it's surfaced for visibility but never flips overall health to degraded.
+    redis: !redisClient ? 'disabled' : redisClient.status === 'ready' ? 'connected' : redisClient.status,
     ts: new Date().toISOString(),
   })
 })
@@ -175,6 +195,11 @@ function shutdown(signal) {
       console.log('[shutdown] MongoDB closed cleanly')
     } catch (err) {
       console.error('[shutdown] MongoDB close error:', err.message)
+    }
+    try {
+      await redisClient?.quit()
+    } catch (err) {
+      console.error('[shutdown] Redis close error:', err.message)
     }
     process.exit(0)
   })

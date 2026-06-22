@@ -195,6 +195,7 @@ export default function ReelUploadModal({ onClose, onCreated }) {
       addActiveUpload({ uid, type: 'reel', title: displayTitle, progress: 0, status: 'uploading', xhr: null })
 
       setQueue((prev) => prev.map((q) => q.id === item.id ? { ...q, status: 'uploading', progress: 0 } : q))
+      let reel = null
       try {
         // Wait up to 8 s for the Cloudinary auto-thumb upload to settle before
         // reading autoThumbUrl — closes the race between analyseVideo + Cloudinary
@@ -214,7 +215,7 @@ export default function ReelUploadModal({ onClose, onCreated }) {
         const freshItem  = queueRef.current.find((q) => q.id === item.id) || item
         const thumbToUse = thumbnailUrl.trim() || freshItem.autoThumbUrl || ''
 
-        const reel = await createCreatorReel({
+        reel = await createCreatorReel({
           title:        displayTitle,
           description:  sharedDescription.trim(),
           hashtags:     tags,

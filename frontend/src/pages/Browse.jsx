@@ -63,37 +63,36 @@ export default function Browse() {
 
   // ── Fetch genre facets when type or access filter changes ─────────────────
   useEffect(() => {
-    let cancelled = false
+    const controller = new AbortController()
     const params = {}
     if (activeType   !== 'All') params.type   = activeType
     if (activeFilter !== 'All') params.filter = activeFilter
 
-    fetchContentGenres(params)
-      .then((facets) => { if (!cancelled) setGenreFacets(facets) })
-      .catch(() => { if (!cancelled) setGenreFacets([]) })
+    fetchContentGenres(params, { signal: controller.signal })
+      .then(setGenreFacets)
+      .catch(() => { if (!controller.signal.aborted) setGenreFacets([]) })
 
-    return () => { cancelled = true }
+    return () => controller.abort()
   }, [activeType, activeFilter])
 
   // ── Fetch content page 1 when any filter changes ─────────────────────────
   useEffect(() => {
-    let cancelled = false
+    const controller = new AbortController()
     setLoading(true)
     setItems([])
     setPage(1)
 
     const params = buildParams(activeType, activeFilter, activeGenre, sortBy, 1)
-    fetchContent(params)
+    fetchContent(params, { signal: controller.signal })
       .then((result) => {
-        if (cancelled) return
         setItems(result.items)
         setTotal(result.total)
         setHasMore(result.page < result.pages)
         setLoading(false)
       })
-      .catch(() => { if (!cancelled) setLoading(false) })
+      .catch(() => { if (!controller.signal.aborted) setLoading(false) })
 
-    return () => { cancelled = true }
+    return () => controller.abort()
   }, [activeType, activeFilter, activeGenre, sortBy])
 
   // ── Load more ─────────────────────────────────────────────────────────────

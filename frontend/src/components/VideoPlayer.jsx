@@ -1055,7 +1055,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
           if (!cancelled) setCastAvailable(Boolean(available || hasWebKitAirPlay))
         })
           .then((id) => { watchId = id })
-          .catch(() => setCastAvailable(Boolean(hasWebKitAirPlay || hasRemotePrompt)))
+          .catch(() => { if (!cancelled) setCastAvailable(Boolean(hasWebKitAirPlay || hasRemotePlayback)) })
 
         return () => {
           cancelled = true

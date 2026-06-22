@@ -131,11 +131,11 @@ export async function fetchContent(params = {}, { signal } = {}) {
   return data.map(normalizeItem)
 }
 
-export async function fetchContentGenres(params = {}) {
+export async function fetchContentGenres(params = {}, { signal } = {}) {
   const qs = new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
   ).toString()
-  return request(`/api/content/genres${qs ? `?${qs}` : ''}`)
+  return request(`/api/content/genres${qs ? `?${qs}` : ''}`, { signal })
 }
 
 export async function fetchFeaturedContent() {

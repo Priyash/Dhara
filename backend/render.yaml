@@ -27,3 +27,11 @@ services:
       #                  Without this, creator/submission emails are skipped silently
       # RESEND_FROM   ← verified sender, e.g.  ধারা <noreply@yourdomain.com>
       #                  Domain must be verified in Resend dashboard → Domains
+      # SENTRY_DSN     ← optional, from sentry.io project settings
+      # ERROR_REPORTING_HOOK ← optional, set to ../integrations/sentryReporter.js
+      #                  to send 5xx errors to Sentry once SENTRY_DSN is also set
+      # REDIS_URL      ← optional, e.g. rediss://default:<password>@<host>:<port>
+      #                  (Upstash Redis works well on Render — same region as this service)
+      #                  Without this, response caching and rate limiting fall back to
+      #                  in-memory storage, which only works correctly with ONE instance.
+      #                  REQUIRED before scaling this service to 2+ instances.
