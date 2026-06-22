@@ -34,6 +34,16 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false, sour
     return () => observer.disconnect()
   }, [item, source])
 
+  // Release the trailer's HLS instance and any pending hover timer if the
+  // card unmounts mid-hover (scroll, re-render, navigation) — mouseleave
+  // alone doesn't fire in those cases.
+  useEffect(() => {
+    return () => {
+      clearTimeout(hoverTimer.current)
+      hlsRef.current?.destroy()
+    }
+  }, [])
+
   const startTrailer = async () => {
     if (!item.trailerVideoId) return
     try {
