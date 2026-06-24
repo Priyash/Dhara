@@ -25,6 +25,7 @@ import {
   getAdminRevenue, getAdminMonitor,
   listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
   searchArchive, importFromArchive, listArchiveCandidates, dismissArchiveCandidate,
+  cancelUploadJob, retryUploadJob,
 } from '../services/api'
 import styles from './Admin.module.css'
 import { isValidDuration } from '../utils/duration'
@@ -538,6 +539,7 @@ const statusClass = {
   processing:    styles.statusProcessing,
   ready:         styles.statusReady,
   failed:        styles.statusFailed,
+  cancelled:     styles.statusFailed,
 }
 
 // Module-level counter so UIDs are unique even across unmount/remount cycles
@@ -890,8 +892,34 @@ export default function Admin() {
     setCandidateSelected({})
   }, [archiveCandidates, candidateSelected, queueArchiveItems])
 
-  // While any job is actively in-flight on the backend, poll every 5s so the
-  // job list reflects real Bunny encode progress after a page refresh.
+  // Cancel / retry a queue job. Both act on persisted job state, so the buttons
+  // are derived from job.status and remain available after a refresh.
+  const [jobActionId, setJobActionId] = useState(null)
+  const handleCancelJob = useCallback(async (job) => {
+    setJobActionId(job._id)
+    try {
+      const updated = await cancelUploadJob(job._id)
+      setJobs((prev) => prev.map((j) => (j._id === updated._id ? { ...j, ...updated } : j)))
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Could not cancel.' })
+    } finally {
+      setJobActionId(null)
+    }
+  }, [showToast])
+
+  const handleRetryJob = useCallback(async (job) => {
+    setJobActionId(job._id)
+    try {
+      const updated = await retryUploadJob(job._id)
+      setJobs((prev) => prev.map((j) => (j._id === updated._id ? { ...j, ...updated } : j)))
+      showToast({ type: 'success', message: 'Re-fetching from source…' })
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Could not retry.' })
+    } finally {
+      setJobActionId(null)
+    }
+  }, [showToast])
+
   // Aggregate job counts for the import-progress summary strip.
   const jobCounts = useMemo(() => {
     const c = { queued: 0, transcoding: 0, ready: 0, failed: 0 }
@@ -2794,6 +2822,26 @@ export default function Admin() {
                   <div className={styles.jobSide}>
                     <span className={`${styles.statusBadge} ${statusClass[job.status] || ''}`}>{job.status}</span>
                     <span className={styles.progress}>{job.progress || 0}%</span>
+                    {['awaiting_file', 'queued', 'uploading', 'processing'].includes(job.status) && (
+                      <button
+                        className={styles.jobActionBtn}
+                        onClick={() => handleCancelJob(job)}
+                        disabled={jobActionId === job._id}
+                        title="Cancel this upload"
+                      >
+                        <XCircle size={12} /> Cancel
+                      </button>
+                    )}
+                    {['failed', 'cancelled'].includes(job.status) && job.sourceUrl && (
+                      <button
+                        className={styles.jobActionBtn}
+                        onClick={() => handleRetryJob(job)}
+                        disabled={jobActionId === job._id}
+                        title="Retry — re-fetch from the source"
+                      >
+                        <RefreshCw size={12} /> Retry
+                      </button>
+                    )}
                   </div>
                   <p className={styles.jobNote}>{job.error || job.note || 'Pending update...'}</p>
                   {['queued', 'uploading', 'processing'].includes(job.status) && (

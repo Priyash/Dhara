@@ -214,13 +214,15 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
     archiveId:        undefined,
   })
 
-  const bunnyVideoId = await bunnyFetchFromUrl(archiveVideoUrl(id, videoFile.name), title, collection.bunnyCollectionId)
+  const videoUrl = archiveVideoUrl(id, videoFile.name)
+  const bunnyVideoId = await bunnyFetchFromUrl(videoUrl, title, collection.bunnyCollectionId)
   await UploadJobModel.create({
     ...jobBase(collection, createdByEmail),
     title,
     contentId: doc._id,
     bunnyVideoId,
     fileName:  videoFile.name,
+    sourceUrl: videoUrl,
   })
 
   return { created: true, id: doc._id, title, jobs: 1 }
@@ -300,6 +302,7 @@ async function queueEpisodic(item, { ContentModel, UploadJobModel, collection, a
       episodeTitle:    String(r.ep.title || `Episode ${r.ep.number}`),
       episodeDuration: String(r.ep.duration || ''),
       bunnyVideoId,
+      sourceUrl:       r.videoUrl,
     })
   }
 

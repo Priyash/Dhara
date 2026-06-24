@@ -16,9 +16,11 @@ const uploadJobSchema = new mongoose.Schema(
     episodeDuration: { type: String,  default: '' },    // e.g. "42m"
     bunnyVideoId: { type: String, default: '' },
     fileName: { type: String, default: '' },
+    // Remote source URL for fetch-based imports (archive.org), enabling retry.
+    sourceUrl: { type: String, default: '' },
     status: {
       type: String,
-      enum: ['awaiting_file', 'queued', 'uploading', 'processing', 'ready', 'failed'],
+      enum: ['awaiting_file', 'queued', 'uploading', 'processing', 'ready', 'failed', 'cancelled'],
       default: 'awaiting_file',
       index: true,
     },

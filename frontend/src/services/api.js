@@ -391,6 +391,14 @@ export async function importFromArchive(items, allowUnlicensed = false) {
   })
 }
 
+export async function cancelUploadJob(id) {
+  return request(`/api/admin/upload-jobs/${id}/cancel`, { method: 'PATCH' })
+}
+
+export async function retryUploadJob(id) {
+  return request(`/api/admin/upload-jobs/${id}/retry`, { method: 'PATCH' })
+}
+
 export async function listArchiveCandidates(status = 'new') {
   return request(`/api/admin/archive/candidates?status=${encodeURIComponent(status)}`)
 }

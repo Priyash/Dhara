@@ -3717,3 +3717,26 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
+/* Cancel / Retry buttons on queue job rows */
+.jobActionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: var(--radius-sm, 6px);
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+.jobActionBtn:hover {
+  color: var(--color-text);
+  border-color: rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.08);
+}
+.jobActionBtn:disabled { opacity: 0.5; cursor: default; }

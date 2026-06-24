@@ -58,7 +58,7 @@ function logAdminAction(req, action, targetType, targetId, targetLabel, metadata
 }
 
 import { bunnyRequest, processUploadJob } from '../services/bunnyUpload.js'
-import { searchArchive } from '../services/archiveImport.js'
+import { searchArchive, bunnyFetchFromUrl } from '../services/archiveImport.js'
 import { ArchiveCandidate } from '../models/ArchiveCandidate.js'
 import { ArchiveImportTask } from '../models/ArchiveImportTask.js'
 import { triggerImportDrain } from '../config/archiveImportWorker.js'
@@ -843,6 +843,57 @@ router.get('/upload-jobs/:id', async (req, res, next) => {
       .lean()
     if (!job) return res.status(404).json({ error: 'Upload job not found' })
     res.json(job)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Cancel an in-flight job (queued or transcoding). Deletes the Bunny video if
+// one exists and marks the job cancelled. Driven by job status, so the Cancel
+// button is derived from server state and survives a page refresh.
+router.patch('/upload-jobs/:id/cancel', async (req, res, next) => {
+  try {
+    const job = await UploadJob.findById(req.params.id)
+    if (!job) return res.status(404).json({ error: 'Upload job not found' })
+    if (!['awaiting_file', 'queued', 'uploading', 'processing'].includes(job.status)) {
+      return res.status(409).json({ error: `Cannot cancel a job that is "${job.status}"` })
+    }
+
+    if (job.bunnyVideoId) {
+      await bunnyRequest(`/library/${libraryId}/videos/${job.bunnyVideoId}`, { method: 'DELETE' }).catch(() => {})
+    }
+    job.status = 'cancelled'
+    job.progress = 0
+    job.note = 'Cancelled by admin.'
+    job.error = ''
+    await job.save()
+    res.json(job.toObject())
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Retry a failed or cancelled fetch-based (archive.org) job by re-fetching the
+// source into a fresh Bunny video. The existing job-sync then links it when ready.
+router.patch('/upload-jobs/:id/retry', async (req, res, next) => {
+  try {
+    const job = await UploadJob.findById(req.params.id)
+    if (!job) return res.status(404).json({ error: 'Upload job not found' })
+    if (!['failed', 'cancelled'].includes(job.status)) {
+      return res.status(409).json({ error: `Can only retry a failed or cancelled job (is "${job.status}")` })
+    }
+    if (!job.sourceUrl) {
+      return res.status(400).json({ error: 'This job has no source URL to retry from (re-upload manually).' })
+    }
+
+    const bunnyVideoId = await bunnyFetchFromUrl(job.sourceUrl, job.title, job.bunnyCollectionId)
+    job.bunnyVideoId = bunnyVideoId
+    job.status = 'processing'
+    job.progress = 50
+    job.note = 'Re-fetching from source…'
+    job.error = ''
+    await job.save()
+    res.json(job.toObject())
   } catch (err) {
     next(err)
   }
