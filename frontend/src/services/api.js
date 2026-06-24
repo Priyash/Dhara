@@ -391,6 +391,14 @@ export async function importFromArchive(items, allowUnlicensed = false) {
   })
 }
 
+export async function listArchiveCandidates(status = 'new') {
+  return request(`/api/admin/archive/candidates?status=${encodeURIComponent(status)}`)
+}
+
+export async function dismissArchiveCandidate(id) {
+  return request(`/api/admin/archive/candidates/${id}/dismiss`, { method: 'PATCH' })
+}
+
 export async function listBunnyVideos(params = {}) {
   const qs = new URLSearchParams(params).toString()
   return request(`/api/admin/bunny/videos${qs ? `?${qs}` : ''}`)

@@ -24,7 +24,7 @@ import {
   listAdminCreatorEarnings, calculateCreatorEarnings, processCreatorPayout, listAdminCreatorPayouts,
   getAdminRevenue, getAdminMonitor,
   listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
-  searchArchive, importFromArchive,
+  searchArchive, importFromArchive, listArchiveCandidates, dismissArchiveCandidate,
 } from '../services/api'
 import styles from './Admin.module.css'
 import { isValidDuration } from '../utils/duration'
@@ -743,6 +743,7 @@ export default function Admin() {
   const [archiveImporting, setArchiveImporting] = useState(false)
   const [archiveSearched, setArchiveSearched]   = useState(false)
   const [allowUnlicensed, setAllowUnlicensed]   = useState(false)
+  const [archiveCandidates, setArchiveCandidates] = useState([])
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const showToast = useCallback((t) => {
@@ -809,33 +810,53 @@ export default function Admin() {
     [archiveSelected]
   )
 
-  const handleArchiveImport = useCallback(async () => {
-    const items = archiveResults
-      .filter((r) => archiveSelected[r.archiveId])
-      .map((r) => ({ archiveId: r.archiveId, type: 'Film', title: r.title, releaseYear: r.year || undefined }))
+  // Queue items for background import. The request returns immediately; the
+  // titles then appear in the library and progress through transcoding via the
+  // existing job polling, so we just refresh shortly after to pick them up.
+  const queueArchiveItems = useCallback(async (items) => {
     if (items.length === 0) return
-
     setArchiveImporting(true)
     try {
-      const { created = [], skipped = [], failed = [] } = await importFromArchive(items, allowUnlicensed)
-      const parts = [`${created.length} imported`]
-      if (skipped.length) parts.push(`${skipped.length} skipped`)
-      if (failed.length)  parts.push(`${failed.length} failed`)
+      const { queued = 0 } = await importFromArchive(items, allowUnlicensed)
       showToast({
-        type: failed.length && !created.length ? 'error' : 'success',
-        message: parts.join(' · '),
+        type: 'success',
+        message: `Queued ${queued} title${queued === 1 ? '' : 's'} — they'll appear in the library as they transcode.`,
       })
-      // Refresh the library so newly imported (unpublished) titles appear.
-      if (created.length) {
-        setArchiveSelected({})
-        listAdminContent().then(setContentItems).catch(() => {})
-      }
+      setArchiveSelected({})
+      // Pick up the freshly created jobs/content; the 5s auto-poll takes over after.
+      setTimeout(() => loadData().catch(() => {}), 2500)
+      setTimeout(() => loadData().catch(() => {}), 7000)
     } catch (err) {
       showToast({ type: 'error', message: err?.message || 'Import failed.' })
     } finally {
       setArchiveImporting(false)
     }
-  }, [archiveResults, archiveSelected, allowUnlicensed, showToast])
+  }, [allowUnlicensed, showToast])
+
+  const handleArchiveImport = useCallback(() => {
+    const items = archiveResults
+      .filter((r) => archiveSelected[r.archiveId])
+      .map((r) => ({ archiveId: r.archiveId, type: 'Film', title: r.title, releaseYear: r.year || undefined }))
+    return queueArchiveItems(items)
+  }, [archiveResults, archiveSelected, queueArchiveItems])
+
+  // ── Discovered candidates (scheduled discovery) ────────────────────────────
+  const loadArchiveCandidates = useCallback(async () => {
+    try {
+      const { candidates = [] } = await listArchiveCandidates('new')
+      setArchiveCandidates(candidates)
+    } catch { /* discovery may be disabled — non-fatal */ }
+  }, [])
+
+  const handleImportCandidate = useCallback((c) => {
+    return queueArchiveItems([{ archiveId: c.archiveId, type: 'Film', title: c.title, releaseYear: c.year || undefined }])
+      .then(() => setArchiveCandidates((prev) => prev.filter((x) => x._id !== c._id)))
+  }, [queueArchiveItems])
+
+  const handleDismissCandidate = useCallback(async (c) => {
+    setArchiveCandidates((prev) => prev.filter((x) => x._id !== c._id))
+    try { await dismissArchiveCandidate(c._id) } catch { /* best-effort */ }
+  }, [])
 
   // While any job is actively in-flight on the backend, poll every 5s so the
   // job list reflects real Bunny encode progress after a page refresh.
@@ -909,6 +930,9 @@ export default function Admin() {
     }
     if (activeTab === 'monitor' && adminAllowed) {
       void loadMonitor()
+    }
+    if (activeTab === 'archive' && adminAllowed) {
+      void loadArchiveCandidates()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, adminAllowed])
@@ -2037,11 +2061,54 @@ export default function Admin() {
           </div>
 
           <p className={styles.archiveHint}>
-            Search archive.org for public-domain films and import them straight into the catalog —
-            the video is fetched into Bunny Stream and the poster into Cloudinary. Imported titles
-            land <strong>unpublished</strong> so you can review them before they go live.
-            Only items with a detected public-domain / Creative-Commons licence are selected by default.
+            Search archive.org for public-domain films and import them into the catalog — the video is
+            fetched into Bunny Stream and the poster into Cloudinary. Imports run in the background:
+            titles land <strong>unpublished</strong> and show <strong>Transcoding…</strong> in the
+            Content tab until they're ready to publish. Only items with a detected
+            public-domain / Creative-Commons licence are selected by default.
           </p>
+
+          {archiveCandidates.length > 0 && (
+            <div className={styles.archiveCandidates}>
+              <p className={styles.archiveCandidatesTitle}>
+                <Activity size={13} /> Discovered for review · {archiveCandidates.length}
+              </p>
+              <p className={styles.archiveCandidatesSub}>
+                Surfaced automatically by scheduled discovery. Nothing is imported until you choose to.
+              </p>
+              <div className={styles.libraryList}>
+                {archiveCandidates.map((c) => (
+                  <div key={c._id} className={styles.archiveRow}>
+                    <div className={styles.archiveThumb}>
+                      <img src={c.thumbUrl} alt="" loading="lazy" />
+                    </div>
+                    <div className={styles.libraryLeft}>
+                      <p className={styles.libraryTitle}>{c.title || c.archiveId}</p>
+                      <p className={styles.libraryMeta}>
+                        {c.year ? `${c.year} · ` : ''}{c.language || ''}
+                      </p>
+                    </div>
+                    <span className={`${styles.archiveBadge} ${c.licensed ? styles.archiveBadgeOk : styles.archiveBadgeWarn}`}>
+                      {c.licensed ? 'PD / CC' : 'Unverified'}
+                    </span>
+                    <button
+                      className={styles.primaryBtn}
+                      onClick={() => handleImportCandidate(c)}
+                      disabled={archiveImporting}
+                    >
+                      Import
+                    </button>
+                    <button
+                      className={styles.editBtn}
+                      onClick={() => handleDismissCandidate(c)}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className={styles.archiveSearchRow}>
             <input
