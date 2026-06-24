@@ -479,17 +479,14 @@ router.post('/import-from-cdn', async (req, res, next) => {
 // Search archive.org for public-domain / CC titles to seed the catalog.
 router.get('/archive/search', async (req, res, next) => {
   try {
-    const { language = 'Bengali', query = '', rows = '40' } = req.query
+    const { language = 'Bengali', query = '', rows = '40', page = '1' } = req.query
     const collections = req.query.collection
       ? [].concat(req.query.collection)
       : undefined
-    const results = await searchArchive({
-      language,
-      query,
-      collections,
-      rows: Math.min(Number(rows) || 40, 100),
-    })
-    res.json({ results })
+    const safeRows = Math.min(Number(rows) || 40, 100)
+    const safePage = Math.max(Number(page) || 1, 1)
+    const { items, total } = await searchArchive({ language, query, collections, rows: safeRows, page: safePage })
+    res.json({ results: items, total, page: safePage, rows: safeRows })
   } catch (err) {
     next(err)
   }
