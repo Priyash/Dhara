@@ -744,6 +744,7 @@ export default function Admin() {
   const [archiveSearched, setArchiveSearched]   = useState(false)
   const [allowUnlicensed, setAllowUnlicensed]   = useState(false)
   const [archiveCandidates, setArchiveCandidates] = useState([])
+  const [candidateSelected, setCandidateSelected] = useState({})   // candidate _id -> true
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const showToast = useCallback((t) => {
@@ -855,11 +856,54 @@ export default function Admin() {
 
   const handleDismissCandidate = useCallback(async (c) => {
     setArchiveCandidates((prev) => prev.filter((x) => x._id !== c._id))
+    setCandidateSelected((prev) => { const n = { ...prev }; delete n[c._id]; return n })
     try { await dismissArchiveCandidate(c._id) } catch { /* best-effort */ }
   }, [])
 
+  const toggleCandidate = useCallback((id) => {
+    setCandidateSelected((prev) => ({ ...prev, [id]: !prev[id] }))
+  }, [])
+
+  const selectedCandidateCount = useMemo(
+    () => Object.values(candidateSelected).filter(Boolean).length,
+    [candidateSelected]
+  )
+
+  const toggleAllCandidates = useCallback(() => {
+    setCandidateSelected((prev) => {
+      const allOn = archiveCandidates.length > 0 && archiveCandidates.every((c) => prev[c._id])
+      if (allOn) return {}
+      const next = {}
+      for (const c of archiveCandidates) next[c._id] = true
+      return next
+    })
+  }, [archiveCandidates])
+
+  // Approve a whole discovery batch at once.
+  const handleImportSelectedCandidates = useCallback(async () => {
+    const chosen = archiveCandidates.filter((c) => candidateSelected[c._id])
+    if (chosen.length === 0) return
+    const items = chosen.map((c) => ({ archiveId: c.archiveId, type: 'Film', title: c.title, releaseYear: c.year || undefined }))
+    await queueArchiveItems(items)
+    const chosenIds = new Set(chosen.map((c) => c._id))
+    setArchiveCandidates((prev) => prev.filter((x) => !chosenIds.has(x._id)))
+    setCandidateSelected({})
+  }, [archiveCandidates, candidateSelected, queueArchiveItems])
+
   // While any job is actively in-flight on the backend, poll every 5s so the
   // job list reflects real Bunny encode progress after a page refresh.
+  // Aggregate job counts for the import-progress summary strip.
+  const jobCounts = useMemo(() => {
+    const c = { queued: 0, transcoding: 0, ready: 0, failed: 0 }
+    for (const j of jobs) {
+      if (j.status === 'queued' || j.status === 'awaiting_file') c.queued++
+      else if (j.status === 'uploading' || j.status === 'processing') c.transcoding++
+      else if (j.status === 'ready') c.ready++
+      else if (j.status === 'failed') c.failed++
+    }
+    return c
+  }, [jobs])
+
   const hasInProgressJobs = useMemo(
     () => jobs.some((j) => ['uploading', 'processing', 'queued'].includes(j.status)),
     [jobs]
@@ -1827,6 +1871,19 @@ export default function Admin() {
     )
   }
 
+  // Live import/transcode summary strip — shown when any jobs exist.
+  const jobSummaryStrip = (jobCounts.queued + jobCounts.transcoding + jobCounts.ready + jobCounts.failed) > 0 && (
+    <div className={styles.jobSummary}>
+      <span className={`${styles.jobSummaryPill} ${styles.jobSummaryQueued}`}>{jobCounts.queued} queued</span>
+      <span className={`${styles.jobSummaryPill} ${styles.jobSummaryProcessing}`}>{jobCounts.transcoding} transcoding</span>
+      <span className={`${styles.jobSummaryPill} ${styles.jobSummaryReady}`}>{jobCounts.ready} ready</span>
+      {jobCounts.failed > 0 && (
+        <span className={`${styles.jobSummaryPill} ${styles.jobSummaryFailed}`}>{jobCounts.failed} failed</span>
+      )}
+      {hasInProgressJobs && <span className={styles.jobSummaryLive}><span className={styles.livePulseDot} /> live</span>}
+    </div>
+  )
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <main className={styles.page}>
@@ -2060,6 +2117,8 @@ export default function Admin() {
             <h2 className={styles.cardTitle}><Archive size={16} /> Import from Internet Archive</h2>
           </div>
 
+          {jobSummaryStrip}
+
           <p className={styles.archiveHint}>
             Search archive.org for public-domain films and import them into the catalog — the video is
             fetched into Bunny Stream and the poster into Cloudinary. Imports run in the background:
@@ -2076,9 +2135,31 @@ export default function Admin() {
               <p className={styles.archiveCandidatesSub}>
                 Surfaced automatically by scheduled discovery. Nothing is imported until you choose to.
               </p>
+              <div className={styles.archiveActionBar}>
+                <label className={styles.archiveUnlicensedToggle}>
+                  <input
+                    type="checkbox"
+                    checked={archiveCandidates.length > 0 && archiveCandidates.every((c) => candidateSelected[c._id])}
+                    onChange={toggleAllCandidates}
+                  />
+                  Select all · {selectedCandidateCount} selected
+                </label>
+                <button
+                  className={styles.primaryBtn}
+                  onClick={handleImportSelectedCandidates}
+                  disabled={archiveImporting || selectedCandidateCount === 0}
+                >
+                  <UploadCloud size={13} /> Import selected {selectedCandidateCount || ''}
+                </button>
+              </div>
               <div className={styles.libraryList}>
                 {archiveCandidates.map((c) => (
                   <div key={c._id} className={styles.archiveRow}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(candidateSelected[c._id])}
+                      onChange={() => toggleCandidate(c._id)}
+                    />
                     <div className={styles.archiveThumb}>
                       <img src={c.thumbUrl} alt="" loading="lazy" />
                     </div>
@@ -2682,6 +2763,8 @@ export default function Admin() {
                 Live
               </span>
             </div>
+
+            {jobSummaryStrip}
 
             {/* ── Active transfers (in-browser) ── */}
             <ActiveUploadsPanel onCancel={cancelUpload} onRetry={retryUpload} onDismiss={dismissUpload} />
