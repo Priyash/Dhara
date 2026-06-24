@@ -37,6 +37,14 @@ class ErrorBoundary extends Component {
     console.error('[ErrorBoundary]', error, info.componentStack)
   }
 
+  componentDidUpdate(prevProps) {
+    // Recover automatically when the reset key changes (e.g. route navigation),
+    // so a single page crash doesn't wedge the app until a manual reload.
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false })
+    }
+  }
+
   render() {
     if (!this.state.hasError) return this.props.children
     return (
@@ -71,9 +79,10 @@ function PageFallback() {
 function AnimatedRoutes() {
   const location = useLocation()
   return (
-    <div key={location.key} className={styles.routePane}>
-      <Suspense fallback={<PageFallback />}>
-        <Routes location={location}>
+    <ErrorBoundary resetKey={location.pathname}>
+      <div key={location.key} className={styles.routePane}>
+        <Suspense fallback={<PageFallback />}>
+          <Routes location={location}>
           <Route path="/"                element={<Home />} />
           <Route path="/browse"          element={<Browse />} />
           <Route path="/watch/:id"       element={<Watch />} />
@@ -83,9 +92,10 @@ function AnimatedRoutes() {
           <Route path="/reels"           element={<Reels />} />
           <Route path="/reels/:id"       element={<Reels />} />
           <Route path="*"                element={<NotFound />} />
-        </Routes>
-      </Suspense>
-    </div>
+          </Routes>
+        </Suspense>
+      </div>
+    </ErrorBoundary>
   )
 }
 

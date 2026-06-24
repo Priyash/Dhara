@@ -3740,3 +3740,18 @@
   background: rgba(255,255,255,0.08);
 }
 .jobActionBtn:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Narrow-screen hardening for dense rows ─────────────────────────────────── */
+@media (max-width: 560px) {
+  /* Archive search/candidate rows: let badge + action buttons wrap below the title */
+  .archiveRow { flex-wrap: wrap; row-gap: 8px; }
+  .archiveRow .libraryLeft { min-width: 130px; }
+  .archiveRow .primaryBtn,
+  .archiveRow .editBtn { flex: 1 1 auto; justify-content: center; }
+
+  /* Upload Queue: drop the status/actions cluster onto its own row so the
+     Cancel/Retry buttons never push the card into horizontal overflow. */
+  .jobRow { grid-template-columns: 1fr; }
+  .jobMain, .jobSide, .jobNote { grid-column: 1; }
+  .jobSide { grid-row: auto; flex-wrap: wrap; justify-content: flex-start; }
+}
