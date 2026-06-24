@@ -11,8 +11,10 @@
  *   --language <lang>     Filter by language (default: Bengali).
  *   --query <q>           Extra raw archive.org query, ANDed in
  *                         (e.g. --query 'subject:Tagore').
- *   --collection <name>   Restrict to one collection (repeatable). Defaults to
- *                         known public-domain film collections.
+ *   --collection <name>   Restrict to one collection (repeatable). Unset by
+ *                         default — narrowing to the known PD film
+ *                         collections only makes sense for English-language
+ *                         searches; for other languages it returns nothing.
  *   --rows <n>            Max results to return (default: 50).
  *   --pd-only             Keep only items with a detectable PD / CC license
  *                         (default: on). Use --no-pd-only to include all.
@@ -45,13 +47,12 @@ const outFile     = argVal('--out', '')
 const pdOnly      = !process.argv.includes('--no-pd-only')
 const collections = argMulti('--collection')
 
-// Known collections that are public-domain / openly licensed film libraries.
-const DEFAULT_PD_COLLECTIONS = ['feature_films', 'prelinger', 'classic_tv', 'publicmovies', 'film_noir']
-const useCollections = collections.length ? collections : DEFAULT_PD_COLLECTIONS
-
 const clauses = ['mediatype:movies']
 if (language) clauses.push(`language:(${language})`)
-clauses.push(`(${useCollections.map(c => `collection:${c}`).join(' OR ')})`)
+// Only narrow by collection when explicitly requested — defaulting to the
+// English-language PD film collections returns zero results for most
+// other languages (e.g. Bengali).
+if (collections.length) clauses.push(`(${collections.map(c => `collection:${c}`).join(' OR ')})`)
 if (extraQuery) clauses.push(`(${extraQuery})`)
 const q = clauses.join(' AND ')
 

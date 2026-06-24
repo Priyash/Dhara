@@ -27,8 +27,8 @@ async function runDiscovery() {
   let discovered = 0
   for (const language of languages()) {
     try {
-      const results = await searchArchive({ language, rows: 60 })
-      for (const r of results) {
+      const { items } = await searchArchive({ language, rows: 60 })
+      for (const r of items) {
         // Insert only if unseen — never overwrite an existing candidate's status
         // (so dismissed/imported items don't resurface as 'new').
         const res = await ArchiveCandidate.updateOne(

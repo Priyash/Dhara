@@ -63,24 +63,37 @@ export function archiveVideoUrl(id, fileName) {
 
 /**
  * Search archive.org for importable titles. Returns lightweight rows including
- * a `license` classification so the UI can badge each result.
+ * a `license` classification so the UI can badge each result, plus the total
+ * match count so callers can paginate (archive.org's own `page`/`rows` params).
  */
-export async function searchArchive({ language = 'Bengali', query = '', collections, rows = 40 } = {}) {
-  const useCollections = (Array.isArray(collections) && collections.length) ? collections : DEFAULT_PD_COLLECTIONS
+export async function searchArchive({ language = 'Bengali', query = '', collections, rows = 40, page = 1 } = {}) {
   const clauses = ['mediatype:movies']
   if (language) clauses.push(`language:(${language})`)
-  clauses.push(`(${useCollections.map(c => `collection:${c}`).join(' OR ')})`)
+  // Only narrow by collection when the caller explicitly asks — the curated
+  // DEFAULT_PD_COLLECTIONS list is almost entirely English-language American
+  // film libraries, so AND-ing it in by default returns zero results for
+  // most other languages (e.g. Bengali). detectLicense() below still flags
+  // unlicensed results so the UI can leave them unchecked instead.
+  if (Array.isArray(collections) && collections.length) {
+    clauses.push(`(${collections.map(c => `collection:${c}`).join(' OR ')})`)
+  }
   if (query) clauses.push(`(${query})`)
 
-  const params = new URLSearchParams({ q: clauses.join(' AND '), rows: String(rows), output: 'json' })
+  const params = new URLSearchParams({
+    q: clauses.join(' AND '),
+    rows: String(rows),
+    page: String(page),
+    output: 'json',
+  })
   for (const f of ['identifier', 'title', 'year', 'licenseurl', 'rights', 'collection']) params.append('fl[]', f)
 
   const res = await fetch(`https://archive.org/advancedsearch.php?${params.toString()}`)
   if (!res.ok) throw new Error(`archive.org search HTTP ${res.status}`)
   const json = await res.json()
   const docs = json?.response?.docs || []
+  const total = Number(json?.response?.numFound ?? docs.length)
 
-  return docs.map(d => {
+  const items = docs.map(d => {
     const license = detectLicense(d)
     return {
       archiveId:   d.identifier,
@@ -92,6 +105,8 @@ export async function searchArchive({ language = 'Bengali', query = '', collecti
       thumbUrl:    `https://archive.org/services/img/${d.identifier}`,
     }
   })
+
+  return { items, total, page: Number(page), rows: Number(rows) }
 }
 
 /** Create a Bunny video and have Bunny fetch the file from a remote URL. Returns the GUID. */
