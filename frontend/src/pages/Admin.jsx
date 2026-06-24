@@ -5,7 +5,7 @@ import {
   CreditCard, Check, Copy, AlertTriangle, Zap, Code2, Crown,
   UserCheck, UserX, FileCheck, FileX, ListPlus, Trash2, Eye,
   GripVertical, Layers, Plus, UploadIcon, IndianRupee,
-  Calculator, Wallet, Clock, ChevronDown, TrendingUp, Users, BarChart2,
+  Calculator, Wallet, Clock, ChevronDown, ChevronLeft, ChevronRight, TrendingUp, Users, BarChart2,
   Activity, Server, AlertCircle, Database, Heart, MessageCircle, Play,
   Archive, Search,
 } from 'lucide-react'
@@ -744,6 +744,9 @@ export default function Admin() {
   const [archiveSearching, setArchiveSearching] = useState(false)
   const [archiveImporting, setArchiveImporting] = useState(false)
   const [archiveSearched, setArchiveSearched]   = useState(false)
+  const [archivePage, setArchivePage]           = useState(1)
+  const [archiveTotal, setArchiveTotal]         = useState(0)
+  const ARCHIVE_PAGE_SIZE = 40
   const [allowUnlicensed, setAllowUnlicensed]   = useState(false)
   const [archiveCandidates, setArchiveCandidates] = useState([])
   const [candidateSelected, setCandidateSelected] = useState({})   // candidate _id -> true
@@ -786,12 +789,19 @@ export default function Admin() {
   loadDataRef.current = loadData
 
   // ── Archive import handlers ────────────────────────────────────────────────
-  const handleArchiveSearch = useCallback(async () => {
+  const runArchiveSearch = useCallback(async (page = 1) => {
     setArchiveSearching(true)
     setError('')
     try {
-      const { results } = await searchArchive({ language: archiveLang, query: archiveQuery, rows: 40 })
+      const { results, total } = await searchArchive({
+        language: archiveLang,
+        query: archiveQuery,
+        rows: ARCHIVE_PAGE_SIZE,
+        page,
+      })
       setArchiveResults(results || [])
+      setArchiveTotal(total || 0)
+      setArchivePage(page)
       setArchiveSearched(true)
       // Pre-select everything that already passes the license check.
       const preselect = {}
@@ -803,6 +813,32 @@ export default function Admin() {
       setArchiveSearching(false)
     }
   }, [archiveLang, archiveQuery, showToast])
+
+  // A fresh search (new language/keyword) always starts back at page 1.
+  const handleArchiveSearch = useCallback(() => runArchiveSearch(1), [runArchiveSearch])
+
+  const archiveTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(archiveTotal / ARCHIVE_PAGE_SIZE)),
+    [archiveTotal]
+  )
+
+  const handleArchivePrevPage = useCallback(() => {
+    if (archivePage > 1 && !archiveSearching) runArchiveSearch(archivePage - 1)
+  }, [archivePage, archiveSearching, runArchiveSearch])
+
+  const handleArchiveNextPage = useCallback(() => {
+    if (archivePage < archiveTotalPages && !archiveSearching) runArchiveSearch(archivePage + 1)
+  }, [archivePage, archiveTotalPages, archiveSearching, runArchiveSearch])
+
+  // Clear the current result set without touching the language/keyword inputs,
+  // so the admin can dismiss a search without re-typing it.
+  const handleArchiveClear = useCallback(() => {
+    setArchiveResults([])
+    setArchiveSelected({})
+    setArchiveSearched(false)
+    setArchivePage(1)
+    setArchiveTotal(0)
+  }, [])
 
   const toggleArchiveSelect = useCallback((id) => {
     setArchiveSelected((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -2242,6 +2278,16 @@ export default function Admin() {
                 ? <><RefreshCw size={13} className={styles.refreshIconSpinning} /> Searching…</>
                 : <><Search size={13} /> Search</>}
             </button>
+            {archiveSearched && (
+              <button
+                className={styles.editBtn}
+                onClick={handleArchiveClear}
+                disabled={archiveSearching}
+                title="Clear results"
+              >
+                <X size={13} /> Clear
+              </button>
+            )}
           </div>
 
           {archiveSearched && archiveResults.length === 0 && !archiveSearching && (
@@ -2253,6 +2299,7 @@ export default function Admin() {
               <div className={styles.archiveActionBar}>
                 <span className={styles.archiveCount}>
                   {selectedArchiveCount} of {archiveResults.length} selected
+                  {archiveTotal > archiveResults.length && ` · ${archiveTotal} total results`}
                 </span>
                 <label className={styles.archiveUnlicensedToggle}>
                   <input
@@ -2305,6 +2352,28 @@ export default function Admin() {
                   </label>
                 ))}
               </div>
+
+              {archiveTotalPages > 1 && (
+                <div className={styles.archivePagination}>
+                  <button
+                    className={styles.archivePageBtn}
+                    onClick={handleArchivePrevPage}
+                    disabled={archivePage <= 1 || archiveSearching}
+                  >
+                    <ChevronLeft size={14} /> Prev
+                  </button>
+                  <span className={styles.archivePageInfo}>
+                    Page {archivePage} of {archiveTotalPages}
+                  </span>
+                  <button
+                    className={styles.archivePageBtn}
+                    onClick={handleArchiveNextPage}
+                    disabled={archivePage >= archiveTotalPages || archiveSearching}
+                  >
+                    Next <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
             </>
           )}
         </section>

@@ -66,6 +66,19 @@ body {
   outline-offset: 2px;
 }
 
+/* Text selection — browsers default to a flat blue/grey highlight that clashes
+   with the dark theme (and paints full-line-width bars across blank rows when
+   a drag spans them). Recolor it to the site's accent so selection always
+   looks intentional instead of like a rendering glitch. */
+::selection {
+  background: rgba(219, 39, 119, 0.35);
+  color: var(--color-text);
+}
+::-moz-selection {
+  background: rgba(219, 39, 119, 0.35);
+  color: var(--color-text);
+}
+
 /* ── Global autofill override ────────────────────────────────────────────────
    Chrome/Safari apply a light background via :-webkit-autofill.
    The box-shadow trick paints a dark surface over it without fighting
