@@ -58,6 +58,7 @@ function logAdminAction(req, action, targetType, targetId, targetLabel, metadata
 }
 
 import { bunnyRequest, processUploadJob } from '../services/bunnyUpload.js'
+import { searchArchive, importArchiveItem } from '../services/archiveImport.js'
 
 const router = Router()
 
@@ -466,6 +467,64 @@ router.post('/import-from-cdn', async (req, res, next) => {
     }
 
     res.json({ imported, created })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ── Internet Archive import ───────────────────────────────────────────────────
+// Search archive.org for public-domain / CC titles to seed the catalog.
+router.get('/archive/search', async (req, res, next) => {
+  try {
+    const { language = 'Bengali', query = '', rows = '40' } = req.query
+    const collections = req.query.collection
+      ? [].concat(req.query.collection)
+      : undefined
+    const results = await searchArchive({
+      language,
+      query,
+      collections,
+      rows: Math.min(Number(rows) || 40, 100),
+    })
+    res.json({ results })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Import selected archive.org items. Each becomes a Content doc with the video
+// fetched into Bunny Stream and the poster pulled into Cloudinary.
+router.post('/archive/import', async (req, res, next) => {
+  try {
+    const { items = [], allowUnlicensed = false } = req.body
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'No items to import' })
+    }
+    if (items.length > 50) {
+      return res.status(400).json({ error: 'Import at most 50 items per request' })
+    }
+
+    const created = [], skipped = [], failed = []
+    for (const item of items) {
+      try {
+        const result = await importArchiveItem(item, {
+          ContentModel: Content,
+          allowUnlicensed: Boolean(allowUnlicensed),
+        })
+        if (result.created) created.push({ id: result.id, title: result.title })
+        else if (result.skipped) skipped.push({ title: result.title, reason: result.reason })
+      } catch (err) {
+        failed.push({ title: item.title || item.archiveId || '(unnamed)', error: err.message })
+      }
+    }
+
+    if (created.length) {
+      bustContentCache()
+      logAdminAction(req, 'archive_import', 'content', null, `${created.length} title(s)`, {
+        created: created.length, skipped: skipped.length, failed: failed.length,
+      })
+    }
+    res.json({ created, skipped, failed })
   } catch (err) {
     next(err)
   }
