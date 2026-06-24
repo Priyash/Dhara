@@ -1,0 +1,42 @@
+{
+  "defaults": {
+    "contentLanguage": "Bengali",
+    "isPremium": false,
+    "isPublished": true,
+    "submissionStatus": "approved"
+  },
+  "items": [
+    {
+      "title": "Example Film",
+      "type": "Film",
+      "genre": ["Drama"],
+      "releaseYear": 1955,
+      "duration": "1h 45m",
+      "desc": "A public-domain film used to populate the catalog.",
+      "director": "Some Director",
+      "cast": ["Actor One", "Actor Two"],
+      "certification": "U",
+      "videoPath": "./assets/example-film.mp4",
+      "posterPath": "./assets/example-film-poster.jpg",
+      "backdropPath": "./assets/example-film-backdrop.jpg"
+    },
+    {
+      "title": "Example Series",
+      "type": "Series",
+      "genre": ["Mystery", "Drama"],
+      "releaseYear": 2024,
+      "desc": "An episodic title — videoPath lives on each episode.",
+      "posterPath": "./assets/example-series-poster.jpg",
+      "seasons": [
+        {
+          "number": 1,
+          "title": "The Beginning",
+          "episodes": [
+            { "number": 1, "title": "Pilot",  "duration": "42m", "videoPath": "./assets/series-s1e1.mp4" },
+            { "number": 2, "title": "The Lead", "duration": "39m", "videoPath": "./assets/series-s1e2.mp4" }
+          ]
+        }
+      ]
+    }
+  ]
+}

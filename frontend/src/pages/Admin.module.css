@@ -14,7 +14,11 @@
   margin-bottom: 28px;
   border-bottom: 1px solid var(--color-border);
   padding-bottom: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.tabBar::-webkit-scrollbar { display: none; }
 
 .tab {
   display: flex;
@@ -32,6 +36,8 @@
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
   position: relative;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .tab:hover {
@@ -3560,4 +3566,192 @@
   .monKpiRow    { grid-template-columns: 1fr 1fr; }
   .monPayStrip  { flex-direction: column; align-items: flex-start; }
   .monPayDivider { width: 100%; height: 1px; margin: 4px 0; }
+}
+
+/* ── Archive import tab ────────────────────────────────────────────────────── */
+.archiveHint {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--color-text-dim);
+  font-family: var(--font-body);
+  margin: 4px 0 14px;
+  max-width: 760px;
+}
+.archiveHint strong { color: var(--color-text); font-weight: 600; }
+
+.archiveSearchRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.archiveSearchRow .librarySearch { flex: 1; min-width: 180px; }
+
+.archiveActionBar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 0 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  margin-bottom: 10px;
+}
+.archiveCount {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+.archiveUnlicensedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--color-text-dim);
+  font-family: var(--font-body);
+  cursor: pointer;
+  margin-right: auto;
+}
+.archiveUnlicensedToggle input { cursor: pointer; }
+
+.archiveRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius-md);
+  background: rgba(0,0,0,0.15);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.archiveRow:hover {
+  border-color: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+}
+.archiveRow input[type="checkbox"] { flex-shrink: 0; cursor: pointer; }
+
+.archiveThumb {
+  width: 42px;
+  height: 60px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.04);
+}
+.archiveThumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.archiveBadge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: var(--font-body);
+}
+.archiveBadgeOk   { background: rgba(34,197,94,0.15);  color: #4ade80; }
+.archiveBadgeWarn { background: rgba(234,179,8,0.15);   color: #facc15; }
+
+.archiveLink {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--color-accent, #a78bfa);
+  text-decoration: none;
+  font-family: var(--font-body);
+}
+.archiveLink:hover { text-decoration: underline; }
+
+/* Discovered candidates block (scheduled discovery) */
+.archiveCandidates {
+  border: 1px solid rgba(167,139,250,0.18);
+  background: rgba(167,139,250,0.05);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  margin-bottom: 18px;
+}
+.archiveCandidatesTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+.archiveCandidatesSub {
+  font-size: 11.5px;
+  color: var(--color-text-dim);
+  font-family: var(--font-body);
+  margin: 3px 0 10px;
+}
+
+/* Import/transcode progress summary strip */
+.jobSummary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+.jobSummaryPill {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.jobSummaryQueued     { background: rgba(244,114,182,0.12); color: #f472b6; border-color: rgba(244,114,182,0.25); }
+.jobSummaryProcessing { background: rgba(167,139,250,0.12); color: #a78bfa; border-color: rgba(167,139,250,0.25); }
+.jobSummaryReady      { background: rgba(34,197,94,0.12);   color: #4ade80; border-color: rgba(34,197,94,0.25); }
+.jobSummaryFailed     { background: rgba(239,68,68,0.12);   color: #f87171; border-color: rgba(239,68,68,0.3); }
+.jobSummaryLive {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--color-text-dim);
+  font-family: var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Cancel / Retry buttons on queue job rows */
+.jobActionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: var(--radius-sm, 6px);
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+.jobActionBtn:hover {
+  color: var(--color-text);
+  border-color: rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.08);
+}
+.jobActionBtn:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Narrow-screen hardening for dense rows ─────────────────────────────────── */
+@media (max-width: 560px) {
+  /* Archive search/candidate rows: let badge + action buttons wrap below the title */
+  .archiveRow { flex-wrap: wrap; row-gap: 8px; }
+  .archiveRow .libraryLeft { min-width: 130px; }
+  .archiveRow .primaryBtn,
+  .archiveRow .editBtn { flex: 1 1 auto; justify-content: center; }
+
+  /* Upload Queue: drop the status/actions cluster onto its own row so the
+     Cancel/Retry buttons never push the card into horizontal overflow. */
+  .jobRow { grid-template-columns: 1fr; }
+  .jobMain, .jobSide, .jobNote { grid-column: 1; }
+  .jobSide { grid-row: auto; flex-wrap: wrap; justify-content: flex-start; }
 }

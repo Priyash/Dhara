@@ -58,6 +58,10 @@ function logAdminAction(req, action, targetType, targetId, targetLabel, metadata
 }
 
 import { bunnyRequest, processUploadJob } from '../services/bunnyUpload.js'
+import { searchArchive, bunnyFetchFromUrl } from '../services/archiveImport.js'
+import { ArchiveCandidate } from '../models/ArchiveCandidate.js'
+import { ArchiveImportTask } from '../models/ArchiveImportTask.js'
+import { triggerImportDrain } from '../config/archiveImportWorker.js'
 
 const router = Router()
 
@@ -471,6 +475,97 @@ router.post('/import-from-cdn', async (req, res, next) => {
   }
 })
 
+// ── Internet Archive import ───────────────────────────────────────────────────
+// Search archive.org for public-domain / CC titles to seed the catalog.
+router.get('/archive/search', async (req, res, next) => {
+  try {
+    const { language = 'Bengali', query = '', rows = '40' } = req.query
+    const collections = req.query.collection
+      ? [].concat(req.query.collection)
+      : undefined
+    const results = await searchArchive({
+      language,
+      query,
+      collections,
+      rows: Math.min(Number(rows) || 40, 100),
+    })
+    res.json({ results })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Queue selected archive.org items for import. Returns immediately (202); the
+// batch runs in the background, creating Content docs and UploadJob records so
+// the existing job pipeline tracks transcoding and links each video when ready.
+router.post('/archive/import', async (req, res, next) => {
+  try {
+    const { items = [], allowUnlicensed = false } = req.body
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'No items to import' })
+    }
+    if (items.length > 50) {
+      return res.status(400).json({ error: 'Import at most 50 items per request' })
+    }
+
+    const createdByEmail = req.user?.email || ''
+    const archiveIds = items.map((i) => i.archiveId).filter(Boolean)
+    const batchId = randomUUID()
+
+    // Persist each item as a queue task so the import survives a backend restart.
+    await ArchiveImportTask.insertMany(items.map((item) => ({
+      batchId,
+      item,
+      title: item.title || item.archiveId || '',
+      allowUnlicensed: Boolean(allowUnlicensed),
+      createdByEmail,
+      status: 'pending',
+    })))
+
+    // Mark any discovered candidates as imported up front (idempotent).
+    if (archiveIds.length) {
+      ArchiveCandidate.updateMany({ archiveId: { $in: archiveIds } }, { $set: { status: 'imported' } }).catch(() => {})
+    }
+    logAdminAction(req, 'archive_import', 'content', null, `${items.length} title(s) queued`, { batchId, queued: items.length })
+
+    res.status(202).json({ queued: items.length, batchId })
+
+    // Kick the worker; if the process dies, startup/interval drain resumes the queue.
+    triggerImportDrain()
+  } catch (err) {
+    next(err)
+  }
+})
+
+// List discovered candidates surfaced by the scheduled discovery job.
+router.get('/archive/candidates', async (req, res, next) => {
+  try {
+    const status = String(req.query.status || 'new')
+    const candidates = await ArchiveCandidate.find({ status })
+      .sort({ discoveredAt: -1 })
+      .limit(100)
+      .lean()
+    res.json({ candidates })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Dismiss a candidate so it stops showing in the review list.
+router.patch('/archive/candidates/:id/dismiss', async (req, res, next) => {
+  try {
+    const updated = await ArchiveCandidate.findByIdAndUpdate(
+      req.params.id,
+      { $set: { status: 'dismissed' } },
+      { new: true }
+    ).lean()
+    if (!updated) return res.status(404).json({ error: 'Candidate not found' })
+    res.json(updated)
+  } catch (err) {
+    next(err)
+  }
+})
+
 router.get('/content', async (req, res, next) => {
   try {
     const items = await Content.find({ isDeleted: { $ne: true } })
@@ -748,6 +843,57 @@ router.get('/upload-jobs/:id', async (req, res, next) => {
       .lean()
     if (!job) return res.status(404).json({ error: 'Upload job not found' })
     res.json(job)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Cancel an in-flight job (queued or transcoding). Deletes the Bunny video if
+// one exists and marks the job cancelled. Driven by job status, so the Cancel
+// button is derived from server state and survives a page refresh.
+router.patch('/upload-jobs/:id/cancel', async (req, res, next) => {
+  try {
+    const job = await UploadJob.findById(req.params.id)
+    if (!job) return res.status(404).json({ error: 'Upload job not found' })
+    if (!['awaiting_file', 'queued', 'uploading', 'processing'].includes(job.status)) {
+      return res.status(409).json({ error: `Cannot cancel a job that is "${job.status}"` })
+    }
+
+    if (job.bunnyVideoId) {
+      await bunnyRequest(`/library/${libraryId}/videos/${job.bunnyVideoId}`, { method: 'DELETE' }).catch(() => {})
+    }
+    job.status = 'cancelled'
+    job.progress = 0
+    job.note = 'Cancelled by admin.'
+    job.error = ''
+    await job.save()
+    res.json(job.toObject())
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Retry a failed or cancelled fetch-based (archive.org) job by re-fetching the
+// source into a fresh Bunny video. The existing job-sync then links it when ready.
+router.patch('/upload-jobs/:id/retry', async (req, res, next) => {
+  try {
+    const job = await UploadJob.findById(req.params.id)
+    if (!job) return res.status(404).json({ error: 'Upload job not found' })
+    if (!['failed', 'cancelled'].includes(job.status)) {
+      return res.status(409).json({ error: `Can only retry a failed or cancelled job (is "${job.status}")` })
+    }
+    if (!job.sourceUrl) {
+      return res.status(400).json({ error: 'This job has no source URL to retry from (re-upload manually).' })
+    }
+
+    const bunnyVideoId = await bunnyFetchFromUrl(job.sourceUrl, job.title, job.bunnyCollectionId)
+    job.bunnyVideoId = bunnyVideoId
+    job.status = 'processing'
+    job.progress = 50
+    job.note = 'Re-fetching from source…'
+    job.error = ''
+    await job.save()
+    res.json(job.toObject())
   } catch (err) {
     next(err)
   }

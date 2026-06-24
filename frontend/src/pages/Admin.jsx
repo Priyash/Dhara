@@ -7,6 +7,7 @@ import {
   GripVertical, Layers, Plus, UploadIcon, IndianRupee,
   Calculator, Wallet, Clock, ChevronDown, TrendingUp, Users, BarChart2,
   Activity, Server, AlertCircle, Database, Heart, MessageCircle, Play,
+  Archive, Search,
 } from 'lucide-react'
 import { uploadToCloudinary, cloudinaryTransform } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
@@ -23,6 +24,8 @@ import {
   listAdminCreatorEarnings, calculateCreatorEarnings, processCreatorPayout, listAdminCreatorPayouts,
   getAdminRevenue, getAdminMonitor,
   listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
+  searchArchive, importFromArchive, listArchiveCandidates, dismissArchiveCandidate,
+  cancelUploadJob, retryUploadJob,
 } from '../services/api'
 import styles from './Admin.module.css'
 import { isValidDuration } from '../utils/duration'
@@ -451,6 +454,7 @@ function CreatorEarningsBarsChart({ data }) {
 
 const TABS = [
   { id: 'content',  label: 'Content',         icon: Library      },
+  { id: 'archive',  label: 'Archive Import',  icon: Archive      },
   { id: 'uploads',  label: 'Uploads',         icon: UploadCloud  },
   { id: 'shelves',  label: 'Shelves',         icon: Layers       },
   { id: 'payments', label: 'Payments',        icon: CreditCard   },
@@ -535,6 +539,7 @@ const statusClass = {
   processing:    styles.statusProcessing,
   ready:         styles.statusReady,
   failed:        styles.statusFailed,
+  cancelled:     styles.statusFailed,
 }
 
 // Module-level counter so UIDs are unique even across unmount/remount cycles
@@ -731,6 +736,18 @@ export default function Admin() {
   const [imgProgress,  setImgProgress]    = useState({ poster: 0,     backdrop: 0     })
   const modalFormRef = useRef(null)
 
+  // ── Archive import tab state ───────────────────────────────────────────────
+  const [archiveLang, setArchiveLang]         = useState('Bengali')
+  const [archiveQuery, setArchiveQuery]       = useState('')
+  const [archiveResults, setArchiveResults]   = useState([])
+  const [archiveSelected, setArchiveSelected] = useState({})   // archiveId -> true
+  const [archiveSearching, setArchiveSearching] = useState(false)
+  const [archiveImporting, setArchiveImporting] = useState(false)
+  const [archiveSearched, setArchiveSearched]   = useState(false)
+  const [allowUnlicensed, setAllowUnlicensed]   = useState(false)
+  const [archiveCandidates, setArchiveCandidates] = useState([])
+  const [candidateSelected, setCandidateSelected] = useState({})   // candidate _id -> true
+
   // ── Helpers ───────────────────────────────────────────────────────────────
   const showToast = useCallback((t) => {
     setToast(t)
@@ -768,8 +785,153 @@ export default function Admin() {
   const loadDataRef = useRef(loadData)
   loadDataRef.current = loadData
 
-  // While any job is actively in-flight on the backend, poll every 5s so the
-  // job list reflects real Bunny encode progress after a page refresh.
+  // ── Archive import handlers ────────────────────────────────────────────────
+  const handleArchiveSearch = useCallback(async () => {
+    setArchiveSearching(true)
+    setError('')
+    try {
+      const { results } = await searchArchive({ language: archiveLang, query: archiveQuery, rows: 40 })
+      setArchiveResults(results || [])
+      setArchiveSearched(true)
+      // Pre-select everything that already passes the license check.
+      const preselect = {}
+      for (const r of results || []) if (r.licensed) preselect[r.archiveId] = true
+      setArchiveSelected(preselect)
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Archive search failed.' })
+    } finally {
+      setArchiveSearching(false)
+    }
+  }, [archiveLang, archiveQuery, showToast])
+
+  const toggleArchiveSelect = useCallback((id) => {
+    setArchiveSelected((prev) => ({ ...prev, [id]: !prev[id] }))
+  }, [])
+
+  const selectedArchiveCount = useMemo(
+    () => Object.values(archiveSelected).filter(Boolean).length,
+    [archiveSelected]
+  )
+
+  // Queue items for background import. The request returns immediately; the
+  // titles then appear in the library and progress through transcoding via the
+  // existing job polling, so we just refresh shortly after to pick them up.
+  const queueArchiveItems = useCallback(async (items) => {
+    if (items.length === 0) return
+    setArchiveImporting(true)
+    try {
+      const { queued = 0 } = await importFromArchive(items, allowUnlicensed)
+      showToast({
+        type: 'success',
+        message: `Queued ${queued} title${queued === 1 ? '' : 's'} — they'll appear in the library as they transcode.`,
+      })
+      setArchiveSelected({})
+      // Pick up the freshly created jobs/content; the 5s auto-poll takes over after.
+      setTimeout(() => loadData().catch(() => {}), 2500)
+      setTimeout(() => loadData().catch(() => {}), 7000)
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Import failed.' })
+    } finally {
+      setArchiveImporting(false)
+    }
+  }, [allowUnlicensed, showToast])
+
+  const handleArchiveImport = useCallback(() => {
+    const items = archiveResults
+      .filter((r) => archiveSelected[r.archiveId])
+      .map((r) => ({ archiveId: r.archiveId, type: 'Film', title: r.title, releaseYear: r.year || undefined }))
+    return queueArchiveItems(items)
+  }, [archiveResults, archiveSelected, queueArchiveItems])
+
+  // ── Discovered candidates (scheduled discovery) ────────────────────────────
+  const loadArchiveCandidates = useCallback(async () => {
+    try {
+      const { candidates = [] } = await listArchiveCandidates('new')
+      setArchiveCandidates(candidates)
+    } catch { /* discovery may be disabled — non-fatal */ }
+  }, [])
+
+  const handleImportCandidate = useCallback((c) => {
+    return queueArchiveItems([{ archiveId: c.archiveId, type: 'Film', title: c.title, releaseYear: c.year || undefined }])
+      .then(() => setArchiveCandidates((prev) => prev.filter((x) => x._id !== c._id)))
+  }, [queueArchiveItems])
+
+  const handleDismissCandidate = useCallback(async (c) => {
+    setArchiveCandidates((prev) => prev.filter((x) => x._id !== c._id))
+    setCandidateSelected((prev) => { const n = { ...prev }; delete n[c._id]; return n })
+    try { await dismissArchiveCandidate(c._id) } catch { /* best-effort */ }
+  }, [])
+
+  const toggleCandidate = useCallback((id) => {
+    setCandidateSelected((prev) => ({ ...prev, [id]: !prev[id] }))
+  }, [])
+
+  const selectedCandidateCount = useMemo(
+    () => Object.values(candidateSelected).filter(Boolean).length,
+    [candidateSelected]
+  )
+
+  const toggleAllCandidates = useCallback(() => {
+    setCandidateSelected((prev) => {
+      const allOn = archiveCandidates.length > 0 && archiveCandidates.every((c) => prev[c._id])
+      if (allOn) return {}
+      const next = {}
+      for (const c of archiveCandidates) next[c._id] = true
+      return next
+    })
+  }, [archiveCandidates])
+
+  // Approve a whole discovery batch at once.
+  const handleImportSelectedCandidates = useCallback(async () => {
+    const chosen = archiveCandidates.filter((c) => candidateSelected[c._id])
+    if (chosen.length === 0) return
+    const items = chosen.map((c) => ({ archiveId: c.archiveId, type: 'Film', title: c.title, releaseYear: c.year || undefined }))
+    await queueArchiveItems(items)
+    const chosenIds = new Set(chosen.map((c) => c._id))
+    setArchiveCandidates((prev) => prev.filter((x) => !chosenIds.has(x._id)))
+    setCandidateSelected({})
+  }, [archiveCandidates, candidateSelected, queueArchiveItems])
+
+  // Cancel / retry a queue job. Both act on persisted job state, so the buttons
+  // are derived from job.status and remain available after a refresh.
+  const [jobActionId, setJobActionId] = useState(null)
+  const handleCancelJob = useCallback(async (job) => {
+    setJobActionId(job._id)
+    try {
+      const updated = await cancelUploadJob(job._id)
+      setJobs((prev) => prev.map((j) => (j._id === updated._id ? { ...j, ...updated } : j)))
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Could not cancel.' })
+    } finally {
+      setJobActionId(null)
+    }
+  }, [showToast])
+
+  const handleRetryJob = useCallback(async (job) => {
+    setJobActionId(job._id)
+    try {
+      const updated = await retryUploadJob(job._id)
+      setJobs((prev) => prev.map((j) => (j._id === updated._id ? { ...j, ...updated } : j)))
+      showToast({ type: 'success', message: 'Re-fetching from source…' })
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Could not retry.' })
+    } finally {
+      setJobActionId(null)
+    }
+  }, [showToast])
+
+  // Aggregate job counts for the import-progress summary strip.
+  const jobCounts = useMemo(() => {
+    const c = { queued: 0, transcoding: 0, ready: 0, failed: 0 }
+    for (const j of jobs) {
+      if (j.status === 'queued' || j.status === 'awaiting_file') c.queued++
+      else if (j.status === 'uploading' || j.status === 'processing') c.transcoding++
+      else if (j.status === 'ready') c.ready++
+      else if (j.status === 'failed') c.failed++
+    }
+    return c
+  }, [jobs])
+
   const hasInProgressJobs = useMemo(
     () => jobs.some((j) => ['uploading', 'processing', 'queued'].includes(j.status)),
     [jobs]
@@ -840,6 +1002,9 @@ export default function Admin() {
     }
     if (activeTab === 'monitor' && adminAllowed) {
       void loadMonitor()
+    }
+    if (activeTab === 'archive' && adminAllowed) {
+      void loadArchiveCandidates()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, adminAllowed])
@@ -1734,6 +1899,19 @@ export default function Admin() {
     )
   }
 
+  // Live import/transcode summary strip — shown when any jobs exist.
+  const jobSummaryStrip = (jobCounts.queued + jobCounts.transcoding + jobCounts.ready + jobCounts.failed) > 0 && (
+    <div className={styles.jobSummary}>
+      <span className={`${styles.jobSummaryPill} ${styles.jobSummaryQueued}`}>{jobCounts.queued} queued</span>
+      <span className={`${styles.jobSummaryPill} ${styles.jobSummaryProcessing}`}>{jobCounts.transcoding} transcoding</span>
+      <span className={`${styles.jobSummaryPill} ${styles.jobSummaryReady}`}>{jobCounts.ready} ready</span>
+      {jobCounts.failed > 0 && (
+        <span className={`${styles.jobSummaryPill} ${styles.jobSummaryFailed}`}>{jobCounts.failed} failed</span>
+      )}
+      {hasInProgressJobs && <span className={styles.jobSummaryLive}><span className={styles.livePulseDot} /> live</span>}
+    </div>
+  )
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <main className={styles.page}>
@@ -1795,6 +1973,7 @@ export default function Admin() {
           <h1 className={styles.title}>Admin Studio</h1>
           <p className={styles.titleSub}>
             {activeTab === 'content'  && 'Manage the content library'}
+            {activeTab === 'archive'  && 'Find and import public-domain titles from the Internet Archive'}
             {activeTab === 'uploads'  && 'Upload and map video files'}
             {activeTab === 'payments' && 'Configure payment infrastructure'}
             {activeTab === 'creators' && 'Review creator applications, content submissions and reels'}
@@ -1956,6 +2135,178 @@ export default function Admin() {
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* ── ARCHIVE IMPORT TAB ───────────────────────────────────────────── */}
+      {activeTab === 'archive' && (
+        <section className={styles.jobsCard}>
+          <div className={styles.libraryHeader}>
+            <h2 className={styles.cardTitle}><Archive size={16} /> Import from Internet Archive</h2>
+          </div>
+
+          {jobSummaryStrip}
+
+          <p className={styles.archiveHint}>
+            Search archive.org for public-domain films and import them into the catalog — the video is
+            fetched into Bunny Stream and the poster into Cloudinary. Imports run in the background:
+            titles land <strong>unpublished</strong> and show <strong>Transcoding…</strong> in the
+            Content tab until they're ready to publish. Only items with a detected
+            public-domain / Creative-Commons licence are selected by default.
+          </p>
+
+          {archiveCandidates.length > 0 && (
+            <div className={styles.archiveCandidates}>
+              <p className={styles.archiveCandidatesTitle}>
+                <Activity size={13} /> Discovered for review · {archiveCandidates.length}
+              </p>
+              <p className={styles.archiveCandidatesSub}>
+                Surfaced automatically by scheduled discovery. Nothing is imported until you choose to.
+              </p>
+              <div className={styles.archiveActionBar}>
+                <label className={styles.archiveUnlicensedToggle}>
+                  <input
+                    type="checkbox"
+                    checked={archiveCandidates.length > 0 && archiveCandidates.every((c) => candidateSelected[c._id])}
+                    onChange={toggleAllCandidates}
+                  />
+                  Select all · {selectedCandidateCount} selected
+                </label>
+                <button
+                  className={styles.primaryBtn}
+                  onClick={handleImportSelectedCandidates}
+                  disabled={archiveImporting || selectedCandidateCount === 0}
+                >
+                  <UploadCloud size={13} /> Import selected {selectedCandidateCount || ''}
+                </button>
+              </div>
+              <div className={styles.libraryList}>
+                {archiveCandidates.map((c) => (
+                  <div key={c._id} className={styles.archiveRow}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(candidateSelected[c._id])}
+                      onChange={() => toggleCandidate(c._id)}
+                    />
+                    <div className={styles.archiveThumb}>
+                      <img src={c.thumbUrl} alt="" loading="lazy" />
+                    </div>
+                    <div className={styles.libraryLeft}>
+                      <p className={styles.libraryTitle}>{c.title || c.archiveId}</p>
+                      <p className={styles.libraryMeta}>
+                        {c.year ? `${c.year} · ` : ''}{c.language || ''}
+                      </p>
+                    </div>
+                    <span className={`${styles.archiveBadge} ${c.licensed ? styles.archiveBadgeOk : styles.archiveBadgeWarn}`}>
+                      {c.licensed ? 'PD / CC' : 'Unverified'}
+                    </span>
+                    <button
+                      className={styles.primaryBtn}
+                      onClick={() => handleImportCandidate(c)}
+                      disabled={archiveImporting}
+                    >
+                      Import
+                    </button>
+                    <button
+                      className={styles.editBtn}
+                      onClick={() => handleDismissCandidate(c)}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className={styles.archiveSearchRow}>
+            <input
+              className={styles.librarySearch}
+              placeholder="Language (e.g. Bengali)"
+              value={archiveLang}
+              onChange={(e) => setArchiveLang(e.target.value)}
+            />
+            <input
+              className={styles.librarySearch}
+              placeholder="Optional keyword (e.g. Tagore)"
+              value={archiveQuery}
+              onChange={(e) => setArchiveQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleArchiveSearch() }}
+            />
+            <button
+              className={styles.primaryBtn}
+              onClick={handleArchiveSearch}
+              disabled={archiveSearching}
+            >
+              {archiveSearching
+                ? <><RefreshCw size={13} className={styles.refreshIconSpinning} /> Searching…</>
+                : <><Search size={13} /> Search</>}
+            </button>
+          </div>
+
+          {archiveSearched && archiveResults.length === 0 && !archiveSearching && (
+            <p className={styles.empty}>No results. Try a different language or keyword.</p>
+          )}
+
+          {archiveResults.length > 0 && (
+            <>
+              <div className={styles.archiveActionBar}>
+                <span className={styles.archiveCount}>
+                  {selectedArchiveCount} of {archiveResults.length} selected
+                </span>
+                <label className={styles.archiveUnlicensedToggle}>
+                  <input
+                    type="checkbox"
+                    checked={allowUnlicensed}
+                    onChange={(e) => setAllowUnlicensed(e.target.checked)}
+                  />
+                  Allow items with no detected licence
+                </label>
+                <button
+                  className={styles.primaryBtn}
+                  onClick={handleArchiveImport}
+                  disabled={archiveImporting || selectedArchiveCount === 0}
+                >
+                  {archiveImporting
+                    ? <><RefreshCw size={13} className={styles.refreshIconSpinning} /> Importing…</>
+                    : <><UploadCloud size={13} /> Import {selectedArchiveCount || ''}</>}
+                </button>
+              </div>
+
+              <div className={styles.libraryList}>
+                {archiveResults.map((r) => (
+                  <label key={r.archiveId} className={styles.archiveRow}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(archiveSelected[r.archiveId])}
+                      onChange={() => toggleArchiveSelect(r.archiveId)}
+                    />
+                    <div className={styles.archiveThumb}>
+                      <img src={r.thumbUrl} alt="" loading="lazy" />
+                    </div>
+                    <div className={styles.libraryLeft}>
+                      <p className={styles.libraryTitle}>{r.title || r.archiveId}</p>
+                      <p className={styles.libraryMeta}>
+                        {r.year ? `${r.year} · ` : ''}{r.archiveId}
+                      </p>
+                    </div>
+                    <span className={`${styles.archiveBadge} ${r.licensed ? styles.archiveBadgeOk : styles.archiveBadgeWarn}`}>
+                      {r.licensed ? 'PD / CC' : 'Unverified'}
+                    </span>
+                    <a
+                      className={styles.archiveLink}
+                      href={r.detailUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      View
+                    </a>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
         </section>
       )}
 
@@ -2441,6 +2792,8 @@ export default function Admin() {
               </span>
             </div>
 
+            {jobSummaryStrip}
+
             {/* ── Active transfers (in-browser) ── */}
             <ActiveUploadsPanel onCancel={cancelUpload} onRetry={retryUpload} onDismiss={dismissUpload} />
 
@@ -2469,6 +2822,26 @@ export default function Admin() {
                   <div className={styles.jobSide}>
                     <span className={`${styles.statusBadge} ${statusClass[job.status] || ''}`}>{job.status}</span>
                     <span className={styles.progress}>{job.progress || 0}%</span>
+                    {['awaiting_file', 'queued', 'uploading', 'processing'].includes(job.status) && (
+                      <button
+                        className={styles.jobActionBtn}
+                        onClick={() => handleCancelJob(job)}
+                        disabled={jobActionId === job._id}
+                        title="Cancel this upload"
+                      >
+                        <XCircle size={12} /> Cancel
+                      </button>
+                    )}
+                    {['failed', 'cancelled'].includes(job.status) && job.sourceUrl && (
+                      <button
+                        className={styles.jobActionBtn}
+                        onClick={() => handleRetryJob(job)}
+                        disabled={jobActionId === job._id}
+                        title="Retry — re-fetch from the source"
+                      >
+                        <RefreshCw size={12} /> Retry
+                      </button>
+                    )}
                   </div>
                   <p className={styles.jobNote}>{job.error || job.note || 'Pending update...'}</p>
                   {['queued', 'uploading', 'processing'].includes(job.status) && (
