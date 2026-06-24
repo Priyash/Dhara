@@ -7,6 +7,22 @@
   },
   "items": [
     { "archiveId": "night_of_the_living_dead", "type": "Film", "genre": ["Horror", "Classic"] },
-    { "archiveId": "CharlieChaplinTheKid", "type": "Film", "genre": ["Comedy", "Classic"], "title": "The Kid" }
+    { "archiveId": "CharlieChaplinTheKid", "type": "Film", "genre": ["Comedy", "Classic"], "title": "The Kid" },
+    {
+      "type": "Series",
+      "title": "Example Public-Domain Series",
+      "genre": ["Drama"],
+      "posterArchiveId": "some_archive_identifier",
+      "seasons": [
+        {
+          "number": 1,
+          "title": "",
+          "episodes": [
+            { "number": 1, "title": "Episode 1", "archiveId": "episode_1_identifier" },
+            { "number": 2, "title": "Episode 2", "archiveId": "episode_2_identifier" }
+          ]
+        }
+      ]
+    }
   ]
 }

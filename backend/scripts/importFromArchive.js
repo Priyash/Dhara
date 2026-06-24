@@ -33,6 +33,21 @@
  *   archive.org metadata fills title / releaseYear / desc automatically;
  *   any field set on the item or in defaults overrides the auto-filled value.
  *
+ *   Series / Serial Drama: give "seasons" instead of a top-level "archiveId",
+ *   with one archive.org identifier per episode:
+ *     {
+ *       "type": "Series", "title": "My Series",
+ *       "posterArchiveId": "optional-id-for-poster",
+ *       "seasons": [
+ *         { "number": 1, "title": "", "episodes": [
+ *           { "number": 1, "title": "Ep 1", "archiveId": "ep1_id", "file": "optional.mp4" }
+ *         ]}
+ *       ]
+ *     }
+ *   The whole series is skipped if any episode lacks a PD/CC license
+ *   (unless --allow-unlicensed). Poster defaults to posterArchiveId, else the
+ *   first episode's image.
+ *
  * Requires env: BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_API_KEY, BUNNY_CDN_PULL_ZONE,
  *               CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
  */
@@ -158,22 +173,48 @@ async function uploadPosterFromUrl(remoteUrl, slug) {
   return result.secure_url
 }
 
-async function buildDoc(item, archive) {
-  const meta = archive.metadata
-  const id   = item.archiveId
-  const slug = slugify(item.title || meta.title || id)
+const EPISODIC_TYPES = new Set(['Series', 'Serial Drama'])
+function isEpisodic(item) {
+  return EPISODIC_TYPES.has(item.type) || Array.isArray(item.seasons)
+}
 
-  const videoFile = pickVideoFile(archive.files || [])
-  if (!videoFile) throw new Error('no MP4 / H.264 file found in this archive.org item')
+// Resolve one archive.org identifier to its metadata, license, and best video URL.
+// `file` optionally pins a specific filename within the item (else best MP4 wins).
+async function resolveArchiveItem(id, file) {
+  const archive = await fetchArchiveMetadata(id)
+  const license = detectLicense(archive.metadata)
+  let videoFile = null
+  if (file) {
+    videoFile = (archive.files || []).find(f => f.name === file)
+    if (!videoFile) throw new Error(`file "${file}" not found in archive item "${id}"`)
+  } else {
+    videoFile = pickVideoFile(archive.files || [])
+    if (!videoFile) throw new Error(`no MP4 / H.264 file found in archive item "${id}"`)
+  }
   const videoUrl = `https://archive.org/download/${encodeURIComponent(id)}/${encodeURIComponent(videoFile.name)}`
+  return { archive, license, videoUrl }
+}
 
+function metaDesc(meta) {
+  return (Array.isArray(meta.description) ? meta.description[0] : meta.description) || ''
+}
+function metaYear(meta) {
+  return meta.year ? Number(String(meta.year).slice(0, 4)) : undefined
+}
+
+// Single-video Film / Documentary / Live.
+async function buildFilmDoc(item, archive, videoUrl) {
+  const meta  = archive.metadata
+  const id    = item.archiveId
+  const slug  = slugify(item.title || meta.title || id)
   const title = item.title || meta.title || id
+
   const doc = {
     ...defaults,
     type: 'Film',
     title,
-    desc: item.desc || (Array.isArray(meta.description) ? meta.description[0] : meta.description) || '',
-    releaseYear: item.releaseYear || (meta.year ? Number(String(meta.year).slice(0, 4)) : undefined),
+    desc: item.desc || metaDesc(meta),
+    releaseYear: item.releaseYear || metaYear(meta),
     ...item,
   }
   delete doc.archiveId
@@ -185,7 +226,72 @@ async function buildDoc(item, archive) {
 
   doc.isPublished      = doc.isPublished ?? true
   doc.submissionStatus = doc.submissionStatus || 'approved'
-  return { doc, videoUrl }
+  return doc
+}
+
+// Series / Serial Drama: each episode references its own archive.org identifier.
+// Returns { doc, licenses } so the caller can gate the whole series on license.
+async function buildEpisodicDoc(item) {
+  const title = item.title || item.archiveId || 'Untitled Series'
+  const slug  = slugify(title)
+  const seasons = item.seasons || []
+  if (seasons.length === 0) throw new Error(`episodic item "${title}" has no "seasons"`)
+
+  const licenses = []
+  let firstEpisodeId = null
+  const builtSeasons = []
+
+  for (const season of seasons) {
+    const episodes = []
+    for (const ep of season.episodes || []) {
+      if (!ep.archiveId) throw new Error(`S${season.number}E${ep.number} of "${title}" missing "archiveId"`)
+      firstEpisodeId = firstEpisodeId || ep.archiveId
+      const { license, videoUrl } = await resolveArchiveItem(ep.archiveId, ep.file)
+      licenses.push({ id: ep.archiveId, license })
+
+      const episode = {
+        number:   Number(ep.number),
+        title:    String(ep.title || `Episode ${ep.number}`),
+        desc:     String(ep.desc || ''),
+        duration: String(ep.duration || ''),
+        bunnyVideoId: '',
+        _videoUrl: videoUrl,  // stripped before persisting; used for the Bunny fetch
+      }
+      episodes.push(episode)
+    }
+    builtSeasons.push({ number: Number(season.number), title: String(season.title || ''), episodes })
+  }
+
+  // Fetch each episode's video into Bunny (skipped on dry run).
+  if (!dryRun) {
+    for (const season of builtSeasons) {
+      for (const ep of season.episodes) {
+        ep.bunnyVideoId = await bunnyFetchVideo(ep._videoUrl, `${title} S${season.number}E${ep.number}`)
+      }
+    }
+  }
+  for (const season of builtSeasons) for (const ep of season.episodes) delete ep._videoUrl
+
+  const posterId = item.posterArchiveId || firstEpisodeId
+  const doc = {
+    ...defaults,
+    type: EPISODIC_TYPES.has(item.type) ? item.type : 'Series',
+    title,
+    desc: item.desc || '',
+    releaseYear: item.releaseYear,
+    ...item,
+    seasons: builtSeasons,
+  }
+  delete doc.archiveId
+  delete doc.posterArchiveId
+
+  if (!dryRun && !doc.posterUrl && posterId) {
+    doc.posterUrl = await uploadPosterFromUrl(`https://archive.org/services/img/${encodeURIComponent(posterId)}`, slug)
+  }
+
+  doc.isPublished      = doc.isPublished ?? true
+  doc.submissionStatus = doc.submissionStatus || 'approved'
+  return { doc, licenses }
 }
 
 async function main() {
@@ -195,36 +301,58 @@ async function main() {
   const created = [], skipped = [], failed = []
 
   for (const item of items) {
-    const id = item.archiveId
+    const label = item.title || item.archiveId || '(unnamed)'
     try {
-      if (!id) throw new Error('item missing "archiveId"')
+      const episodic = isEpisodic(item)
 
-      const archive = await fetchArchiveMetadata(id)
-      const license = detectLicense(archive.metadata)
-      if (!license.ok && !allowUnlicensed) {
-        console.warn(`⏭  "${archive.metadata.title || id}" — no PD/CC license detected (${license.label}). Skipped. Pass --allow-unlicensed to override.`)
-        skipped.push(id)
-        continue
+      // Resolve metadata + license first (cheap, no uploads), so we can run the
+      // license gate and duplicate check before any Bunny / Cloudinary work.
+      let title, filmArchive, filmVideoUrl, filmLicense
+      if (episodic) {
+        title = item.title || item.archiveId || 'Untitled Series'
+      } else {
+        const id = item.archiveId
+        if (!id) throw new Error('item missing "archiveId"')
+        const resolved = await resolveArchiveItem(id, item.file)
+        filmArchive = resolved.archive; filmVideoUrl = resolved.videoUrl; filmLicense = resolved.license
+        if (!filmLicense.ok && !allowUnlicensed) {
+          console.warn(`⏭  "${filmArchive.metadata.title || id}" — no PD/CC license detected (${filmLicense.label}). Skipped. Pass --allow-unlicensed to override.`)
+          skipped.push(label); continue
+        }
+        title = item.title || filmArchive.metadata.title || id
       }
 
-      const title = item.title || archive.metadata.title || id
       if (!force && !dryRun) {
         const existing = await Content.findOne({ title }).lean()
-        if (existing) { console.log(`⏭  "${title}" already exists. Skipped.`); skipped.push(id); continue }
+        if (existing) { console.log(`⏭  "${title}" already exists. Skipped.`); skipped.push(label); continue }
       }
 
-      const { doc, videoUrl } = await buildDoc(item, archive)
-      console.log(`\n→ "${title}" (${doc.releaseYear || '?'}) — license: ${license.label}`)
-      console.log(`  video: ${videoUrl}`)
+      let doc
+      if (episodic) {
+        const built = await buildEpisodicDoc(item)
+        // Gate the whole series: every episode must clear the license check.
+        const unlicensed = built.licenses.filter(l => !l.license.ok)
+        if (unlicensed.length && !allowUnlicensed) {
+          console.warn(`⏭  "${title}" — ${unlicensed.length} episode(s) with no PD/CC license (${unlicensed.map(u => u.id).join(', ')}). Skipped. Pass --allow-unlicensed to override.`)
+          skipped.push(label); continue
+        }
+        doc = built.doc
+        const epCount = doc.seasons.reduce((n, s) => n + s.episodes.length, 0)
+        console.log(`\n→ "${title}" (${doc.type}) — ${doc.seasons.length} season(s), ${epCount} episode(s)`)
+      } else {
+        doc = await buildFilmDoc(item, filmArchive, filmVideoUrl)
+        console.log(`\n→ "${title}" (${doc.releaseYear || '?'}) — license: ${filmLicense.label}`)
+        console.log(`  video: ${filmVideoUrl}`)
+      }
 
       if (dryRun) { created.push(title); continue }
 
       const result = await Content.create(doc)
-      console.log(`  ✓ Created Content ${result._id} (Bunny is transcoding ${doc.bunnyVideoId})`)
+      console.log(`  ✓ Created Content ${result._id}`)
       created.push(title)
     } catch (err) {
-      console.error(`  ✗ Failed "${id || '?'}": ${err.message}`)
-      failed.push({ id, error: err.message })
+      console.error(`  ✗ Failed "${label}": ${err.message}`)
+      failed.push({ id: label, error: err.message })
     }
   }
 
