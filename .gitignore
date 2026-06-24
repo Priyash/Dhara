@@ -62,3 +62,6 @@ config/**/secrets/*/*.json
 
 
 
+
+# Bulk-import upload cache (local asset paths — never commit)
+backend/scripts/.bulk-import-cache.json
