@@ -7,6 +7,7 @@ import {
   GripVertical, Layers, Plus, UploadIcon, IndianRupee,
   Calculator, Wallet, Clock, ChevronDown, TrendingUp, Users, BarChart2,
   Activity, Server, AlertCircle, Database, Heart, MessageCircle, Play,
+  Archive, Search,
 } from 'lucide-react'
 import { uploadToCloudinary, cloudinaryTransform } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
@@ -23,6 +24,7 @@ import {
   listAdminCreatorEarnings, calculateCreatorEarnings, processCreatorPayout, listAdminCreatorPayouts,
   getAdminRevenue, getAdminMonitor,
   listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
+  searchArchive, importFromArchive,
 } from '../services/api'
 import styles from './Admin.module.css'
 import { isValidDuration } from '../utils/duration'
@@ -451,6 +453,7 @@ function CreatorEarningsBarsChart({ data }) {
 
 const TABS = [
   { id: 'content',  label: 'Content',         icon: Library      },
+  { id: 'archive',  label: 'Archive Import',  icon: Archive      },
   { id: 'uploads',  label: 'Uploads',         icon: UploadCloud  },
   { id: 'shelves',  label: 'Shelves',         icon: Layers       },
   { id: 'payments', label: 'Payments',        icon: CreditCard   },
@@ -731,6 +734,16 @@ export default function Admin() {
   const [imgProgress,  setImgProgress]    = useState({ poster: 0,     backdrop: 0     })
   const modalFormRef = useRef(null)
 
+  // ── Archive import tab state ───────────────────────────────────────────────
+  const [archiveLang, setArchiveLang]         = useState('Bengali')
+  const [archiveQuery, setArchiveQuery]       = useState('')
+  const [archiveResults, setArchiveResults]   = useState([])
+  const [archiveSelected, setArchiveSelected] = useState({})   // archiveId -> true
+  const [archiveSearching, setArchiveSearching] = useState(false)
+  const [archiveImporting, setArchiveImporting] = useState(false)
+  const [archiveSearched, setArchiveSearched]   = useState(false)
+  const [allowUnlicensed, setAllowUnlicensed]   = useState(false)
+
   // ── Helpers ───────────────────────────────────────────────────────────────
   const showToast = useCallback((t) => {
     setToast(t)
@@ -767,6 +780,62 @@ export default function Admin() {
   // Ref so the auto-poll interval always calls the latest loadData closure
   const loadDataRef = useRef(loadData)
   loadDataRef.current = loadData
+
+  // ── Archive import handlers ────────────────────────────────────────────────
+  const handleArchiveSearch = useCallback(async () => {
+    setArchiveSearching(true)
+    setError('')
+    try {
+      const { results } = await searchArchive({ language: archiveLang, query: archiveQuery, rows: 40 })
+      setArchiveResults(results || [])
+      setArchiveSearched(true)
+      // Pre-select everything that already passes the license check.
+      const preselect = {}
+      for (const r of results || []) if (r.licensed) preselect[r.archiveId] = true
+      setArchiveSelected(preselect)
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Archive search failed.' })
+    } finally {
+      setArchiveSearching(false)
+    }
+  }, [archiveLang, archiveQuery, showToast])
+
+  const toggleArchiveSelect = useCallback((id) => {
+    setArchiveSelected((prev) => ({ ...prev, [id]: !prev[id] }))
+  }, [])
+
+  const selectedArchiveCount = useMemo(
+    () => Object.values(archiveSelected).filter(Boolean).length,
+    [archiveSelected]
+  )
+
+  const handleArchiveImport = useCallback(async () => {
+    const items = archiveResults
+      .filter((r) => archiveSelected[r.archiveId])
+      .map((r) => ({ archiveId: r.archiveId, type: 'Film', title: r.title, releaseYear: r.year || undefined }))
+    if (items.length === 0) return
+
+    setArchiveImporting(true)
+    try {
+      const { created = [], skipped = [], failed = [] } = await importFromArchive(items, allowUnlicensed)
+      const parts = [`${created.length} imported`]
+      if (skipped.length) parts.push(`${skipped.length} skipped`)
+      if (failed.length)  parts.push(`${failed.length} failed`)
+      showToast({
+        type: failed.length && !created.length ? 'error' : 'success',
+        message: parts.join(' · '),
+      })
+      // Refresh the library so newly imported (unpublished) titles appear.
+      if (created.length) {
+        setArchiveSelected({})
+        listAdminContent().then(setContentItems).catch(() => {})
+      }
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Import failed.' })
+    } finally {
+      setArchiveImporting(false)
+    }
+  }, [archiveResults, archiveSelected, allowUnlicensed, showToast])
 
   // While any job is actively in-flight on the backend, poll every 5s so the
   // job list reflects real Bunny encode progress after a page refresh.
@@ -1795,6 +1864,7 @@ export default function Admin() {
           <h1 className={styles.title}>Admin Studio</h1>
           <p className={styles.titleSub}>
             {activeTab === 'content'  && 'Manage the content library'}
+            {activeTab === 'archive'  && 'Find and import public-domain titles from the Internet Archive'}
             {activeTab === 'uploads'  && 'Upload and map video files'}
             {activeTab === 'payments' && 'Configure payment infrastructure'}
             {activeTab === 'creators' && 'Review creator applications, content submissions and reels'}
@@ -1956,6 +2026,111 @@ export default function Admin() {
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* ── ARCHIVE IMPORT TAB ───────────────────────────────────────────── */}
+      {activeTab === 'archive' && (
+        <section className={styles.jobsCard}>
+          <div className={styles.libraryHeader}>
+            <h2 className={styles.cardTitle}><Archive size={16} /> Import from Internet Archive</h2>
+          </div>
+
+          <p className={styles.archiveHint}>
+            Search archive.org for public-domain films and import them straight into the catalog —
+            the video is fetched into Bunny Stream and the poster into Cloudinary. Imported titles
+            land <strong>unpublished</strong> so you can review them before they go live.
+            Only items with a detected public-domain / Creative-Commons licence are selected by default.
+          </p>
+
+          <div className={styles.archiveSearchRow}>
+            <input
+              className={styles.librarySearch}
+              placeholder="Language (e.g. Bengali)"
+              value={archiveLang}
+              onChange={(e) => setArchiveLang(e.target.value)}
+            />
+            <input
+              className={styles.librarySearch}
+              placeholder="Optional keyword (e.g. Tagore)"
+              value={archiveQuery}
+              onChange={(e) => setArchiveQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleArchiveSearch() }}
+            />
+            <button
+              className={styles.primaryBtn}
+              onClick={handleArchiveSearch}
+              disabled={archiveSearching}
+            >
+              {archiveSearching
+                ? <><RefreshCw size={13} className={styles.refreshIconSpinning} /> Searching…</>
+                : <><Search size={13} /> Search</>}
+            </button>
+          </div>
+
+          {archiveSearched && archiveResults.length === 0 && !archiveSearching && (
+            <p className={styles.empty}>No results. Try a different language or keyword.</p>
+          )}
+
+          {archiveResults.length > 0 && (
+            <>
+              <div className={styles.archiveActionBar}>
+                <span className={styles.archiveCount}>
+                  {selectedArchiveCount} of {archiveResults.length} selected
+                </span>
+                <label className={styles.archiveUnlicensedToggle}>
+                  <input
+                    type="checkbox"
+                    checked={allowUnlicensed}
+                    onChange={(e) => setAllowUnlicensed(e.target.checked)}
+                  />
+                  Allow items with no detected licence
+                </label>
+                <button
+                  className={styles.primaryBtn}
+                  onClick={handleArchiveImport}
+                  disabled={archiveImporting || selectedArchiveCount === 0}
+                >
+                  {archiveImporting
+                    ? <><RefreshCw size={13} className={styles.refreshIconSpinning} /> Importing…</>
+                    : <><UploadCloud size={13} /> Import {selectedArchiveCount || ''}</>}
+                </button>
+              </div>
+
+              <div className={styles.libraryList}>
+                {archiveResults.map((r) => (
+                  <label key={r.archiveId} className={styles.archiveRow}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(archiveSelected[r.archiveId])}
+                      onChange={() => toggleArchiveSelect(r.archiveId)}
+                    />
+                    <div className={styles.archiveThumb}>
+                      <img src={r.thumbUrl} alt="" loading="lazy" />
+                    </div>
+                    <div className={styles.libraryLeft}>
+                      <p className={styles.libraryTitle}>{r.title || r.archiveId}</p>
+                      <p className={styles.libraryMeta}>
+                        {r.year ? `${r.year} · ` : ''}{r.archiveId}
+                      </p>
+                    </div>
+                    <span className={`${styles.archiveBadge} ${r.licensed ? styles.archiveBadgeOk : styles.archiveBadgeWarn}`}>
+                      {r.licensed ? 'PD / CC' : 'Unverified'}
+                    </span>
+                    <a
+                      className={styles.archiveLink}
+                      href={r.detailUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      View
+                    </a>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
         </section>
       )}
 

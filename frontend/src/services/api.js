@@ -377,6 +377,20 @@ export async function syncCdnDeletions() {
   return request('/api/admin/bunny/sync-deletions', { method: 'POST' })
 }
 
+export async function searchArchive(params = {}) {
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  ).toString()
+  return request(`/api/admin/archive/search${qs ? `?${qs}` : ''}`)
+}
+
+export async function importFromArchive(items, allowUnlicensed = false) {
+  return request('/api/admin/archive/import', {
+    method: 'POST',
+    body: JSON.stringify({ items, allowUnlicensed }),
+  })
+}
+
 export async function listBunnyVideos(params = {}) {
   const qs = new URLSearchParams(params).toString()
   return request(`/api/admin/bunny/videos${qs ? `?${qs}` : ''}`)
