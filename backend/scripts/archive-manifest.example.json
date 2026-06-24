@@ -1,0 +1,12 @@
+{
+  "defaults": {
+    "contentLanguage": "Bengali",
+    "isPremium": false,
+    "isPublished": true,
+    "submissionStatus": "approved"
+  },
+  "items": [
+    { "archiveId": "night_of_the_living_dead", "type": "Film", "genre": ["Horror", "Classic"] },
+    { "archiveId": "CharlieChaplinTheKid", "type": "Film", "genre": ["Comedy", "Classic"], "title": "The Kid" }
+  ]
+}
