@@ -58,7 +58,8 @@ function logAdminAction(req, action, targetType, targetId, targetLabel, metadata
 }
 
 import { bunnyRequest, processUploadJob } from '../services/bunnyUpload.js'
-import { searchArchive, importArchiveItem } from '../services/archiveImport.js'
+import { searchArchive, processArchiveImportBatch } from '../services/archiveImport.js'
+import { ArchiveCandidate } from '../models/ArchiveCandidate.js'
 
 const router = Router()
 
@@ -492,8 +493,9 @@ router.get('/archive/search', async (req, res, next) => {
   }
 })
 
-// Import selected archive.org items. Each becomes a Content doc with the video
-// fetched into Bunny Stream and the poster pulled into Cloudinary.
+// Queue selected archive.org items for import. Returns immediately (202); the
+// batch runs in the background, creating Content docs and UploadJob records so
+// the existing job pipeline tracks transcoding and links each video when ready.
 router.post('/archive/import', async (req, res, next) => {
   try {
     const { items = [], allowUnlicensed = false } = req.body
@@ -504,27 +506,58 @@ router.post('/archive/import', async (req, res, next) => {
       return res.status(400).json({ error: 'Import at most 50 items per request' })
     }
 
-    const created = [], skipped = [], failed = []
-    for (const item of items) {
-      try {
-        const result = await importArchiveItem(item, {
-          ContentModel: Content,
-          allowUnlicensed: Boolean(allowUnlicensed),
-        })
-        if (result.created) created.push({ id: result.id, title: result.title })
-        else if (result.skipped) skipped.push({ title: result.title, reason: result.reason })
-      } catch (err) {
-        failed.push({ title: item.title || item.archiveId || '(unnamed)', error: err.message })
-      }
-    }
+    const createdByEmail = req.user?.email || ''
+    const archiveIds = items.map((i) => i.archiveId).filter(Boolean)
 
-    if (created.length) {
-      bustContentCache()
-      logAdminAction(req, 'archive_import', 'content', null, `${created.length} title(s)`, {
-        created: created.length, skipped: skipped.length, failed: failed.length,
+    res.status(202).json({ queued: items.length })
+
+    // Fire-and-forget: continues after the response is sent (same pattern as uploads).
+    processArchiveImportBatch(items, {
+      ContentModel: Content,
+      UploadJobModel: UploadJob,
+      StreamCollectionModel: StreamCollection,
+      allowUnlicensed: Boolean(allowUnlicensed),
+      createdByEmail,
+    }).then((summary) => {
+      if (summary.created.length) bustContentCache()
+      // Mark any discovered candidates we just imported.
+      if (archiveIds.length) {
+        ArchiveCandidate.updateMany({ archiveId: { $in: archiveIds } }, { $set: { status: 'imported' } }).catch(() => {})
+      }
+      logAdminAction(req, 'archive_import', 'content', null, `${summary.created.length} title(s)`, {
+        created: summary.created.length, skipped: summary.skipped.length, failed: summary.failed.length,
       })
-    }
-    res.json({ created, skipped, failed })
+      console.log(`[archive-import] created=${summary.created.length} skipped=${summary.skipped.length} failed=${summary.failed.length}`)
+    }).catch((err) => console.error('[archive-import] batch failed:', err.message))
+  } catch (err) {
+    next(err)
+  }
+})
+
+// List discovered candidates surfaced by the scheduled discovery job.
+router.get('/archive/candidates', async (req, res, next) => {
+  try {
+    const status = String(req.query.status || 'new')
+    const candidates = await ArchiveCandidate.find({ status })
+      .sort({ discoveredAt: -1 })
+      .limit(100)
+      .lean()
+    res.json({ candidates })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Dismiss a candidate so it stops showing in the review list.
+router.patch('/archive/candidates/:id/dismiss', async (req, res, next) => {
+  try {
+    const updated = await ArchiveCandidate.findByIdAndUpdate(
+      req.params.id,
+      { $set: { status: 'dismissed' } },
+      { new: true }
+    ).lean()
+    if (!updated) return res.status(404).json({ error: 'Candidate not found' })
+    res.json(updated)
   } catch (err) {
     next(err)
   }

@@ -95,11 +95,11 @@ export async function searchArchive({ language = 'Bengali', query = '', collecti
 }
 
 /** Create a Bunny video and have Bunny fetch the file from a remote URL. Returns the GUID. */
-export async function bunnyFetchFromUrl(remoteUrl, title) {
+export async function bunnyFetchFromUrl(remoteUrl, title, bunnyCollectionId = '') {
   const created = await bunnyRequest(`/library/${libraryId}/videos`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ title }),
+    body:    JSON.stringify(bunnyCollectionId ? { title, collectionId: bunnyCollectionId } : { title }),
   })
   const guid = created?.guid
   if (!guid) throw new Error('Bunny did not return a video ID.')
@@ -125,39 +125,81 @@ export async function uploadPosterFromUrl(remoteUrl, slug) {
 const EPISODIC_TYPES = new Set(['Series', 'Serial Drama'])
 
 /**
- * Import a single manifest-style item (Film or episodic) into MongoDB.
- * `ContentModel` is injected to avoid a circular import.
- * Returns { title } on success; throws on failure so the caller can record it.
+ * Find-or-create the dedicated "Internet Archive" collection that imported
+ * titles are grouped under. Creates a matching Bunny Stream collection the
+ * first time so UploadJob records (which require a collection) have one.
  */
-export async function importArchiveItem(item, { ContentModel, allowUnlicensed = false, defaults = {} } = {}) {
+export async function ensureArchiveCollection({ StreamCollectionModel }) {
+  const slug = 'internet-archive'
+  const existing = await StreamCollectionModel.findOne({ slug }).lean()
+  if (existing?.bunnyCollectionId) return existing
+
+  const created = await bunnyRequest(`/library/${libraryId}/collections`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ name: 'Internet Archive' }),
+  })
+  const bunnyCollectionId = String(created?.guid || '').trim()
+  if (!bunnyCollectionId) throw new Error('Bunny did not return a collection GUID')
+
+  return StreamCollectionModel.findOneAndUpdate(
+    { slug },
+    { $set: { name: 'Internet Archive', slug, bunnyCollectionId, isActive: true, description: 'Public-domain titles imported from archive.org' } },
+    { upsert: true, new: true }
+  ).lean()
+}
+
+/**
+ * Queue one archive.org item for import. Creates the Content doc (unpublished,
+ * video not yet linked), triggers Bunny to fetch each video from archive.org,
+ * and records an UploadJob per video so the existing job-sync pipeline tracks
+ * transcoding, links the bunnyVideoId, and guards publishing until ready.
+ *
+ * Models are injected to avoid circular imports. Returns
+ * { created | skipped, title, ... } and throws only on hard failures.
+ */
+export async function queueArchiveImport(item, { ContentModel, UploadJobModel, collection, allowUnlicensed = false, createdByEmail = '' }) {
   const episodic = EPISODIC_TYPES.has(item.type) || Array.isArray(item.seasons)
+  return episodic
+    ? queueEpisodic(item, { ContentModel, UploadJobModel, collection, allowUnlicensed, createdByEmail })
+    : queueFilm(item, { ContentModel, UploadJobModel, collection, allowUnlicensed, createdByEmail })
+}
 
-  if (episodic) return importEpisodic(item, { ContentModel, allowUnlicensed, defaults })
+function jobBase(collection, createdByEmail) {
+  return {
+    createdByEmail:    createdByEmail || 'system@archive-import',
+    collectionId:      collection._id,
+    collectionName:    collection.name,
+    bunnyCollectionId: collection.bunnyCollectionId,
+    status:            'processing',
+    progress:          50,
+    note:              'Bunny is fetching the file from archive.org…',
+  }
+}
 
+async function queueFilm(item, { ContentModel, UploadJobModel, collection, allowUnlicensed, createdByEmail }) {
   const id = item.archiveId
   if (!id) throw new Error('item missing "archiveId"')
+
   const archive = await fetchArchiveMetadata(id)
   const license = detectLicense(archive.metadata)
+  const meta    = archive.metadata
+  const title   = item.title || meta.title || id
   if (!license.ok && !allowUnlicensed) {
-    return { skipped: true, reason: `no PD/CC license (${license.label})`, title: item.title || archive.metadata.title || id }
+    return { skipped: true, reason: `no PD/CC license (${license.label})`, title }
   }
-
-  const meta  = archive.metadata
-  const title = item.title || meta.title || id
-  const existing = await ContentModel.findOne({ title }).lean()
-  if (existing) return { skipped: true, reason: 'already exists', title }
+  if (await ContentModel.findOne({ title }).lean()) return { skipped: true, reason: 'already exists', title }
 
   const videoFile = pickVideoFile(archive.files || [])
   if (!videoFile) throw new Error('no MP4 / H.264 file found in this archive.org item')
 
   const slug = slugify(title)
-  const bunnyVideoId = await bunnyFetchFromUrl(archiveVideoUrl(id, videoFile.name), title)
   let posterUrl = ''
   try { posterUrl = await uploadPosterFromUrl(`https://archive.org/services/img/${encodeURIComponent(id)}`, slug) }
-  catch { /* poster is best-effort — content still imports without it */ }
+  catch { /* poster is best-effort */ }
 
+  // Content created without bunnyVideoId — the job-sync links it once ready.
   const doc = await ContentModel.create({
-    ...defaults,
     type:        'Film',
     genre:       Array.isArray(item.genre) ? item.genre : [],
     isPremium:   Boolean(item.isPremium),
@@ -165,24 +207,32 @@ export async function importArchiveItem(item, { ContentModel, allowUnlicensed = 
     title,
     desc:        item.desc || (Array.isArray(meta.description) ? meta.description[0] : meta.description) || '',
     releaseYear: item.releaseYear || (meta.year ? Number(String(meta.year).slice(0, 4)) : null),
-    bunnyVideoId,
     posterUrl,
+    bunnyVideoId:     '',
     isPublished:      false,
     submissionStatus: 'approved',
     archiveId:        undefined,
   })
-  return { created: true, id: doc._id, title }
+
+  const bunnyVideoId = await bunnyFetchFromUrl(archiveVideoUrl(id, videoFile.name), title, collection.bunnyCollectionId)
+  await UploadJobModel.create({
+    ...jobBase(collection, createdByEmail),
+    title,
+    contentId: doc._id,
+    bunnyVideoId,
+    fileName:  videoFile.name,
+  })
+
+  return { created: true, id: doc._id, title, jobs: 1 }
 }
 
-async function importEpisodic(item, { ContentModel, allowUnlicensed, defaults }) {
+async function queueEpisodic(item, { ContentModel, UploadJobModel, collection, allowUnlicensed, createdByEmail }) {
   const title = item.title || item.archiveId || 'Untitled Series'
   const seasons = item.seasons || []
   if (seasons.length === 0) throw new Error(`episodic item "${title}" has no "seasons"`)
+  if (await ContentModel.findOne({ title }).lean()) return { skipped: true, reason: 'already exists', title }
 
-  const existing = await ContentModel.findOne({ title }).lean()
-  if (existing) return { skipped: true, reason: 'already exists', title }
-
-  // Resolve + license-gate every episode before any upload.
+  // Resolve + license-gate every episode before creating anything.
   const resolved = []
   let firstEpisodeId = null
   for (const season of seasons) {
@@ -201,17 +251,18 @@ async function importEpisodic(item, { ContentModel, allowUnlicensed, defaults })
     return { skipped: true, reason: `${unlicensed.length} episode(s) without PD/CC license`, title }
   }
 
-  // Fetch each episode into Bunny, grouped back into seasons.
+  // Build season/episode shells with empty bunnyVideoId — job-sync fills them in.
   const seasonMap = new Map()
   for (const r of resolved) {
-    const bunnyVideoId = await bunnyFetchFromUrl(r.videoUrl, `${title} S${r.season.number}E${r.ep.number}`)
-    if (!seasonMap.has(r.season.number)) seasonMap.set(r.season.number, { number: Number(r.season.number), title: String(r.season.title || ''), episodes: [] })
+    if (!seasonMap.has(r.season.number)) {
+      seasonMap.set(r.season.number, { number: Number(r.season.number), title: String(r.season.title || ''), episodes: [] })
+    }
     seasonMap.get(r.season.number).episodes.push({
       number:   Number(r.ep.number),
       title:    String(r.ep.title || `Episode ${r.ep.number}`),
       desc:     String(r.ep.desc || ''),
       duration: String(r.ep.duration || ''),
-      bunnyVideoId,
+      bunnyVideoId: '',
     })
   }
 
@@ -223,7 +274,6 @@ async function importEpisodic(item, { ContentModel, allowUnlicensed, defaults })
   }
 
   const doc = await ContentModel.create({
-    ...defaults,
     type:      EPISODIC_TYPES.has(item.type) ? item.type : 'Series',
     genre:     Array.isArray(item.genre) ? item.genre : [],
     isPremium: Boolean(item.isPremium),
@@ -237,5 +287,41 @@ async function importEpisodic(item, { ContentModel, allowUnlicensed, defaults })
     archiveId:        undefined,
     posterArchiveId:  undefined,
   })
-  return { created: true, id: doc._id, title }
+
+  // One Bunny fetch + UploadJob per episode; job-sync links each when ready.
+  for (const r of resolved) {
+    const bunnyVideoId = await bunnyFetchFromUrl(r.videoUrl, `${title} S${r.season.number}E${r.ep.number}`, collection.bunnyCollectionId)
+    await UploadJobModel.create({
+      ...jobBase(collection, createdByEmail),
+      title:           `${title} S${r.season.number}E${r.ep.number}`,
+      contentId:       doc._id,
+      seasonNumber:    Number(r.season.number),
+      episodeNumber:   Number(r.ep.number),
+      episodeTitle:    String(r.ep.title || `Episode ${r.ep.number}`),
+      episodeDuration: String(r.ep.duration || ''),
+      bunnyVideoId,
+    })
+  }
+
+  return { created: true, id: doc._id, title, jobs: resolved.length }
+}
+
+/**
+ * Process a batch of items in the background. Ensures the Internet Archive
+ * collection exists, then queues each item. Returns a summary for logging.
+ */
+export async function processArchiveImportBatch(items, { ContentModel, UploadJobModel, StreamCollectionModel, allowUnlicensed = false, createdByEmail = '' }) {
+  const collection = await ensureArchiveCollection({ StreamCollectionModel })
+  const created = [], skipped = [], failed = []
+
+  for (const item of items) {
+    try {
+      const result = await queueArchiveImport(item, { ContentModel, UploadJobModel, collection, allowUnlicensed, createdByEmail })
+      if (result.created) created.push({ id: result.id, title: result.title })
+      else if (result.skipped) skipped.push({ title: result.title, reason: result.reason })
+    } catch (err) {
+      failed.push({ title: item.title || item.archiveId || '(unnamed)', error: err.message })
+    }
+  }
+  return { collection, created, skipped, failed }
 }

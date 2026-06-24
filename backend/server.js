@@ -15,6 +15,7 @@ import { connectMongoDB, dbStatus } from './src/config/mongodb.js'
 import { syncAdminClaims } from './src/config/adminSync.js'
 import { startSubscriptionExpiryJob } from './src/config/subscriptionExpiry.js'
 import { startEarningsJob } from './src/config/earningsJob.js'
+import { startArchiveDiscoveryJob } from './src/config/archiveDiscovery.js'
 
 import authRoutes           from './src/routes/auth.js'
 import contentRoutes        from './src/routes/content.js'
@@ -180,6 +181,7 @@ mongoose.connection.on('connected', async () => {
   }
   startSubscriptionExpiryJob()
   startEarningsJob()
+  startArchiveDiscoveryJob()
 })
 
 connectMongoDB()
