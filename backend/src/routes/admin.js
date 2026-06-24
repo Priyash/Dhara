@@ -58,8 +58,10 @@ function logAdminAction(req, action, targetType, targetId, targetLabel, metadata
 }
 
 import { bunnyRequest, processUploadJob } from '../services/bunnyUpload.js'
-import { searchArchive, processArchiveImportBatch } from '../services/archiveImport.js'
+import { searchArchive } from '../services/archiveImport.js'
 import { ArchiveCandidate } from '../models/ArchiveCandidate.js'
+import { ArchiveImportTask } from '../models/ArchiveImportTask.js'
+import { triggerImportDrain } from '../config/archiveImportWorker.js'
 
 const router = Router()
 
@@ -508,27 +510,28 @@ router.post('/archive/import', async (req, res, next) => {
 
     const createdByEmail = req.user?.email || ''
     const archiveIds = items.map((i) => i.archiveId).filter(Boolean)
+    const batchId = randomUUID()
 
-    res.status(202).json({ queued: items.length })
-
-    // Fire-and-forget: continues after the response is sent (same pattern as uploads).
-    processArchiveImportBatch(items, {
-      ContentModel: Content,
-      UploadJobModel: UploadJob,
-      StreamCollectionModel: StreamCollection,
+    // Persist each item as a queue task so the import survives a backend restart.
+    await ArchiveImportTask.insertMany(items.map((item) => ({
+      batchId,
+      item,
+      title: item.title || item.archiveId || '',
       allowUnlicensed: Boolean(allowUnlicensed),
       createdByEmail,
-    }).then((summary) => {
-      if (summary.created.length) bustContentCache()
-      // Mark any discovered candidates we just imported.
-      if (archiveIds.length) {
-        ArchiveCandidate.updateMany({ archiveId: { $in: archiveIds } }, { $set: { status: 'imported' } }).catch(() => {})
-      }
-      logAdminAction(req, 'archive_import', 'content', null, `${summary.created.length} title(s)`, {
-        created: summary.created.length, skipped: summary.skipped.length, failed: summary.failed.length,
-      })
-      console.log(`[archive-import] created=${summary.created.length} skipped=${summary.skipped.length} failed=${summary.failed.length}`)
-    }).catch((err) => console.error('[archive-import] batch failed:', err.message))
+      status: 'pending',
+    })))
+
+    // Mark any discovered candidates as imported up front (idempotent).
+    if (archiveIds.length) {
+      ArchiveCandidate.updateMany({ archiveId: { $in: archiveIds } }, { $set: { status: 'imported' } }).catch(() => {})
+    }
+    logAdminAction(req, 'archive_import', 'content', null, `${items.length} title(s) queued`, { batchId, queued: items.length })
+
+    res.status(202).json({ queued: items.length, batchId })
+
+    // Kick the worker; if the process dies, startup/interval drain resumes the queue.
+    triggerImportDrain()
   } catch (err) {
     next(err)
   }

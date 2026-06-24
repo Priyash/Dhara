@@ -305,36 +305,3 @@ async function queueEpisodic(item, { ContentModel, UploadJobModel, collection, a
 
   return { created: true, id: doc._id, title, jobs: resolved.length }
 }
-
-/**
- * Process a batch of items in the background. Ensures the Internet Archive
- * collection exists, then queues each item. Returns a summary for logging.
- */
-export async function processArchiveImportBatch(items, { ContentModel, UploadJobModel, StreamCollectionModel, allowUnlicensed = false, createdByEmail = '' }) {
-  const collection = await ensureArchiveCollection({ StreamCollectionModel })
-  const created = [], skipped = [], failed = []
-
-  for (const item of items) {
-    const label = item.title || item.archiveId || '(unnamed)'
-    try {
-      const result = await queueArchiveImport(item, { ContentModel, UploadJobModel, collection, allowUnlicensed, createdByEmail })
-      if (result.created) created.push({ id: result.id, title: result.title })
-      else if (result.skipped) skipped.push({ title: result.title, reason: result.reason })
-    } catch (err) {
-      failed.push({ title: label, error: err.message })
-      // Record a failed job so the error surfaces in the Upload Queue instead of
-      // only in server logs (the batch already returned 202 to the client).
-      try {
-        await UploadJobModel.create({
-          ...jobBase(collection, createdByEmail),
-          title:    label,
-          status:   'failed',
-          progress: 0,
-          note:     '',
-          error:    err.message || 'Import failed',
-        })
-      } catch { /* best-effort */ }
-    }
-  }
-  return { collection, created, skipped, failed }
-}
