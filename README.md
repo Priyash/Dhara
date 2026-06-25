@@ -28,17 +28,20 @@ Viewers subscribe and watch. Creators upload and earn. Admins manage everything 
 ```
 dhara-streaming/
 ├── frontend/src/
-│   ├── pages/       # Home, Browse, Watch, Reels, Profile, Admin, CreatorStudio
-│   ├── components/  # Navbar, VideoPlayer, PaywallModal, PosterCard, …
-│   ├── store/       # Zustand (auth + UI state)
-│   ├── services/    # api.js, cloudinary.js
-│   └── hooks/       # useScrolled, useUploadNotifier, useWatchlist
+│   ├── pages/          # Home, Browse, Watch, Reels, Profile, Admin, CreatorStudio
+│   ├── components/     # Navbar, VideoPlayer, PaywallModal, PosterCard, ReelUploadModal, …
+│   ├── store/          # Zustand (auth + UI state)
+│   ├── services/       # api.js, cloudinary.js
+│   └── hooks/          # useScrolled, useUploadNotifier, useWatchlist
 ├── backend/src/
-│   ├── routes/      # auth, content, user, payments, admin, creator, reels, search
-│   ├── models/      # User, Content, UploadJob, Reel, Transaction, ViewEvent, …
-│   ├── middleware/  # requireAuth, requireAdmin, requireSubscription, errorHandler
-│   └── config/      # firebase, mongodb, cache, env
-└── package.json     # Root scripts (dev, test, lint)
+│   ├── routes/         # auth, content, user, payments, admin, creator, reels,
+│   │                   # search, recommendations
+│   ├── models/         # User, Content, UploadJob, Reel, Transaction, ViewEvent,
+│   │                   # UserRating, Comment, CuratedShelf, SearchLog,
+│   │                   # InteractionEvent, ContentRankSnapshot, AdminAction, …
+│   ├── middleware/     # requireAuth, requireAdmin, requireSubscription, errorHandler
+│   └── config/         # firebase, mongodb, cache, env
+└── package.json        # Root scripts (dev, test, lint)
 ```
 
 ---
@@ -74,7 +77,7 @@ ADMIN_EMAILS=you@example.com
 RESEND_API_KEY=re_...
 RESEND_FROM=ধারা <noreply@yourdomain.com>
 FRONTEND_URL=http://localhost:5173
-# Optional — without Redis, caching is in-memory (single instance only)
+# Optional — without Redis, caching is in-memory (only safe with a single instance)
 # REDIS_URL=rediss://default:<password>@<host>:<port>
 ```
 
@@ -96,7 +99,8 @@ VITE_BUNNY_STREAM_LIBRARY_ID=...
 > Firebase console → Project Settings → Service Accounts → Generate new private key.  
 > Then run: `base64 -i serviceAccountKey.json | tr -d '\n'`
 
-> **`ADMIN_EMAILS`** controls who can access `/admin`. Set it before running — without it, no one gets admin access in production.
+> **`ADMIN_EMAILS`** is a comma-separated list of email addresses that get admin access.  
+> Without it, nobody can access `/admin` in production.
 
 ### 3. Run
 
@@ -118,57 +122,165 @@ npm run dev        # backend :4000  +  frontend :5173
 
 ---
 
-## Key features
+## Features
 
-**Watching**
-- HLS adaptive bitrate playback via HLS.js
-- Continue watching — position saved and resumed cross-device
-- Series episode selector with per-episode progress tracking
-- Premium content locked behind subscription (token-signed CDN URLs)
-- WebVTT subtitle support per title and per episode
+### Viewing & Streaming
 
-**Reels**
-- Short-form vertical video feed (≤ 30 s)
-- Swipe navigation, like/comment, hashtags, view tracking
+- **HLS adaptive bitrate** playback via HLS.js — quality adjusts to the viewer's connection
+- **Token-signed CDN URLs** — premium video links are signed with a SHA-256 HMAC and expire after 1 hour, preventing direct URL sharing
+- **Continue watching** — playback position is saved to the DB every few seconds and resumes cross-device automatically
+- **Series support** — episode selector with per-episode view tracking and progress indicators
+- **Trailers** — each title can have a separate trailer video that autoplays on poster card hover
+- **WebVTT subtitles** — subtitle tracks can be attached per title and per individual episode
+- **Stream session management** — heartbeat endpoint and active session tracking prevent abuse
 
-**Subscriptions**
-- Plans: Monthly ₹99 · Annual ₹599 · Family ₹999
-- Razorpay checkout with full webhook verification
-- Grace period and lapsed-state handling on each user
+### Discovery & Search
 
-**Creator Studio** (`/creator-studio`)
-- Apply to become a creator → admin approves
-- Upload films, series, or reels for admin review before publishing
-- Analytics: views, likes, geography, episode retention, revenue share
-- Earnings dashboard with payout history
+- **Curated shelves** — admin-managed content rows on the homepage (e.g. "New Releases", "Trending")
+- **Genre browsing** — deduplicated genre list with filtered content views
+- **Featured content** — admin can set a `featuredOrder` on titles for hero placement
+- **Two-stage search** — short queries use fast prefix regex; longer queries use MongoDB `$text` for ranked full-text results
+- **Popular searches** — `GET /api/search/popular` returns top queries from `SearchLog`
+- **Personalised recommendations** — `GET /api/recommendations` scores content using `InteractionEvent` signals (plays, likes, searches); works for guests too
 
-**Admin Studio** (`/admin`)
-- Content library: create, edit, filter, publish/unpublish, soft-delete + restore
-- Video upload pipeline with live job queue and per-job progress
-- Archive.org import — search and pull public-domain titles directly into the catalog
-- Creator application review and submission approval
-- Reels moderation with preview playback
-- Revenue dashboard: subscription charts, plan breakdown, creator payouts
-- Dynamic payment config (provider toggle, test ↔ live mode)
-- Search analytics and full audit log
+### Reels (`/reels`)
+
+- Short-form vertical video feed (≤ 30 seconds)
+- TikTok-style swipe navigation with HLS.js playback and mute toggle
+- Like / unlike with optimistic counter
+- Comment thread per reel with nested replies
+- Hashtag display and deep-link to a single reel via `/reels/:id`
+- Search reels by title and hashtag
+- View event recorded after a 5-second watch threshold
+
+### Community
+
+- **Star ratings (1–5)** — stored per user in `UserRating`, aggregated live onto `Content`
+- **Likes / dislikes** — per-user on content items with optimistic UI
+- **Content rank snapshots** — daily `ContentRankSnapshot` documents power the ▲▼ delta badges admins and creators see in analytics
+- **Comments** — threaded comment model on Reels with moderation hooks
+
+### Subscriptions & Payments
+
+- Plans: **Monthly ₹99 · Annual ₹599 · Family ₹999**
+- Razorpay checkout with 4-step backend verification (HMAC + order fetch + amount check + user ownership)
+- Webhook handlers: `payment.captured`, `subscription.charged`, `subscription.halted/cancelled`
+- Grace period, trial, and lapsed states tracked on the `User` document
+- Dynamic payment config — admin can toggle provider, switch test ↔ live mode, and enable live mode with a confirmation guard
+
+### User Account (`/profile`)
+
+- View and edit display name
+- See active subscription plan, status, and renewal date
+- Watchlist — add/remove titles, persisted to DB and synced across devices
+- Continue-watching list with a "Remove" option per title
+
+### Creator Studio (`/creator-studio`)
+
+1. **Apply** to become a creator — fills in a profile with content types and bio
+2. **Admin approves** the application
+3. **Submit content** — Film, Series, or Documentary — goes into admin review before it's published
+4. **Upload reels** — create, upload, edit metadata, resubmit after rejection, soft-delete
+5. **Analytics**
+   - *Content*: 7-day view trend, hour histogram, audience geography (GeoIP), episode retention, health scores, rank deltas
+   - *Reels*: total views / likes / comments + 7-day view chart per reel
+6. **Revenue dashboard** — tier-based share (60–75%), monthly earnings breakdown, payout history
+
+### Admin Studio (`/admin`)
+
+**Content**
+- Full CRUD with type/status/genre filter chips and inline status badges (Live · Draft · Transcoding · No video)
+- Poster and backdrop upload via Cloudinary
+- Soft-delete with a "Deleted" view and one-click restore
+- Publish guard — backend rejects publish if no video is linked
+- Job-queue view with per-job progress bars; cancels in-flight jobs automatically when content is deleted
+
+**Uploads**
+- Async upload pipeline — file goes to Bunny Stream, transcoding tracked via polling
+- Manual video mapping — link a pre-existing Bunny GUID to any content item or episode
+- When a new video is mapped over an old one, the old Bunny video is deleted automatically (no CDN orphans)
+
+**Archive.org Import**
+- Search archive.org for public-domain or openly licensed titles by language and keyword
+- Import selected titles directly into the catalog — Bunny fetches the video from archive.org's CDN, no local download needed
+- Per-title import progress panel (Queued → Fetching → CDN queued → Skipped/Failed)
+- Deduplication — already-imported titles are shown as disabled in search results
+
+**Moderation & Review**
+- Creator application review (approve / reject with reason)
+- Content submission approval queue
+- Reels moderation — list all reels with status filter, preview playback, approve / reject / delete
+
+**Revenue & Creators**
+- Subscription revenue charts: monthly bars, plan breakdown donut, subscriber health
+- Creator section: top-creator earnings bars, tier badges, earnings table, batch payout processing
+- Creator earnings calculated monthly based on view share and tier
+
+**Analytics**
+- Search analytics — top queries, zero-result rate, query volume over time
+- Full audit log — every admin action stored in `AdminAction` with actor, action type, target, and metadata
+
+**System Monitor**
+- Live health snapshot: DB response time, memory usage, uptime, active upload jobs
+- Error rate and request throughput charts (last 60 min)
+- Per-route p95 latency breakdown
+
+---
+
+## Data models (quick reference)
+
+| Model | Purpose |
+|---|---|
+| `User` | Auth, subscription state, watchlist, creator profile |
+| `Content` | Films, Series, Documentaries — seasons/episodes nested |
+| `Reel` | Short-form videos with creator, hashtags, stats |
+| `UploadJob` | Tracks each Bunny Stream upload/transcode job |
+| `Transaction` | Razorpay payment records |
+| `ViewEvent` | Per-play events (hour, state, device) — 1-year TTL |
+| `UserRating` | Per-user star rating; aggregated onto Content |
+| `InteractionEvent` | Plays, likes, searches — feed the recommendation engine |
+| `ContentRankSnapshot` | Daily rank snapshots for ▲▼ delta badges |
+| `CuratedShelf` | Admin-managed homepage content rows |
+| `SearchLog` | Every search query for analytics |
+| `AdminAction` | Immutable audit trail for every admin mutation |
+| `ArchiveImportTask` | Queue of archive.org import jobs |
+| `Comment` | Threaded comments on Reels |
 
 ---
 
 ## Deployment
 
-The backend is deployed on **Render** (see `backend/render.yaml`). The frontend is a static build deployable to **Vercel** or any CDN.
+The backend deploys on **Render** (see `backend/render.yaml`). The frontend is a static Vite build deployable to **Vercel** or any CDN.
 
 After deploying:
 1. Set all backend env vars in the Render dashboard
-2. Set `FRONTEND_URL` to your Vercel URL (needed for CORS)
-3. Point `VITE_API_URL` in your frontend build to the Render service URL
+2. Set `FRONTEND_URL` to your Vercel deployment URL (required for CORS)
+3. Set `VITE_API_URL` in your Vercel project environment to the Render service URL
+4. Add your email to `ADMIN_EMAILS` — without this you cannot access `/admin` in production
+
+> **Redis:** Not required, but strongly recommended before scaling to 2+ backend instances. Without it, the in-memory response cache and rate-limiter state are not shared between instances.
 
 ---
 
 ## Security notes
 
-- Firebase ID tokens verified server-side on every protected request
+- Firebase ID tokens verified server-side on every protected request (`checkRevoked: true`)
 - CDN token auth (SHA-256 HMAC, 1-hour expiry) prevents direct video URL sharing
-- Razorpay webhook signature verified before any DB write
-- All admin actions logged to `AdminAction` (actor, type, target, timestamp)
-- `helmet` + per-route rate limiting on all backend routes
+- Razorpay webhook signature verified before any DB write; `subscription.charged` is idempotent
+- Video GUIDs are never exposed to unauthenticated endpoints
+- All admin mutations written to `AdminAction` (actor, action type, target, timestamp)
+- `helmet` + per-route `express-rate-limit` on all backend routes
+
+---
+
+## What's still to do
+
+- Razorpay recurring subscription object (auto-renewal without manual re-checkout)
+- Family plan seat management (invite and manage up to N members)
+- iOS and Android apps
+
+---
+
+## License
+
+MIT
