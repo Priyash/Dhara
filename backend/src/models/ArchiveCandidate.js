@@ -9,6 +9,7 @@ const archiveCandidateSchema = new mongoose.Schema(
     archiveId:    { type: String, required: true, unique: true, trim: true },
     title:        { type: String, default: '' },
     year:         { type: Number, default: null },
+    type:         { type: String, default: 'Film' },
     language:     { type: String, default: '' },
     licenseLabel: { type: String, default: '' },
     licensed:     { type: Boolean, default: false },

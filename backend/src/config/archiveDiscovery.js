@@ -38,6 +38,7 @@ async function runDiscovery() {
               archiveId:    r.archiveId,
               title:        r.title || '',
               year:         r.year || null,
+              type:         r.type || 'Film',
               language,
               licenseLabel: r.licenseLabel || '',
               licensed:     Boolean(r.licensed),

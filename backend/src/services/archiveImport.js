@@ -19,15 +19,27 @@ cloudinary.config({
 // Collections that are public-domain / openly licensed film libraries.
 export const DEFAULT_PD_COLLECTIONS = ['feature_films', 'prelinger', 'classic_tv', 'publicmovies', 'film_noir']
 
+// Collections that indicate a catalog `type` other than the 'Film' default.
+const TYPE_BY_COLLECTION = {
+  classic_tv:           'Series',
+  television:           'Series',
+  newsandpublicaffairs: 'Documentary',
+  prelinger:            'Documentary',
+}
+
 export function slugify(str) {
   return String(str).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+}
+
+function normalizeCollections(meta = {}) {
+  return Array.isArray(meta.collection) ? meta.collection : [meta.collection].filter(Boolean)
 }
 
 /** Classify an archive.org metadata object's licensing. */
 export function detectLicense(meta = {}) {
   const licenseUrl  = meta.licenseurl || ''
   const rights      = String(meta.rights || meta.possible_copyright_status || '').toLowerCase()
-  const collections = Array.isArray(meta.collection) ? meta.collection : [meta.collection].filter(Boolean)
+  const collections = normalizeCollections(meta)
   const pd = new Set(DEFAULT_PD_COLLECTIONS)
 
   if (/creativecommons\.org|spdx\.org/i.test(licenseUrl)) return { ok: true, label: licenseUrl }
@@ -35,6 +47,15 @@ export function detectLicense(meta = {}) {
   const inPd = collections.find(c => pd.has(c))
   if (inPd) return { ok: true, label: `collection:${inPd}` }
   return { ok: false, label: licenseUrl || rights || 'unknown' }
+}
+
+/** Infer a catalog `type` from an archive.org item's collection tags. Defaults to 'Film'. */
+export function inferType(meta = {}) {
+  const collections = normalizeCollections(meta)
+  for (const c of collections) {
+    if (TYPE_BY_COLLECTION[c]) return TYPE_BY_COLLECTION[c]
+  }
+  return 'Film'
 }
 
 /** Pick the best MP4 / H.264 file (largest = highest quality) from an item's files. */
@@ -99,6 +120,7 @@ export async function searchArchive({ language = 'Bengali', query = '', collecti
       archiveId:   d.identifier,
       title:       Array.isArray(d.title) ? d.title[0] : d.title,
       year:        d.year ? Number(String(d.year).slice(0, 4)) : null,
+      type:        inferType(d),
       licenseLabel: license.label,
       licensed:    license.ok,
       detailUrl:   `https://archive.org/details/${d.identifier}`,
@@ -245,7 +267,12 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
 
 async function queueEpisodic(item, { ContentModel, UploadJobModel, collection, allowUnlicensed, createdByEmail }) {
   const title = item.title || item.archiveId || 'Untitled Series'
-  const seasons = item.seasons || []
+  // A single archive.org item typed as a series with no companion manifest
+  // (e.g. one classic_tv result with no season/episode breakdown supplied) —
+  // land it as Season 1, Episode 1 instead of requiring a hand-built seasons array.
+  const seasons = item.seasons?.length
+    ? item.seasons
+    : (item.archiveId ? [{ number: 1, episodes: [{ number: 1, title: item.title || '', archiveId: item.archiveId }] }] : [])
   if (seasons.length === 0) throw new Error(`episodic item "${title}" has no "seasons"`)
   if (await ContentModel.findOne({ title }).lean()) return { skipped: true, reason: 'already exists', title }
 
