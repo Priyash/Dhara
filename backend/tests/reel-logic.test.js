@@ -5,8 +5,8 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { REEL_MAX_DURATION_SECS } from '../src/models/Reel.js'
 
-const REEL_MAX_DURATION_SECS = 60  // mirrors Reel.js constant
 const VIEW_MIN_POSITION_SECS = 5   // mirrors reels.js route constant
 
 // ── Duration cap ──────────────────────────────────────────────────────────────
@@ -17,9 +17,8 @@ describe('Reel duration cap', () => {
   }
 
   it('accepts 0 s (not yet measured)', ()   => assert.equal(isDurationValid(0),   true))
-  it('accepts 30 s',                  ()   => assert.equal(isDurationValid(30),  true))
-  it('accepts exactly 60 s',          ()   => assert.equal(isDurationValid(60),  true))
-  it('rejects 61 s',                  ()   => assert.equal(isDurationValid(61),  false))
+  it('accepts exactly the cap',        ()   => assert.equal(isDurationValid(REEL_MAX_DURATION_SECS),     true))
+  it('rejects one second over the cap',()   => assert.equal(isDurationValid(REEL_MAX_DURATION_SECS + 1), false))
   it('rejects negative duration',     ()   => assert.equal(isDurationValid(-1),  false))
   it('rejects NaN',                   ()   => assert.equal(isDurationValid(NaN), false))
   it('rejects Infinity',              ()   => assert.equal(isDurationValid(Infinity), false))

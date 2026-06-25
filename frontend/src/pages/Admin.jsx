@@ -876,7 +876,7 @@ export default function Admin() {
   const handleArchiveImport = useCallback(() => {
     const items = archiveResults
       .filter((r) => archiveSelected[r.archiveId])
-      .map((r) => ({ archiveId: r.archiveId, type: r.type || 'Film', title: r.title, releaseYear: r.year || undefined }))
+      .map((r) => ({ archiveId: r.archiveId, type: r.type || 'Film', title: r.title, releaseYear: r.year || undefined, ...(r.mediaKind === 'reel' && { mediaKind: 'reel' }) }))
     return queueArchiveItems(items)
   }, [archiveResults, archiveSelected, queueArchiveItems])
 
@@ -889,7 +889,7 @@ export default function Admin() {
   }, [])
 
   const handleImportCandidate = useCallback((c) => {
-    return queueArchiveItems([{ archiveId: c.archiveId, type: c.type || 'Film', title: c.title, releaseYear: c.year || undefined }])
+    return queueArchiveItems([{ archiveId: c.archiveId, type: c.type || 'Film', title: c.title, releaseYear: c.year || undefined, ...(c.mediaKind === 'reel' && { mediaKind: 'reel' }) }])
       .then(() => setArchiveCandidates((prev) => prev.filter((x) => x._id !== c._id)))
   }, [queueArchiveItems])
 
@@ -922,7 +922,7 @@ export default function Admin() {
   const handleImportSelectedCandidates = useCallback(async () => {
     const chosen = archiveCandidates.filter((c) => candidateSelected[c._id])
     if (chosen.length === 0) return
-    const items = chosen.map((c) => ({ archiveId: c.archiveId, type: c.type || 'Film', title: c.title, releaseYear: c.year || undefined }))
+    const items = chosen.map((c) => ({ archiveId: c.archiveId, type: c.type || 'Film', title: c.title, releaseYear: c.year || undefined, ...(c.mediaKind === 'reel' && { mediaKind: 'reel' }) }))
     await queueArchiveItems(items)
     const chosenIds = new Set(chosen.map((c) => c._id))
     setArchiveCandidates((prev) => prev.filter((x) => !chosenIds.has(x._id)))
@@ -2236,6 +2236,11 @@ export default function Admin() {
                         {c.year ? `${c.year} · ` : ''}{c.type && c.type !== 'Film' ? `${c.type} · ` : ''}{c.language || ''}
                       </p>
                     </div>
+                    {c.mediaKind === 'reel' && (
+                      <span className={styles.archiveBadge}>
+                        Reel{c.durationSecs ? ` · ${c.durationSecs}s` : ''}
+                      </span>
+                    )}
                     <span className={`${styles.archiveBadge} ${c.licensed ? styles.archiveBadgeOk : styles.archiveBadgeWarn}`}>
                       {c.licensed ? 'PD / CC' : 'Unverified'}
                     </span>

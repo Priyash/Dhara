@@ -54,6 +54,23 @@ export async function bunnyRequest(path, { method = 'GET', body, headers = {}, t
 }
 
 /**
+ * Checks whether a Bunny Stream video GUID still exists on the CDN.
+ * Returns `false` only on a confirmed 404 (video deleted/never existed).
+ * Any other failure (network, auth, Bunny outage) re-throws — callers must
+ * never treat an ambiguous error as "deleted", or a transient Bunny outage
+ * could trigger mass false-positive soft-deletion of catalog content.
+ */
+export async function bunnyVideoExists(guid) {
+  try {
+    await bunnyRequest(`/library/${libraryId}/videos/${guid}`)
+    return true
+  } catch (err) {
+    if (/404|not found/i.test(err?.message || '')) return false
+    throw err
+  }
+}
+
+/**
  * Uploads a file buffer to Bunny Stream for a given UploadJob.
  * Sets the job status through uploading → processing.
  * On failure sets status = 'failed' with the error message.

@@ -12,9 +12,22 @@
 import { ArchiveImportTask } from '../models/ArchiveImportTask.js'
 import { ArchiveCandidate } from '../models/ArchiveCandidate.js'
 import { Content } from '../models/Content.js'
+import { Reel } from '../models/Reel.js'
+import { User } from '../models/User.js'
 import { UploadJob } from '../models/UploadJob.js'
 import { StreamCollection } from '../models/StreamCollection.js'
-import { ensureArchiveCollection, queueArchiveImport } from '../services/archiveImport.js'
+import { ensureArchiveCollection, ensureArchiveReelCreator, queueArchiveImport } from '../services/archiveImport.js'
+
+const REEL_COLLECTION_SLUG = process.env.REEL_COLLECTION_SLUG || 'dhara-reels'
+
+/** Resolve the existing "dhara-reels" Bunny collection used by creator-uploaded reels. Never creates one — reels must reuse the same collection creators upload to. */
+async function resolveReelCollection() {
+  const collection = await StreamCollection.findOne({ slug: REEL_COLLECTION_SLUG, isActive: true }).lean()
+  if (!collection?.bunnyCollectionId) {
+    throw new Error(`Reel collection "${REEL_COLLECTION_SLUG}" is not configured.`)
+  }
+  return collection
+}
 
 const STALE_MS      = 10 * 60 * 1000   // a 'processing' task older than this is presumed crashed
 const MAX_ATTEMPTS  = 3
@@ -45,6 +58,7 @@ async function claimNext() {
 }
 
 async function recordFailedJob(collection, title, message) {
+  if (!collection) return
   try {
     await UploadJob.create({
       createdByEmail:    'system@archive-import',
@@ -66,15 +80,24 @@ function markCandidate(archiveId, status) {
   ArchiveCandidate.updateOne({ archiveId, status: { $ne: 'dismissed' } }, { $set: { status } }).catch(() => {})
 }
 
-async function processTask(task, collection) {
+async function processTask(task, filmCollection) {
   const archiveId = task.item?.archiveId
+  const isReel = task.item?.mediaKind === 'reel'
+  let collection = filmCollection
   try {
+    let reelCreatorId = null
+    if (isReel) {
+      collection = await resolveReelCollection()
+      reelCreatorId = (await ensureArchiveReelCreator({ UserModel: User }))._id
+    }
     const result = await queueArchiveImport(task.item, {
       ContentModel: Content,
+      ReelModel: Reel,
       UploadJobModel: UploadJob,
       collection,
       allowUnlicensed: task.allowUnlicensed,
       createdByEmail: task.createdByEmail,
+      reelCreatorId,
     })
     if (result.created) {
       await ArchiveImportTask.findByIdAndUpdate(task._id, { $set: { status: 'done', contentId: result.id, error: '' } })

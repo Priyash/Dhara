@@ -488,12 +488,16 @@ router.get('/archive/search', async (req, res, next) => {
     const { items, total } = await searchArchive({ language, query, collections, rows: safeRows, page: safePage })
 
     // Flag items already in the catalog so the UI can block re-importing them.
-    // A soft-deleted Content doc doesn't count — once removed, it's importable again.
+    // A soft-deleted Content/Reel doc doesn't count — once removed (including
+    // when the CDN-reconcile job detects a Bunny-side deletion), it's importable again.
     const archiveIds = items.map((i) => i.archiveId).filter(Boolean)
-    const imported = archiveIds.length
-      ? await Content.find({ archiveId: { $in: archiveIds }, isDeleted: { $ne: true } }).select('archiveId').lean()
-      : []
-    const importedSet = new Set(imported.map((c) => c.archiveId))
+    const [importedContent, importedReels] = archiveIds.length
+      ? await Promise.all([
+          Content.find({ archiveId: { $in: archiveIds }, isDeleted: { $ne: true } }).select('archiveId').lean(),
+          Reel.find({ archiveId: { $in: archiveIds }, isDeleted: { $ne: true } }).select('archiveId').lean(),
+        ])
+      : [[], []]
+    const importedSet = new Set([...importedContent, ...importedReels].map((c) => c.archiveId))
     const results = items.map((i) => ({ ...i, alreadyImported: importedSet.has(i.archiveId) }))
 
     res.json({ results, total, page: safePage, rows: safeRows })
