@@ -803,9 +803,10 @@ export default function Admin() {
       setArchiveTotal(total || 0)
       setArchivePage(page)
       setArchiveSearched(true)
-      // Pre-select everything that already passes the license check.
+      // Pre-select everything that already passes the license check — but
+      // never something already in the catalog (re-importing it is blocked).
       const preselect = {}
-      for (const r of results || []) if (r.licensed) preselect[r.archiveId] = true
+      for (const r of results || []) if (r.licensed && !r.alreadyImported) preselect[r.archiveId] = true
       setArchiveSelected(preselect)
     } catch (err) {
       showToast({ type: 'error', message: err?.message || 'Archive search failed.' })
@@ -2324,11 +2325,16 @@ export default function Admin() {
 
               <div className={styles.libraryList}>
                 {archiveResults.map((r) => (
-                  <label key={r.archiveId} className={styles.archiveRow}>
+                  <label
+                    key={r.archiveId}
+                    className={`${styles.archiveRow} ${r.alreadyImported ? styles.archiveRowDisabled : ''}`}
+                    title={r.alreadyImported ? 'Already in the catalog — delete it to import again' : ''}
+                  >
                     <input
                       type="checkbox"
                       checked={Boolean(archiveSelected[r.archiveId])}
                       onChange={() => toggleArchiveSelect(r.archiveId)}
+                      disabled={r.alreadyImported}
                     />
                     <div className={styles.archiveThumb}>
                       <img src={r.thumbUrl} alt="" loading="lazy" />
@@ -2339,9 +2345,13 @@ export default function Admin() {
                         {r.year ? `${r.year} · ` : ''}{r.type && r.type !== 'Film' ? `${r.type} · ` : ''}{r.archiveId}
                       </p>
                     </div>
-                    <span className={`${styles.archiveBadge} ${r.licensed ? styles.archiveBadgeOk : styles.archiveBadgeWarn}`}>
-                      {r.licensed ? 'PD / CC' : 'Unverified'}
-                    </span>
+                    {r.alreadyImported ? (
+                      <span className={`${styles.archiveBadge} ${styles.archiveBadgeDone}`}>Already imported</span>
+                    ) : (
+                      <span className={`${styles.archiveBadge} ${r.licensed ? styles.archiveBadgeOk : styles.archiveBadgeWarn}`}>
+                        {r.licensed ? 'PD / CC' : 'Unverified'}
+                      </span>
+                    )}
                     <a
                       className={styles.archiveLink}
                       href={r.detailUrl}

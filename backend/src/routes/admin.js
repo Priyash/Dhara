@@ -486,7 +486,17 @@ router.get('/archive/search', async (req, res, next) => {
     const safeRows = Math.min(Number(rows) || 40, 100)
     const safePage = Math.max(Number(page) || 1, 1)
     const { items, total } = await searchArchive({ language, query, collections, rows: safeRows, page: safePage })
-    res.json({ results: items, total, page: safePage, rows: safeRows })
+
+    // Flag items already in the catalog so the UI can block re-importing them.
+    // A soft-deleted Content doc doesn't count — once removed, it's importable again.
+    const archiveIds = items.map((i) => i.archiveId).filter(Boolean)
+    const imported = archiveIds.length
+      ? await Content.find({ archiveId: { $in: archiveIds }, isDeleted: { $ne: true } }).select('archiveId').lean()
+      : []
+    const importedSet = new Set(imported.map((c) => c.archiveId))
+    const results = items.map((i) => ({ ...i, alreadyImported: importedSet.has(i.archiveId) }))
+
+    res.json({ results, total, page: safePage, rows: safeRows })
   } catch (err) {
     next(err)
   }
@@ -1782,17 +1792,37 @@ router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
 
 /**
  * DELETE /api/admin/content/:id
- * Soft-deletes content — sets isDeleted=true and unpublishes. Recoverable by admin.
+ * Soft-deletes content — sets isDeleted=true, unpublishes, and purges every
+ * Bunny video attached to it (top-level + each episode). Clearing bunnyVideoId
+ * matters for archive.org imports: re-importing the same archiveId is blocked
+ * while a non-deleted Content doc holds it, so once it's actually gone from the
+ * CDN (not just hidden) the same title is importable again from search results.
  */
 router.delete('/content/:id', async (req, res, next) => {
   try {
+    const existing = await Content.findById(req.params.id).select('title bunnyVideoId seasons').lean()
+    if (!existing) return res.status(404).json({ error: 'Content not found' })
+
+    const videoIds = [
+      existing.bunnyVideoId,
+      ...(existing.seasons || []).flatMap((s) => (s.episodes || []).map((e) => e.bunnyVideoId)),
+    ].filter(Boolean)
+    for (const guid of videoIds) {
+      bunnyRequest(`/library/${libraryId}/videos/${guid}`, { method: 'DELETE' })
+        .catch((err) => console.warn('[content-delete] Bunny delete failed (non-fatal):', err.message))
+    }
+
+    const clearedSeasons = (existing.seasons || []).map((s) => ({
+      ...s,
+      episodes: (s.episodes || []).map((e) => ({ ...e, bunnyVideoId: '' })),
+    }))
+
     const item = await Content.findByIdAndUpdate(
       req.params.id,
-      { $set: { isDeleted: true, isPublished: false } },
+      { $set: { isDeleted: true, isPublished: false, bunnyVideoId: '', seasons: clearedSeasons } },
       { new: true }
     ).select('title isDeleted isPublished').lean()
 
-    if (!item) return res.status(404).json({ error: 'Content not found' })
     bustContentCache()
     logAdminAction(req, 'delete_content', 'content', item._id, item.title)
     res.json({ success: true, item })

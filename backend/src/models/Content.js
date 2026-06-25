@@ -19,6 +19,7 @@ const contentSchema = new mongoose.Schema(
   {
     title:        { type: String, required: true },
     subtitle:     String,
+    archiveId:    { type: String, default: null, index: true },  // archive.org identifier, set when sourced from an import
     type:         { type: String, enum: ['Film', 'Series', 'Serial Drama', 'Documentary', 'Live'], required: true },
     duration:     { type: String, default: '' },  // Film/Documentary runtime e.g. "1h 45m"; Series/Serial Drama use episode durations
     genre:        [String],

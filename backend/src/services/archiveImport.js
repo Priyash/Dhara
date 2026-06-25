@@ -218,6 +218,11 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
   const id = item.archiveId
   if (!id) throw new Error('item missing "archiveId"')
 
+  // Already in the catalog and not soft-deleted — don't push it to the CDN again.
+  if (await ContentModel.findOne({ archiveId: id, isDeleted: { $ne: true } }).lean()) {
+    return { skipped: true, reason: 'already imported', title: item.title || id }
+  }
+
   const archive = await fetchArchiveMetadata(id)
   const license = detectLicense(archive.metadata)
   const meta    = archive.metadata
@@ -248,7 +253,7 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
     bunnyVideoId:     '',
     isPublished:      false,
     submissionStatus: 'approved',
-    archiveId:        undefined,
+    archiveId:        id,
   })
 
   const videoUrl = archiveVideoUrl(id, videoFile.name)
@@ -274,6 +279,11 @@ async function queueEpisodic(item, { ContentModel, UploadJobModel, collection, a
     ? item.seasons
     : (item.archiveId ? [{ number: 1, episodes: [{ number: 1, title: item.title || '', archiveId: item.archiveId }] }] : [])
   if (seasons.length === 0) throw new Error(`episodic item "${title}" has no "seasons"`)
+
+  // Already in the catalog and not soft-deleted — don't push it to the CDN again.
+  if (item.archiveId && await ContentModel.findOne({ archiveId: item.archiveId, isDeleted: { $ne: true } }).lean()) {
+    return { skipped: true, reason: 'already imported', title }
+  }
   if (await ContentModel.findOne({ title }).lean()) return { skipped: true, reason: 'already exists', title }
 
   // Resolve + license-gate every episode before creating anything.
@@ -328,7 +338,7 @@ async function queueEpisodic(item, { ContentModel, UploadJobModel, collection, a
     seasons:   [...seasonMap.values()].sort((a, b) => a.number - b.number),
     isPublished:      false,
     submissionStatus: 'approved',
-    archiveId:        undefined,
+    archiveId:        item.archiveId || null,
     posterArchiveId:  undefined,
   })
 
