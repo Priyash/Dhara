@@ -121,6 +121,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const rVFCRef           = useRef(null)        // rVFC handle on main video (playback capture)
   const thumbRVFCRef      = useRef(null)        // rVFC handle on thumb video (seek capture)
   const hoverTimeRef      = useRef(null)        // latest requested hover/drag time
+  const dragCleanupRef    = useRef(null)        // active progress-bar drag teardown, if any
 
   const thumbUrlFor = null
   const thumbHasFrame = useRef(false)
@@ -874,15 +875,21 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         tv.cancelVideoFrameCallback(thumbRVFCRef.current)
         thumbRVFCRef.current = null
       }
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup',   onUp)
-      window.removeEventListener('touchmove', onMove)
-      window.removeEventListener('touchend',  onUp)
+      window.removeEventListener('mousemove',   onMove)
+      window.removeEventListener('mouseup',     onUp)
+      window.removeEventListener('touchmove',   onMove)
+      window.removeEventListener('touchend',    onUp)
+      window.removeEventListener('touchcancel', onUp)
+      dragCleanupRef.current = null
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup',   onUp)
     window.addEventListener('touchmove', onMove, { passive: true })
     window.addEventListener('touchend',  onUp)
+    // touchcancel fires when the OS interrupts the gesture (incoming call, notification
+    // shade, etc.) — without this the drag listeners and isDragging state would stick.
+    window.addEventListener('touchcancel', onUp)
+    dragCleanupRef.current = onUp
   }
 
   // ── Controls ─────────────────────────────────────────────────────────────────
@@ -1285,6 +1292,9 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     clearTimeout(rippleTimerRef.current)
     clearTimeout(ambientRafRef.current)
     if (volumeFadeRef.current) cancelAnimationFrame(volumeFadeRef.current)
+    // If the component unmounts mid-drag (e.g. navigating away while scrubbing),
+    // tear down the window-level drag listeners instead of leaking them.
+    dragCleanupRef.current?.()
   }, [])
 
   // Cast / AirPlay
@@ -1691,14 +1701,18 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
             ref={progressRef}
             className={`${styles.progressTrack} ${isDragging ? styles.progressDragging : ''}`}
             onMouseDown={handleDragStart}
-            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); handleDragStart(e.touches[0]) }}
+            onTouchStart={(e) => { e.stopPropagation(); handleDragStart(e) }}
             onTouchEnd={(e) => e.stopPropagation()}
             onMouseMove={handleProgressHover}
             onMouseLeave={clearHoverPreview}
             onClick={handleProgressClick}
             role="slider"
+            tabIndex={0}
             aria-label="Seek"
+            aria-valuemin={0}
+            aria-valuemax={100}
             aria-valuenow={Math.round(progress)}
+            aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
           >
             <div className={styles.progressBuffer} style={{ width: `${bufferPct}%` }} />
             <div ref={fillRef}  className={styles.progressFill}  style={{ width: `${progress}%` }} />
