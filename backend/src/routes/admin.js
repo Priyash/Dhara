@@ -164,6 +164,7 @@ async function syncProcessingJob(job) {
                     number:       eNum,
                     title:        updated.episodeTitle    || `Episode ${eNum}`,
                     duration:     updated.episodeDuration || '',
+                    subtitleUrl:  '',
                     bunnyVideoId: updated.bunnyVideoId,
                   },
                 },
@@ -179,6 +180,7 @@ async function syncProcessingJob(job) {
                     number:       eNum,
                     title:        updated.episodeTitle    || `Episode ${eNum}`,
                     duration:     updated.episodeDuration || '',
+                    subtitleUrl:  '',
                     bunnyVideoId: updated.bunnyVideoId,
                   }],
                 },
@@ -811,11 +813,11 @@ router.post('/map-existing-video', async (req, res, next) => {
         if (hasSeason) {
           await Content.findOneAndUpdate(
             { _id: contentId, 'seasons.number': sNum },
-            { $push: { 'seasons.$.episodes': { number: eNum, title: '', duration: '', bunnyVideoId: vid } } }
+            { $push: { 'seasons.$.episodes': { number: eNum, title: '', duration: '', subtitleUrl: '', bunnyVideoId: vid } } }
           )
         } else {
           await Content.findByIdAndUpdate(contentId, {
-            $push: { seasons: { number: sNum, title: '', episodes: [{ number: eNum, title: '', duration: '', bunnyVideoId: vid }] } },
+            $push: { seasons: { number: sNum, title: '', episodes: [{ number: eNum, title: '', duration: '', subtitleUrl: '', bunnyVideoId: vid }] } },
           })
         }
       }
