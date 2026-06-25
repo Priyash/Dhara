@@ -2223,6 +2223,7 @@ export default function CreatorStudio() {
         <ReelUploadModal
           onClose={() => setShowReelModal(false)}
           onCreated={() => { loadReels(); showToast({ type: 'success', message: 'Reel submitted for review!' }) }}
+          onReelReady={loadReels}
         />
       )}
 

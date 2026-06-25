@@ -4,7 +4,7 @@ import {
   X, Upload, Video, Hash, CheckCircle2, AlertTriangle,
   Loader2, Info, Play, Clock, AlignLeft, ImagePlus,
 } from 'lucide-react'
-import { createCreatorReel, createReelUploadJob, uploadReelFile } from '../services/api'
+import { createCreatorReel, createReelUploadJob, uploadReelFile, getReelUploadJob } from '../services/api'
 import { uploadToCloudinary } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
 import styles from './ReelUploadModal.module.css'
@@ -16,6 +16,30 @@ function _clearReelJob(reelId) {
     const stored = JSON.parse(localStorage.getItem('dhara_reel_jobs') || '[]')
     localStorage.setItem('dhara_reel_jobs', JSON.stringify(stored.filter((j) => j.reelId !== reelId)))
   } catch {}
+}
+
+const POLL_READY_INTERVAL_MS = 5_000
+const POLL_READY_MAX_ATTEMPTS = 36  // ~3 min — Bunny transcoding is usually done well before this
+
+// Fire-and-forget: polls the upload-job status after a successful upload so the
+// reel card's thumbnail (backfilled server-side from Bunny once encoding finishes)
+// shows up without the user having to refresh the page. Survives modal unmount —
+// same background-continuation pattern as the upload itself (see handleClose).
+function pollReelReady(reelId, onReady) {
+  let attempts = 0
+  const tick = async () => {
+    attempts++
+    try {
+      const job = await getReelUploadJob(reelId)
+      if (job.status === 'ready') { onReady?.(); return }
+      if (job.status === 'failed') return
+    } catch {
+      // 404 (job already cleaned up) or transient network error — stop polling
+      return
+    }
+    if (attempts < POLL_READY_MAX_ATTEMPTS) setTimeout(tick, POLL_READY_INTERVAL_MS)
+  }
+  setTimeout(tick, POLL_READY_INTERVAL_MS)
 }
 
 const MAX_DURATION_SECS = 30
@@ -97,7 +121,7 @@ function dataUrlToFile(dataUrl, filename) {
   return new File([arr], filename, { type: mime })
 }
 
-export default function ReelUploadModal({ onClose, onCreated }) {
+export default function ReelUploadModal({ onClose, onCreated, onReelReady }) {
   // queue item: { id, file, title, duration, aspectRatio, thumb, validError, status, progress, error }
   // status: 'pending' | 'uploading' | 'done' | 'error'
   const [queue,               setQueue]               = useState([])
@@ -261,6 +285,9 @@ export default function ReelUploadModal({ onClose, onCreated }) {
         patchActiveUpload(uid, { progress: 100, status: 'done', xhr: null })
         setTimeout(() => removeActiveUpload(uid), 8_000)
         _clearReelJob(reel._id)
+        // No thumbnail was supplied — poll until Bunny finishes transcoding and the
+        // server backfills one, so the reel card doesn't stay dark indefinitely.
+        if (!thumbToUse) pollReelReady(reel._id, onReelReady)
         done++
       } catch (err) {
         const msg = err?.message || 'Upload failed'

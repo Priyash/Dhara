@@ -7,6 +7,7 @@
 import { Readable } from 'stream'
 import { UploadJob } from '../models/UploadJob.js'
 import { Reel } from '../models/Reel.js'
+import { Content } from '../models/Content.js'
 
 const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID
 const accessKey = process.env.BUNNY_STREAM_API_KEY
@@ -97,13 +98,13 @@ export async function processUploadJob(jobId, fileBuffer, fileSize = 0) {
       $set: { bunnyVideoId, progress: 45, note: 'Uploading source file to Bunny Stream...' },
     })
 
-    // Persist bunnyVideoId + thumbnailUrl on the Reel immediately so the stream URL
-    // and card thumbnail work while Bunny is still transcoding.
+    // Persist bunnyVideoId on the Reel immediately so the stream URL works while
+    // Bunny is still transcoding. The thumbnail is NOT guessed here — Bunny hasn't
+    // generated thumbnail.jpg yet at this point (the file isn't even uploaded yet),
+    // so writing a guessed URL now would 404 forever. syncProcessingJob() backfills
+    // the thumbnail later, once Bunny confirms encoding actually finished.
     if (job.reelId) {
-      const pullZone    = process.env.BUNNY_CDN_PULL_ZONE || ''
-      const thumbnailUrl = pullZone ? `https://${pullZone}/${bunnyVideoId}/thumbnail.jpg` : ''
-      const reelUpdates = { bunnyVideoId, ...(thumbnailUrl && { thumbnailUrl }) }
-      Reel.findByIdAndUpdate(job.reelId, { $set: reelUpdates }).catch(() => {})
+      Reel.findByIdAndUpdate(job.reelId, { $set: { bunnyVideoId } }).catch(() => {})
     }
 
     // Content-Length is required — without it Bunny accepts HTTP 200 but internally
@@ -128,5 +129,146 @@ export async function processUploadJob(jobId, fileBuffer, fileSize = 0) {
     // Re-throw so callers can surface the error: admin route returns 500 to the XHR,
     // reel route uses void + .catch(() => {}) so the job status update is enough.
     throw err
+  }
+}
+
+// Bunny Stream video status codes that indicate a terminal failure
+const BUNNY_FAIL_STATUSES = new Set([4, 5, 6])
+
+/**
+ * Polls Bunny for live encode status of an in-flight UploadJob and advances it.
+ * Only flips status to 'ready' (and only then backfills thumbnail/poster fields)
+ * once Bunny confirms the video actually finished encoding — never guesses a
+ * thumbnail/poster URL ahead of that, since the file won't exist yet and would
+ * 404 forever once written to the DB.
+ */
+export async function syncProcessingJob(job) {
+  if (!job.bunnyVideoId || !['processing', 'uploading', 'queued'].includes(job.status)) return job
+
+  try {
+    const video = await bunnyRequest(`/library/${libraryId}/videos/${job.bunnyVideoId}`)
+    const bunnyStatus   = Number(video?.status ?? -1)
+    const encodeProgress = Number(video?.encodeProgress || 0)
+
+    // Bunny status 4 = Resolution not available, 5 = Upload failed, 6 = Failed
+    if (BUNNY_FAIL_STATUSES.has(bunnyStatus)) {
+      const errMsg = bunnyStatus === 5 ? 'Bunny upload failed — file may be corrupted or too large.'
+                   : bunnyStatus === 4 ? 'Bunny could not encode this resolution.'
+                   : 'Bunny encoding failed.'
+      const failed = await UploadJob.findByIdAndUpdate(
+        job._id,
+        { $set: { status: 'failed', progress: 0, error: errMsg } },
+        { new: true }
+      ).catch(() => null)
+      return failed || { ...job, status: 'failed', progress: 0, error: errMsg }
+    }
+
+    // Bunny status 3 = Finished; also guard on encodeProgress for safety
+    const isReady = bunnyStatus === 3 || encodeProgress >= 100
+
+    const nextStatus = isReady ? 'ready' : 'processing'
+    const nextProgress = isReady ? 100 : Math.max(70, Math.min(99, Math.round(70 + encodeProgress * 0.29)))
+
+    const updated = await UploadJob.findByIdAndUpdate(
+      job._id,
+      {
+        $set: {
+          status: nextStatus,
+          progress: nextProgress,
+          note: isReady        ? 'Video is ready to stream.'
+             : encodeProgress > 0 ? `Bunny is transcoding… ${encodeProgress}% encoded.`
+             :                      'Bunny received the file. Transcoding will begin shortly.',
+          error: '',
+        },
+      },
+      { new: true }
+    )
+
+    if (isReady && updated?.reelId) {
+      // Reel upload — link bunnyVideoId and backfill thumbnailUrl from Bunny if reel has none.
+      // Bunny generates thumbnail.jpg for every encoded video; use it as fallback so the
+      // grid card always has a poster even when the Cloudinary auto-thumb upload raced.
+      const existingReel = await Reel.findById(updated.reelId).select('thumbnailUrl').lean()
+      const reelPatch = { bunnyVideoId: updated.bunnyVideoId }
+      if (!existingReel?.thumbnailUrl) {
+        const pullZone        = process.env.BUNNY_CDN_PULL_ZONE
+        const thumbnailFile   = video?.thumbnailFileName || 'thumbnail.jpg'
+        if (pullZone) reelPatch.thumbnailUrl = `https://${pullZone}/${updated.bunnyVideoId}/${thumbnailFile}`
+      }
+      await Reel.findByIdAndUpdate(updated.reelId, { $set: reelPatch })
+    } else if (isReady && updated?.contentId) {
+      if (updated.episodeNumber) {
+        // Series / Serial Drama — link to the correct season→episode.
+        // seasonNumber defaults to 1 if the upload form didn't provide one.
+        const sNum = updated.seasonNumber ?? 1
+        const eNum = updated.episodeNumber
+        const linked = await Content.findOneAndUpdate(
+          { _id: updated.contentId, 'seasons.number': sNum, 'seasons.episodes.number': eNum },
+          { $set: { 'seasons.$[s].episodes.$[e].bunnyVideoId': updated.bunnyVideoId } },
+          { arrayFilters: [{ 's.number': sNum }, { 'e.number': eNum }], new: true }
+        )
+        if (!linked) {
+          const hasSeason = await Content.exists({ _id: updated.contentId, 'seasons.number': sNum })
+          if (hasSeason) {
+            await Content.findOneAndUpdate(
+              { _id: updated.contentId, 'seasons.number': sNum },
+              {
+                $push: {
+                  'seasons.$.episodes': {
+                    number:       eNum,
+                    title:        updated.episodeTitle    || `Episode ${eNum}`,
+                    duration:     updated.episodeDuration || '',
+                    subtitleUrl:  '',
+                    bunnyVideoId: updated.bunnyVideoId,
+                  },
+                },
+              }
+            )
+          } else {
+            await Content.findByIdAndUpdate(updated.contentId, {
+              $push: {
+                seasons: {
+                  number:   sNum,
+                  title:    '',
+                  episodes: [{
+                    number:       eNum,
+                    title:        updated.episodeTitle    || `Episode ${eNum}`,
+                    duration:     updated.episodeDuration || '',
+                    subtitleUrl:  '',
+                    bunnyVideoId: updated.bunnyVideoId,
+                  }],
+                },
+              },
+            })
+          }
+        }
+      } else {
+        // Film / Documentary — link to root bunnyVideoId and backfill posterUrl from
+        // Bunny if Content has none, same fallback logic as the Reel branch above.
+        const existingContent = await Content.findById(updated.contentId).select('posterUrl').lean()
+        const contentPatch = { bunnyVideoId: updated.bunnyVideoId }
+        if (!existingContent?.posterUrl) {
+          const pullZone      = process.env.BUNNY_CDN_PULL_ZONE
+          const thumbnailFile = video?.thumbnailFileName || 'thumbnail.jpg'
+          if (pullZone) contentPatch.posterUrl = `https://${pullZone}/${updated.bunnyVideoId}/${thumbnailFile}`
+        }
+        await Content.findByIdAndUpdate(updated.contentId, { $set: contentPatch })
+      }
+    }
+
+    return updated || job
+  } catch (err) {
+    // If Bunny returns 404 the video was deleted from the CDN — mark the job
+    // as failed immediately so it stops showing "Transcoding…" in the UI.
+    const isGone = /404|not found/i.test(err?.message || '')
+    if (isGone) {
+      const failed = await UploadJob.findByIdAndUpdate(
+        job._id,
+        { $set: { status: 'failed', progress: 0, error: 'Video was deleted from Bunny CDN.' } },
+        { new: true }
+      ).catch(() => null)
+      return failed || { ...job, status: 'failed', progress: 0, error: 'Video was deleted from Bunny CDN.' }
+    }
+    return job
   }
 }
