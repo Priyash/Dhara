@@ -2183,13 +2183,15 @@ export default function Admin() {
 
           {jobSummaryStrip}
 
-          <p className={styles.archiveHint}>
-            Search archive.org for public&#8209;domain films and import them into the catalog — the video is
-            fetched into Bunny Stream and the poster into Cloudinary. Imports run in the background:
-            titles land <strong>unpublished</strong> and show <strong>Transcoding…</strong> in the
-            Content tab until they're ready to publish. Only items with a detected
-            public&#8209;domain / Creative&#8209;Commons licence are selected by default.
-          </p>
+          <div className={styles.archiveHint}>
+            <AlertCircle size={14} />
+            <p>
+              Search archive.org for public&#8209;domain films to import into the catalog. Imports run in
+              the background — titles land <strong>unpublished</strong> and show <strong>Transcoding…</strong> until
+              ready to publish. Items with a detected public&#8209;domain / Creative&#8209;Commons licence
+              are pre&#8209;selected.
+            </p>
+          </div>
 
           {archiveCandidates.length > 0 && (
             <div className={styles.archiveCandidates}>
