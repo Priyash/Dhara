@@ -305,8 +305,12 @@ export async function createAdminCollection(payload) {
   })
 }
 
-export async function listAdminContent() {
-  return request('/api/admin/content')
+export async function listAdminContent({ showDeleted = false } = {}) {
+  return request(showDeleted ? '/api/admin/content?showDeleted=true' : '/api/admin/content')
+}
+
+export async function restoreAdminContent(id) {
+  return request(`/api/admin/content/${id}/restore`, { method: 'POST' })
 }
 
 export async function listUploadJobs(limit = 30) {
