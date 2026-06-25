@@ -4,8 +4,11 @@ const UPLOAD_PRESET  = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET
 /**
  * Upload a File directly to Cloudinary (unsigned preset).
  * Returns the secure_url of the uploaded asset.
+ *
+ * `resourceType` selects the Cloudinary upload endpoint — 'image' (default) for
+ * posters/backdrops, 'raw' for non-image/video assets like WebVTT subtitle files.
  */
-export async function uploadToCloudinary(file, { folder = 'dhara', onProgress } = {}) {
+export async function uploadToCloudinary(file, { folder = 'dhara', onProgress, resourceType = 'image' } = {}) {
   if (!CLOUD_NAME || !UPLOAD_PRESET) {
     throw new Error(
       'Missing VITE_CLOUDINARY_CLOUD_NAME or VITE_CLOUDINARY_UPLOAD_PRESET in your .env file.'
@@ -19,7 +22,7 @@ export async function uploadToCloudinary(file, { folder = 'dhara', onProgress } 
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`)
+    xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`)
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {

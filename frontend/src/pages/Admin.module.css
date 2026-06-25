@@ -1273,6 +1273,160 @@
   margin-top: 2px;
 }
 
+/* ── Content library: title row with inline status badge ─────────────────── */
+.libraryTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.libraryTitleRow .libraryTitle { flex: 1; min-width: 0; }
+
+/* Status badges */
+.contentStatusBadge {
+  display: inline-block;
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.contentStatusPublished   { background: rgba(74,222,128,0.12);  color: #4ade80; }
+.contentStatusUnpublished { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.35); }
+.contentStatusProcessing  { background: rgba(251,191,36,0.12);  color: #fbbf24; }
+.contentStatusNoVideo     { background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.25); }
+.contentStatusDeleted     { background: rgba(225,29,72,0.12);   color: #f87171; }
+
+/* Thin progress bar under the title row during transcoding */
+.contentProgressBar {
+  height: 2px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 1px;
+  margin-top: 5px;
+  overflow: hidden;
+}
+.contentProgressFill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 1px;
+  transition: width 0.6s ease;
+}
+
+/* ── Content filter row ───────────────────────────────────────────────────── */
+.contentFilterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 14px;
+}
+.contentFilterIcon {
+  color: rgba(255,255,255,0.3);
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+.contentFilterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-family: var(--font-body);
+  font-weight: 500;
+  cursor: pointer;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.45);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.contentFilterChip:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.75);
+}
+.contentFilterChipActive {
+  background: rgba(219,39,119,0.12);
+  border-color: rgba(219,39,119,0.35);
+  color: var(--color-accent);
+}
+.contentFilterDivider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255,255,255,0.09);
+  align-self: center;
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+.showDeletedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-family: var(--font-body);
+  color: rgba(255,255,255,0.35);
+  cursor: pointer;
+  user-select: none;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.showDeletedToggle:hover { color: rgba(255,255,255,0.6); }
+.showDeletedToggle input { cursor: pointer; accent-color: var(--color-accent); }
+
+/* ── Deleted content section ─────────────────────────────────────────────── */
+.deletedSection {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.deletedSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.28);
+  font-family: var(--font-body);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.libraryRowDeleted {
+  opacity: 0.55;
+  border-color: rgba(225,29,72,0.1) !important;
+  background: rgba(225,29,72,0.025) !important;
+}
+.libraryRowDeleted:hover { opacity: 0.75; }
+
+/* Restore button */
+.restoreBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(74,222,128,0.2);
+  border-radius: var(--radius-md);
+  background: rgba(74,222,128,0.04);
+  color: rgba(74,222,128,0.65);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.restoreBtn:hover:not(:disabled) {
+  background: rgba(74,222,128,0.1);
+  border-color: rgba(74,222,128,0.45);
+  color: #4ade80;
+}
+.restoreBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
 /* Engagement stats row on content list items */
 .contentEngRow {
   display: flex;
@@ -2090,6 +2244,10 @@
     width: 100%;
   }
 
+  /* Filter row wraps on tablet */
+  .contentFilterRow { flex-wrap: wrap; }
+  .showDeletedToggle { margin-left: 0; }
+
   .librarySearch {
     width: auto;
     flex: 1;
@@ -2151,10 +2309,26 @@
   /* Give action buttons a bit more padding so they're easier to tap */
   .proToggleBtn,
   .editBtn,
-  .deleteBtn {
+  .deleteBtn,
+  .restoreBtn {
     padding: 7px 12px;
     font-size: 12px;
   }
+
+  /* Filter row: wrap and tighten on small screens */
+  .contentFilterRow {
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+  .contentFilterChip {
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+  .contentFilterDivider { display: none; }
+  .showDeletedToggle { margin-left: 0; }
+
+  /* Title row: badge stacks under title on very narrow */
+  .libraryTitleRow { flex-wrap: wrap; gap: 4px; }
 
   /* Creator app rows: switch from 4-col grid to flex column so name is never crushed */
   .creatorAppRow {
@@ -2374,7 +2548,7 @@
 
 .episodeRow {
   display: grid;
-  grid-template-columns: 20px 28px 1fr 80px 1fr 32px;
+  grid-template-columns: 20px 28px 1fr 80px 1fr 1fr 32px;
   align-items: center;
   gap: 8px;
   cursor: default;
@@ -3572,26 +3746,169 @@
 }
 
 /* ── Archive import tab ────────────────────────────────────────────────────── */
-.archiveHint {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 0 0 22px;
-  max-width: 640px;
-  padding: 12px 16px;
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: var(--radius-md);
-  background: rgba(255,255,255,0.02);
+.refreshIconSpinning {
+  animation: monSpin 0.9s linear infinite;
+  flex-shrink: 0;
 }
-.archiveHint svg { flex-shrink: 0; margin-top: 2px; color: var(--color-accent); }
-.archiveHint p {
+
+/* ── Archive import progress panel ──────────────────────────────────────── */
+.archiveTasksPanel {
+  margin: 0 0 18px;
+  border: 1px solid rgba(167,139,250,0.22);
+  border-radius: var(--radius-md);
+  background: rgba(167,139,250,0.05);
+  overflow: hidden;
+}
+
+.archiveTasksPanelHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(167,139,250,0.12);
+  background: rgba(167,139,250,0.07);
+}
+
+.archiveTasksPanelTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #c4b5fd;
+  white-space: nowrap;
+}
+
+.archiveTasksPanelHint {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: rgba(196,181,253,0.6);
+  line-height: 1.5;
+}
+
+.archiveTasksList {
+  display: flex;
+  flex-direction: column;
+}
+
+.archiveTaskRow {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  min-height: 34px;
+}
+
+.archiveTaskRow:last-child { border-bottom: none; }
+
+.archiveTaskRowDone    { opacity: 0.6; }
+.archiveTaskRowSkipped { opacity: 0.45; }
+.archiveTaskRowFailed  { background: rgba(248,113,113,0.05); }
+
+.archiveTaskIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c4b5fd;
+}
+
+.archiveTaskRowDone    .archiveTaskIcon { color: #4ade80; }
+.archiveTaskRowSkipped .archiveTaskIcon { color: #94a3b8; }
+.archiveTaskRowFailed  .archiveTaskIcon { color: #f87171; }
+
+.archiveTaskTitle {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archiveTaskStatus {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: rgba(196,181,253,0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+  text-align: right;
+}
+
+.archiveTaskRowDone    .archiveTaskStatus { color: rgba(74,222,128,0.7); }
+.archiveTaskRowSkipped .archiveTaskStatus { color: rgba(148,163,184,0.6); }
+.archiveTaskRowFailed  .archiveTaskStatus { color: #f87171; }
+
+.archiveInfoWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.archiveInfoPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--color-text-muted);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  font-family: var(--font-body);
+}
+.archiveInfoPill:hover {
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.18);
+  color: var(--color-text);
+}
+.archiveInfoPill svg { flex-shrink: 0; }
+
+.archiveInfoPopover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 340px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface, #1a1a2e);
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+  z-index: 60;
+}
+.archiveInfoPopover::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: 16px;
+  width: 8px;
+  height: 8px;
+  background: var(--color-surface, #1a1a2e);
+  border-top: 1px solid rgba(255,255,255,0.1);
+  border-left: 1px solid rgba(255,255,255,0.1);
+  transform: rotate(45deg);
+}
+.archiveInfoPopover p {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 12.5px;
+  line-height: 1.65;
   color: var(--color-text-muted);
   font-family: var(--font-body);
 }
-.archiveHint strong { color: var(--color-text); font-weight: 600; }
+.archiveInfoPopover strong { color: var(--color-text); font-weight: 600; }
 
 .archiveSearchRow {
   display: flex;
@@ -3676,6 +3993,17 @@
 }
 .archiveBadgeOk   { background: rgba(34,197,94,0.15);  color: #4ade80; }
 .archiveBadgeWarn { background: rgba(234,179,8,0.15);   color: #facc15; }
+.archiveBadgeDone { background: rgba(148,163,184,0.15); color: #94a3b8; }
+
+.archiveRowDisabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.archiveRowDisabled:hover {
+  border-color: rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.15);
+}
+.archiveRowDisabled input[type="checkbox"] { cursor: not-allowed; }
 
 .archiveLink {
   flex-shrink: 0;

@@ -57,7 +57,7 @@ function logAdminAction(req, action, targetType, targetId, targetLabel, metadata
   }).catch((err) => console.error('[audit]', err.message))
 }
 
-import { bunnyRequest, processUploadJob } from '../services/bunnyUpload.js'
+import { bunnyRequest, processUploadJob, syncProcessingJob } from '../services/bunnyUpload.js'
 import { searchArchive, bunnyFetchFromUrl } from '../services/archiveImport.js'
 import { ArchiveCandidate } from '../models/ArchiveCandidate.js'
 import { ArchiveImportTask } from '../models/ArchiveImportTask.js'
@@ -83,130 +83,6 @@ async function listBunnyVideos({ collectionId = '', search = '' } = {}) {
 
   const result = await bunnyRequest(`/library/${libraryId}/videos?${qs.toString()}`)
   return result?.items || []
-}
-
-// Bunny Stream video status codes that indicate a terminal failure
-const BUNNY_FAIL_STATUSES = new Set([4, 5, 6])
-
-async function syncProcessingJob(job) {
-  if (!job.bunnyVideoId || !['processing', 'uploading', 'queued'].includes(job.status)) return job
-
-  try {
-    const video = await bunnyRequest(`/library/${libraryId}/videos/${job.bunnyVideoId}`)
-    const bunnyStatus   = Number(video?.status ?? -1)
-    const encodeProgress = Number(video?.encodeProgress || 0)
-
-    // Bunny status 4 = Resolution not available, 5 = Upload failed, 6 = Failed
-    if (BUNNY_FAIL_STATUSES.has(bunnyStatus)) {
-      const errMsg = bunnyStatus === 5 ? 'Bunny upload failed — file may be corrupted or too large.'
-                   : bunnyStatus === 4 ? 'Bunny could not encode this resolution.'
-                   : 'Bunny encoding failed.'
-      const failed = await UploadJob.findByIdAndUpdate(
-        job._id,
-        { $set: { status: 'failed', progress: 0, error: errMsg } },
-        { new: true }
-      ).catch(() => null)
-      return failed || { ...job, status: 'failed', progress: 0, error: errMsg }
-    }
-
-    // Bunny status 3 = Finished; also guard on encodeProgress for safety
-    const isReady = bunnyStatus === 3 || encodeProgress >= 100
-
-    const nextStatus = isReady ? 'ready' : 'processing'
-    const nextProgress = isReady ? 100 : Math.max(70, Math.min(99, Math.round(70 + encodeProgress * 0.29)))
-
-    const updated = await UploadJob.findByIdAndUpdate(
-      job._id,
-      {
-        $set: {
-          status: nextStatus,
-          progress: nextProgress,
-          note: isReady        ? 'Video is ready to stream.'
-             : encodeProgress > 0 ? `Bunny is transcoding… ${encodeProgress}% encoded.`
-             :                      'Bunny received the file. Transcoding will begin shortly.',
-          error: '',
-        },
-      },
-      { new: true }
-    )
-
-    if (isReady && updated?.reelId) {
-      // Reel upload — link bunnyVideoId and backfill thumbnailUrl from Bunny if reel has none.
-      // Bunny generates thumbnail.jpg for every encoded video; use it as fallback so the
-      // grid card always has a poster even when the Cloudinary auto-thumb upload raced.
-      const existingReel = await Reel.findById(updated.reelId).select('thumbnailUrl').lean()
-      const reelPatch = { bunnyVideoId: updated.bunnyVideoId }
-      if (!existingReel?.thumbnailUrl) {
-        const pullZone        = process.env.BUNNY_CDN_PULL_ZONE
-        const thumbnailFile   = video?.thumbnailFileName || 'thumbnail.jpg'
-        if (pullZone) reelPatch.thumbnailUrl = `https://${pullZone}/${updated.bunnyVideoId}/${thumbnailFile}`
-      }
-      await Reel.findByIdAndUpdate(updated.reelId, { $set: reelPatch })
-    } else if (isReady && updated?.contentId) {
-      if (updated.episodeNumber) {
-        // Series / Serial Drama — link to the correct season→episode.
-        // seasonNumber defaults to 1 if the upload form didn't provide one.
-        const sNum = updated.seasonNumber ?? 1
-        const eNum = updated.episodeNumber
-        const linked = await Content.findOneAndUpdate(
-          { _id: updated.contentId, 'seasons.number': sNum, 'seasons.episodes.number': eNum },
-          { $set: { 'seasons.$[s].episodes.$[e].bunnyVideoId': updated.bunnyVideoId } },
-          { arrayFilters: [{ 's.number': sNum }, { 'e.number': eNum }], new: true }
-        )
-        if (!linked) {
-          const hasSeason = await Content.exists({ _id: updated.contentId, 'seasons.number': sNum })
-          if (hasSeason) {
-            await Content.findOneAndUpdate(
-              { _id: updated.contentId, 'seasons.number': sNum },
-              {
-                $push: {
-                  'seasons.$.episodes': {
-                    number:       eNum,
-                    title:        updated.episodeTitle    || `Episode ${eNum}`,
-                    duration:     updated.episodeDuration || '',
-                    bunnyVideoId: updated.bunnyVideoId,
-                  },
-                },
-              }
-            )
-          } else {
-            await Content.findByIdAndUpdate(updated.contentId, {
-              $push: {
-                seasons: {
-                  number:   sNum,
-                  title:    '',
-                  episodes: [{
-                    number:       eNum,
-                    title:        updated.episodeTitle    || `Episode ${eNum}`,
-                    duration:     updated.episodeDuration || '',
-                    bunnyVideoId: updated.bunnyVideoId,
-                  }],
-                },
-              },
-            })
-          }
-        }
-      } else {
-        // Film / Documentary — link to root bunnyVideoId
-        await Content.findByIdAndUpdate(updated.contentId, { $set: { bunnyVideoId: updated.bunnyVideoId } })
-      }
-    }
-
-    return updated || job
-  } catch (err) {
-    // If Bunny returns 404 the video was deleted from the CDN — mark the job
-    // as failed immediately so it stops showing "Transcoding…" in the UI.
-    const isGone = /404|not found/i.test(err?.message || '')
-    if (isGone) {
-      const failed = await UploadJob.findByIdAndUpdate(
-        job._id,
-        { $set: { status: 'failed', progress: 0, error: 'Video was deleted from Bunny CDN.' } },
-        { new: true }
-      ).catch(() => null)
-      return failed || { ...job, status: 'failed', progress: 0, error: 'Video was deleted from Bunny CDN.' }
-    }
-    return job
-  }
 }
 
 router.use(requireAuth, requireAdmin)
@@ -486,7 +362,21 @@ router.get('/archive/search', async (req, res, next) => {
     const safeRows = Math.min(Number(rows) || 40, 100)
     const safePage = Math.max(Number(page) || 1, 1)
     const { items, total } = await searchArchive({ language, query, collections, rows: safeRows, page: safePage })
-    res.json({ results: items, total, page: safePage, rows: safeRows })
+
+    // Flag items already in the catalog so the UI can block re-importing them.
+    // A soft-deleted Content/Reel doc doesn't count — once removed (including
+    // when the CDN-reconcile job detects a Bunny-side deletion), it's importable again.
+    const archiveIds = items.map((i) => i.archiveId).filter(Boolean)
+    const [importedContent, importedReels] = archiveIds.length
+      ? await Promise.all([
+          Content.find({ archiveId: { $in: archiveIds }, isDeleted: { $ne: true } }).select('archiveId').lean(),
+          Reel.find({ archiveId: { $in: archiveIds }, isDeleted: { $ne: true } }).select('archiveId').lean(),
+        ])
+      : [[], []]
+    const importedSet = new Set([...importedContent, ...importedReels].map((c) => c.archiveId))
+    const results = items.map((i) => ({ ...i, alreadyImported: importedSet.has(i.archiveId) }))
+
+    res.json({ results, total, page: safePage, rows: safeRows })
   } catch (err) {
     next(err)
   }
@@ -532,15 +422,69 @@ router.post('/archive/import', async (req, res, next) => {
   }
 })
 
+// Per-batch task status — lets the UI report which titles were skipped/failed
+// vs. actually queued, instead of an opaque single "queued N" toast.
+router.get('/archive/import/:batchId', async (req, res, next) => {
+  try {
+    const tasks = await ArchiveImportTask.find({ batchId: req.params.batchId })
+      .select('title status reason error')
+      .lean()
+    if (tasks.length === 0) return res.status(404).json({ error: 'Batch not found' })
+    res.json({ tasks })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Archive import task list — returns active tasks plus anything completed in the
+// last 2 hours so the per-title progress panel stays current automatically.
+router.get('/archive/tasks', async (req, res, next) => {
+  try {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const tasks = await ArchiveImportTask.find({
+      $or: [
+        { status: { $in: ['pending', 'processing', 'failed'] } },
+        { status: { $in: ['done', 'skipped'] }, updatedAt: { $gte: twoHoursAgo } },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .limit(40)
+      .select('title status error reason attempts createdAt updatedAt')
+      .lean()
+    const counts = { pending: 0, processing: 0, failed: 0, done: 0, skipped: 0 }
+    for (const t of tasks) if (counts[t.status] !== undefined) counts[t.status]++
+    res.json({ counts, tasks })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // List discovered candidates surfaced by the scheduled discovery job.
+// Backward compatible: with no `page` query param, behaves exactly as before
+// (flat { candidates }, capped at 100). Pass `page` to get paginated results.
 router.get('/archive/candidates', async (req, res, next) => {
   try {
     const status = String(req.query.status || 'new')
-    const candidates = await ArchiveCandidate.find({ status })
-      .sort({ discoveredAt: -1 })
-      .limit(100)
-      .lean()
-    res.json({ candidates })
+    const query = { status }
+
+    if (req.query.page === undefined) {
+      const candidates = await ArchiveCandidate.find(query)
+        .sort({ discoveredAt: -1 })
+        .limit(100)
+        .lean()
+      return res.json({ candidates })
+    }
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 30))
+    const skip = (page - 1) * limit
+
+    const [candidates, total] = await Promise.all([
+      ArchiveCandidate.find(query).sort({ discoveredAt: -1 }).skip(skip).limit(limit).lean(),
+      ArchiveCandidate.countDocuments(query),
+    ])
+
+    res.json({ candidates, total, page, pages: Math.ceil(total / limit), limit })
   } catch (err) {
     next(err)
   }
@@ -563,10 +507,12 @@ router.patch('/archive/candidates/:id/dismiss', async (req, res, next) => {
 
 router.get('/content', async (req, res, next) => {
   try {
-    const items = await Content.find({ isDeleted: { $ne: true } })
+    const showDeleted = req.query.showDeleted === 'true'
+    const filter = showDeleted ? { isDeleted: true } : { isDeleted: { $ne: true } }
+    const items = await Content.find(filter)
       .sort({ updatedAt: -1 })
       .limit(100)
-      .select('title type bunnyVideoId isPremium isFeatured isPublished releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount posterUrl')
+      .select('title type bunnyVideoId isPremium isFeatured isPublished isDeleted releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount posterUrl')
       .lean()
     res.json(items)
   } catch (err) {
@@ -580,7 +526,7 @@ router.post('/content', async (req, res, next) => {
       title, subtitle = '', type = 'Film', genre = [], cast = [], director = '',
       releaseYear, rating = 0, desc = '', posterUrl = '', backdropUrl = '',
       contentLanguage = 'Bengali', certification = null,
-      contentWarnings = '', moodTags = [], badge = null,
+      contentWarnings = '', moodTags = [], badge = null, subtitleUrl = '',
       isPremium = false, isFeatured = false, seasons = [],
     } = req.body
 
@@ -601,6 +547,7 @@ router.post('/content', async (req, res, next) => {
       desc:            desc?.trim() || '',
       posterUrl:       posterUrl?.trim() || '',
       backdropUrl:     backdropUrl?.trim() || '',
+      subtitleUrl:     subtitleUrl?.trim() || '',
       contentLanguage: contentLanguage || 'Bengali',
       certification:   certification || null,
       contentWarnings: contentWarnings?.trim() || '',
@@ -625,6 +572,7 @@ router.post('/content', async (req, res, next) => {
                       desc:         String(ep.desc  || '').trim(),
                       duration:     String(ep.duration || '').trim(),
                       bunnyVideoId: '',
+                      subtitleUrl:  String(ep.subtitleUrl || '').trim(),
                     }))
                 : [],
             }))
@@ -650,7 +598,7 @@ router.get('/content/:id', async (req, res, next) => {
 const ALLOWED_METADATA_FIELDS = [
   'title', 'subtitle', 'desc', 'type', 'duration', 'genre', 'cast', 'director',
   'releaseYear', 'rating', 'isPremium', 'isFeatured', 'badge',
-  'posterUrl', 'backdropUrl', 'palette',
+  'posterUrl', 'backdropUrl', 'palette', 'subtitleUrl',
   'contentLanguage', 'certification', 'contentWarnings', 'moodTags', 'reviewCount',
   'seasons',
 ]
@@ -720,7 +668,7 @@ router.post('/map-existing-video', async (req, res, next) => {
       return res.status(400).json({ error: 'contentId and bunnyVideoId are required' })
     }
 
-    const content = await Content.findById(contentId).select('title type').lean()
+    const content = await Content.findById(contentId).select('title type bunnyVideoId seasons').lean()
     if (!content) return res.status(404).json({ error: 'Content not found' })
 
     const vid = String(bunnyVideoId).trim()
@@ -729,6 +677,16 @@ router.post('/map-existing-video', async (req, res, next) => {
     if (isEpisodic && episodeNumber) {
       const sNum = Number(seasonNumber  || 1)
       const eNum = Number(episodeNumber)
+
+      // Delete the old episode video from Bunny before replacing it.
+      const oldEpVid = content.seasons
+        ?.find((s) => s.number === sNum)
+        ?.episodes?.find((e) => e.number === eNum)
+        ?.bunnyVideoId
+      if (oldEpVid && oldEpVid !== vid) {
+        bunnyRequest(`/library/${libraryId}/videos/${oldEpVid}`, { method: 'DELETE' })
+          .catch((err) => console.warn('[map-video] old episode Bunny delete failed (non-fatal):', err.message))
+      }
 
       const linked = await Content.findOneAndUpdate(
         { _id: contentId, 'seasons.number': sNum, 'seasons.episodes.number': eNum },
@@ -741,11 +699,11 @@ router.post('/map-existing-video', async (req, res, next) => {
         if (hasSeason) {
           await Content.findOneAndUpdate(
             { _id: contentId, 'seasons.number': sNum },
-            { $push: { 'seasons.$.episodes': { number: eNum, title: '', duration: '', bunnyVideoId: vid } } }
+            { $push: { 'seasons.$.episodes': { number: eNum, title: '', duration: '', subtitleUrl: '', bunnyVideoId: vid } } }
           )
         } else {
           await Content.findByIdAndUpdate(contentId, {
-            $push: { seasons: { number: sNum, title: '', episodes: [{ number: eNum, title: '', duration: '', bunnyVideoId: vid }] } },
+            $push: { seasons: { number: sNum, title: '', episodes: [{ number: eNum, title: '', duration: '', subtitleUrl: '', bunnyVideoId: vid }] } },
           })
         }
       }
@@ -754,7 +712,13 @@ router.post('/map-existing-video', async (req, res, next) => {
       return res.json({ success: true, message: `Mapped video to S${sNum}E${eNum} of "${content.title}".` })
     }
 
-    // Film / Documentary — or series mapped to root (legacy / trailer use-case)
+    // Film / Documentary — or series mapped to root (legacy / trailer use-case).
+    // Delete the old Bunny video before replacing it so orphaned videos don't accumulate.
+    if (content.bunnyVideoId && content.bunnyVideoId !== vid) {
+      bunnyRequest(`/library/${libraryId}/videos/${content.bunnyVideoId}`, { method: 'DELETE' })
+        .catch((err) => console.warn('[map-video] old Bunny delete failed (non-fatal):', err.message))
+    }
+
     const updated = await Content.findByIdAndUpdate(
       contentId,
       { $set: { bunnyVideoId: vid } },
@@ -763,6 +727,44 @@ router.post('/map-existing-video', async (req, res, next) => {
 
     bustContentCache()
     res.json({ success: true, content: updated, message: `Mapped Bunny video to "${updated.title}".` })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Attach a WebVTT subtitle URL to a content item or a specific episode,
+// without requiring the client to resend the full seasons array.
+router.patch('/content/:id/subtitle', async (req, res, next) => {
+  try {
+    const { subtitleUrl = '', seasonNumber, episodeNumber } = req.body
+    const url = String(subtitleUrl).trim()
+
+    if (episodeNumber) {
+      const sNum = Number(seasonNumber || 1)
+      const eNum = Number(episodeNumber)
+
+      const linked = await Content.findOneAndUpdate(
+        { _id: req.params.id, 'seasons.number': sNum, 'seasons.episodes.number': eNum },
+        { $set: { 'seasons.$[s].episodes.$[e].subtitleUrl': url } },
+        { arrayFilters: [{ 's.number': sNum }, { 'e.number': eNum }], new: true }
+      ).select('title').lean()
+
+      if (!linked) return res.status(404).json({ error: `Episode S${sNum}E${eNum} not found` })
+
+      bustContentCache()
+      return res.json({ success: true, message: `Subtitle attached to S${sNum}E${eNum} of "${linked.title}".` })
+    }
+
+    const updated = await Content.findByIdAndUpdate(
+      req.params.id,
+      { $set: { subtitleUrl: url } },
+      { new: true }
+    ).select('title subtitleUrl').lean()
+
+    if (!updated) return res.status(404).json({ error: 'Content not found' })
+
+    bustContentCache()
+    res.json({ success: true, content: updated })
   } catch (err) {
     next(err)
   }
@@ -1782,17 +1784,44 @@ router.get('/monitor', requireAuth, requireAdmin, async (req, res, next) => {
 
 /**
  * DELETE /api/admin/content/:id
- * Soft-deletes content — sets isDeleted=true and unpublishes. Recoverable by admin.
+ * Soft-deletes content — sets isDeleted=true, unpublishes, and purges every
+ * Bunny video attached to it (top-level + each episode). Clearing bunnyVideoId
+ * matters for archive.org imports: re-importing the same archiveId is blocked
+ * while a non-deleted Content doc holds it, so once it's actually gone from the
+ * CDN (not just hidden) the same title is importable again from search results.
  */
 router.delete('/content/:id', async (req, res, next) => {
   try {
+    const existing = await Content.findById(req.params.id).select('title bunnyVideoId seasons').lean()
+    if (!existing) return res.status(404).json({ error: 'Content not found' })
+
+    // Cancel any in-flight upload jobs so they don't try to write bunnyVideoId
+    // back to a document that is about to be soft-deleted.
+    await UploadJob.updateMany(
+      { contentId: req.params.id, status: { $in: ['awaiting_file', 'queued', 'uploading', 'processing'] } },
+      { $set: { status: 'cancelled', note: 'Content was deleted.', error: '' } }
+    )
+
+    const videoIds = [
+      existing.bunnyVideoId,
+      ...(existing.seasons || []).flatMap((s) => (s.episodes || []).map((e) => e.bunnyVideoId)),
+    ].filter(Boolean)
+    for (const guid of videoIds) {
+      bunnyRequest(`/library/${libraryId}/videos/${guid}`, { method: 'DELETE' })
+        .catch((err) => console.warn('[content-delete] Bunny delete failed (non-fatal):', err.message))
+    }
+
+    const clearedSeasons = (existing.seasons || []).map((s) => ({
+      ...s,
+      episodes: (s.episodes || []).map((e) => ({ ...e, bunnyVideoId: '' })),
+    }))
+
     const item = await Content.findByIdAndUpdate(
       req.params.id,
-      { $set: { isDeleted: true, isPublished: false } },
+      { $set: { isDeleted: true, isPublished: false, bunnyVideoId: '', seasons: clearedSeasons } },
       { new: true }
     ).select('title isDeleted isPublished').lean()
 
-    if (!item) return res.status(404).json({ error: 'Content not found' })
     bustContentCache()
     logAdminAction(req, 'delete_content', 'content', item._id, item.title)
     res.json({ success: true, item })

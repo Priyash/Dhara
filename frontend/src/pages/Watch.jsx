@@ -386,6 +386,7 @@ export default function Watch() {
     : cleanTitle
   const hasNextEp     = activeEp < episodes.length - 1
   const hasSeasons    = seasons.length > 0
+  const subtitleUrl   = activeEpisode ? activeEpisode.subtitleUrl : content.subtitleUrl
 
   const hasGenre  = content.genre?.length > 0
   const hasRating = content.rating > 0
@@ -591,6 +592,7 @@ export default function Watch() {
               title={playerTitle}
               poster={content.posterUrl || null}
               storageKey={id}
+              subtitleUrl={subtitleUrl || null}
               maxQualityHeight={maxQualityHeight}
               onPlayingChange={setPlayerPlaying}
               onBack={() => navigate(-1)}

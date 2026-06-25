@@ -28,7 +28,7 @@ async function optionalAuth(req, _res, next) {
   next()
 }
 import { buildHlsUrl } from './reels.helpers.js'
-import { processUploadJob } from '../services/bunnyUpload.js'
+import { processUploadJob, syncProcessingJob } from '../services/bunnyUpload.js'
 
 const _require = createRequire(import.meta.url)
 const geoip    = _require('geoip-lite')
@@ -415,10 +415,10 @@ router.get('/:id/upload-job', requireAuth, async (req, res, next) => {
     if (!reel) return res.status(404).json({ error: 'Reel not found' })
     const job = await UploadJob.findOne({ reelId: reel._id })
       .sort({ createdAt: -1 })
-      .select('status progress note error')
       .lean()
     if (!job) return res.status(404).json({ error: 'No upload job found' })
-    res.json(job)
+    const synced = await syncProcessingJob(job)
+    res.json({ status: synced.status, progress: synced.progress, note: synced.note, error: synced.error })
   } catch (err) {
     next(err)
   }

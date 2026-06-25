@@ -305,8 +305,12 @@ export async function createAdminCollection(payload) {
   })
 }
 
-export async function listAdminContent() {
-  return request('/api/admin/content')
+export async function listAdminContent({ showDeleted = false } = {}) {
+  return request(showDeleted ? '/api/admin/content?showDeleted=true' : '/api/admin/content')
+}
+
+export async function restoreAdminContent(id) {
+  return request(`/api/admin/content/${id}/restore`, { method: 'POST' })
 }
 
 export async function listUploadJobs(limit = 30) {
@@ -391,6 +395,10 @@ export async function importFromArchive(items, allowUnlicensed = false) {
   })
 }
 
+export async function getArchiveImportBatch(batchId) {
+  return request(`/api/admin/archive/import/${batchId}`)
+}
+
 export async function cancelUploadJob(id) {
   return request(`/api/admin/upload-jobs/${id}/cancel`, { method: 'PATCH' })
 }
@@ -399,8 +407,19 @@ export async function retryUploadJob(id) {
   return request(`/api/admin/upload-jobs/${id}/retry`, { method: 'PATCH' })
 }
 
-export async function listArchiveCandidates(status = 'new') {
-  return request(`/api/admin/archive/candidates?status=${encodeURIComponent(status)}`)
+export async function listArchiveTasks() {
+  return request('/api/admin/archive/tasks')
+}
+
+export async function listArchiveCandidates(status = 'new', { page, limit } = {}) {
+  const qs = new URLSearchParams({ status })
+  if (page) qs.set('page', page)
+  if (limit) qs.set('limit', limit)
+  return request(`/api/admin/archive/candidates?${qs.toString()}`)
+}
+
+export async function setContentSubtitle(contentId, payload) {
+  return request(`/api/admin/content/${contentId}/subtitle`, { method: 'PATCH', body: JSON.stringify(payload) })
 }
 
 export async function dismissArchiveCandidate(id) {

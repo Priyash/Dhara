@@ -7,7 +7,7 @@ import {
   GripVertical, Layers, Plus, UploadIcon, IndianRupee,
   Calculator, Wallet, Clock, ChevronDown, ChevronLeft, ChevronRight, TrendingUp, Users, BarChart2,
   Activity, Server, AlertCircle, Database, Heart, MessageCircle, Play,
-  Archive, Search,
+  Archive, Search, Info, RotateCcw, SlidersHorizontal,
 } from 'lucide-react'
 import { uploadToCloudinary, cloudinaryTransform } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
@@ -16,7 +16,7 @@ import {
   createAdminCollection, createBunnyCollection, createUploadJob, fetchAdminContentById,
   getAdminSession, importFromCdn, syncCdnDeletions, listBunnyCollections, listBunnyVideos,
   listAdminCollections, listAdminContent, listUploadJobs, getUploadJob,
-  mapExistingBunnyVideo, createAdminContent, updateAdminContent, togglePublishContent, deleteAdminContent,
+  mapExistingBunnyVideo, createAdminContent, updateAdminContent, togglePublishContent, deleteAdminContent, restoreAdminContent,
   uploadJobFile, getPaymentConfig, updatePaymentConfig,
   listCreatorApplications, approveCreatorApplication, rejectCreatorApplication,
   listAdminSubmissions, approveSubmission, rejectSubmission,
@@ -24,8 +24,8 @@ import {
   listAdminCreatorEarnings, calculateCreatorEarnings, processCreatorPayout, listAdminCreatorPayouts,
   getAdminRevenue, getAdminMonitor,
   listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
-  searchArchive, importFromArchive, listArchiveCandidates, dismissArchiveCandidate,
-  cancelUploadJob, retryUploadJob,
+  searchArchive, importFromArchive, getArchiveImportBatch, listArchiveCandidates, listArchiveTasks, dismissArchiveCandidate,
+  cancelUploadJob, retryUploadJob, setContentSubtitle,
 } from '../services/api'
 import styles from './Admin.module.css'
 import { isValidDuration } from '../utils/duration'
@@ -514,7 +514,49 @@ const EMPTY_EDIT_FORM = {
   isPremium: false, isFeatured: false, badge: '',
   posterUrl: '', backdropUrl: '', palette: '', reviewCount: '',
   contentLanguage: 'Bengali', certification: '', contentWarnings: '',
-  moodTags: '', bunnyVideoId: '', episodes: [],
+  moodTags: '', bunnyVideoId: '', subtitleUrl: '', episodes: [], seasonMeta: [],
+}
+
+// seasons (nested) <-> episodes (flat, with seasonNumber) — the edit modal's
+// episode list has no season selector, so we flatten for display and regroup
+// on save, preserving each season's title via seasonMeta.
+function flattenSeasons(seasons = []) {
+  return seasons.flatMap((s) =>
+    (s.episodes || []).map((ep) => ({
+      seasonNumber: s.number,
+      number:       ep.number,
+      title:        ep.title || '',
+      desc:         ep.desc || '',
+      duration:     ep.duration || '',
+      bunnyVideoId: ep.bunnyVideoId || '',
+      subtitleUrl:  ep.subtitleUrl || '',
+      viewCount:    ep.viewCount || 0,
+    }))
+  )
+}
+
+function regroupEpisodes(episodes, seasonMeta = []) {
+  const bySeason = new Map()
+  for (const ep of episodes) {
+    const sn = ep.seasonNumber || 1
+    if (!bySeason.has(sn)) bySeason.set(sn, [])
+    bySeason.get(sn).push(ep)
+  }
+  return [...bySeason.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([number, eps]) => ({
+      number,
+      title: seasonMeta.find((s) => s.number === number)?.title || '',
+      episodes: eps.map((ep) => ({
+        number:       Number(ep.number),
+        title:        ep.title.trim(),
+        desc:         ep.desc || '',
+        duration:     ep.duration.trim(),
+        bunnyVideoId: ep.bunnyVideoId?.trim() || '',
+        subtitleUrl:  ep.subtitleUrl?.trim() || '',
+        viewCount:    ep.viewCount || 0,
+      })),
+    }))
 }
 
 const SHELF_ACCENT_COLORS = [
@@ -656,6 +698,8 @@ export default function Admin() {
   const [mapContentId, setMapContentId]       = useState('')
   const [mapVideoError, setMapVideoError]     = useState('')
   const [file, setFile]                       = useState(null)
+  const [subtitleFile, setSubtitleFile]       = useState(null)
+  const subtitleInputRef                      = useRef(null)
   const [busy, setBusy]                       = useState(false)
   const [notice, setNotice]                   = useState('')
   const [error, setError]                     = useState('')
@@ -731,8 +775,13 @@ export default function Admin() {
   const [editBusy, setEditBusy]       = useState(false)
   const [editNotice, setEditNotice]   = useState('')
   const [editError, setEditError]     = useState('')
-  const [contentSearch, setContentSearch] = useState('')
-  const [imgUploading, setImgUploading]   = useState({ poster: false, backdrop: false })
+  const [contentSearch, setContentSearch]           = useState('')
+  const [contentTypeFilter, setContentTypeFilter]   = useState('all')
+  const [contentStatusFilter, setContentStatusFilter] = useState('all')
+  const [showDeleted, setShowDeleted]               = useState(false)
+  const [deletedItems, setDeletedItems]             = useState([])
+  const [restoringId, setRestoringId]               = useState(null)
+  const [imgUploading, setImgUploading]             = useState({ poster: false, backdrop: false })
   const [imgProgress,  setImgProgress]    = useState({ poster: 0,     backdrop: 0     })
   const modalFormRef = useRef(null)
 
@@ -747,9 +796,14 @@ export default function Admin() {
   const [archivePage, setArchivePage]           = useState(1)
   const [archiveTotal, setArchiveTotal]         = useState(0)
   const ARCHIVE_PAGE_SIZE = 40
-  const [allowUnlicensed, setAllowUnlicensed]   = useState(false)
+  const [allowUnlicensed, setAllowUnlicensed]   = useState(true)
   const [archiveCandidates, setArchiveCandidates] = useState([])
+  const [candidatesPage, setCandidatesPage] = useState(1)
+  const [candidatesHasMore, setCandidatesHasMore] = useState(false)
+  const [candidatesLoadingMore, setCandidatesLoadingMore] = useState(false)
   const [candidateSelected, setCandidateSelected] = useState({})   // candidate _id -> true
+  const [archiveImportTasks, setArchiveImportTasks] = useState([])   // recent ArchiveImportTask rows
+  const [archiveHintOpen, setArchiveHintOpen]       = useState(false)
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const showToast = useCallback((t) => {
@@ -803,9 +857,10 @@ export default function Admin() {
       setArchiveTotal(total || 0)
       setArchivePage(page)
       setArchiveSearched(true)
-      // Pre-select everything that already passes the license check.
+      // Pre-select everything that already passes the license check — but
+      // never something already in the catalog (re-importing it is blocked).
       const preselect = {}
-      for (const r of results || []) if (r.licensed) preselect[r.archiveId] = true
+      for (const r of results || []) if (r.licensed && !r.alreadyImported) preselect[r.archiveId] = true
       setArchiveSelected(preselect)
     } catch (err) {
       showToast({ type: 'error', message: err?.message || 'Archive search failed.' })
@@ -856,15 +911,51 @@ export default function Admin() {
     if (items.length === 0) return
     setArchiveImporting(true)
     try {
-      const { queued = 0 } = await importFromArchive(items, allowUnlicensed)
+      const { queued = 0, batchId } = await importFromArchive(items, allowUnlicensed)
       showToast({
         type: 'success',
         message: `Queued ${queued} title${queued === 1 ? '' : 's'} — they'll appear in the library as they transcode.`,
       })
       setArchiveSelected({})
-      // Pick up the freshly created jobs/content; the 5s auto-poll takes over after.
-      setTimeout(() => loadData().catch(() => {}), 2500)
-      setTimeout(() => loadData().catch(() => {}), 7000)
+      // Optimistic task rows — immediately shows placeholder rows before the
+      // first loadArchiveTasks poll returns real data from the backend.
+      setArchiveImportTasks((prev) => [
+        ...Array.from({ length: queued }, (_, i) => ({
+          _id: `optimistic-${Date.now()}-${i}`,
+          title: items[i]?.title || items[i]?.archiveId || 'Queued…',
+          status: 'pending',
+          error: '',
+          reason: '',
+          createdAt: new Date().toISOString(),
+        })),
+        ...prev,
+      ])
+      // Poll at increasing intervals so at least one poll catches the first
+      // created job; the 5 s auto-poll takes over once hasInProgressJobs is true.
+      for (const delay of [3_000, 8_000, 15_000, 30_000, 60_000, 90_000, 120_000]) {
+        setTimeout(() => loadDataRef.current().catch(() => {}), delay)
+      }
+      // After the worker has had time to settle, surface any titles that were
+      // silently skipped/failed (dedup, missing licence, no usable video file)
+      // since those never produce an UploadJob and look like "no progress" otherwise.
+      if (batchId) {
+        setTimeout(async () => {
+          try {
+            const { tasks = [] } = await getArchiveImportBatch(batchId)
+            const problems = tasks.filter((t) => t.status === 'skipped' || t.status === 'failed')
+            if (problems.length === 0) return
+            const detail = problems
+              .slice(0, 3)
+              .map((t) => `"${t.title}" (${t.reason || t.error || t.status})`)
+              .join(', ')
+            const more = problems.length > 3 ? ` and ${problems.length - 3} more` : ''
+            showToast({
+              type: 'error',
+              message: `${problems.length} of ${tasks.length} title${tasks.length === 1 ? '' : 's'} did not import: ${detail}${more}.`,
+            })
+          } catch { /* best-effort — non-fatal if the check fails */ }
+        }, 8_000)
+      }
     } catch (err) {
       showToast({ type: 'error', message: err?.message || 'Import failed.' })
     } finally {
@@ -875,20 +966,43 @@ export default function Admin() {
   const handleArchiveImport = useCallback(() => {
     const items = archiveResults
       .filter((r) => archiveSelected[r.archiveId])
-      .map((r) => ({ archiveId: r.archiveId, type: 'Film', title: r.title, releaseYear: r.year || undefined }))
+      .map((r) => ({ archiveId: r.archiveId, type: r.type || 'Film', title: r.title, releaseYear: r.year || undefined, ...(r.mediaKind === 'reel' && { mediaKind: 'reel' }) }))
     return queueArchiveItems(items)
   }, [archiveResults, archiveSelected, queueArchiveItems])
 
   // ── Discovered candidates (scheduled discovery) ────────────────────────────
+  const CANDIDATES_PAGE_SIZE = 30
   const loadArchiveCandidates = useCallback(async () => {
     try {
-      const { candidates = [] } = await listArchiveCandidates('new')
+      const { candidates = [], pages = 1 } = await listArchiveCandidates('new', { page: 1, limit: CANDIDATES_PAGE_SIZE })
       setArchiveCandidates(candidates)
+      setCandidatesPage(1)
+      setCandidatesHasMore(pages > 1)
     } catch { /* discovery may be disabled — non-fatal */ }
   }, [])
 
+  const loadMoreCandidates = useCallback(async () => {
+    const nextPage = candidatesPage + 1
+    setCandidatesLoadingMore(true)
+    try {
+      const { candidates = [], pages = 1 } = await listArchiveCandidates('new', { page: nextPage, limit: CANDIDATES_PAGE_SIZE })
+      setArchiveCandidates((prev) => [...prev, ...candidates])
+      setCandidatesPage(nextPage)
+      setCandidatesHasMore(nextPage < pages)
+    } catch { /* non-fatal */ } finally {
+      setCandidatesLoadingMore(false)
+    }
+  }, [candidatesPage])
+
+  const loadArchiveTasks = useCallback(async () => {
+    try {
+      const { tasks = [] } = await listArchiveTasks()
+      setArchiveImportTasks(tasks)
+    } catch { /* non-fatal */ }
+  }, [])
+
   const handleImportCandidate = useCallback((c) => {
-    return queueArchiveItems([{ archiveId: c.archiveId, type: 'Film', title: c.title, releaseYear: c.year || undefined }])
+    return queueArchiveItems([{ archiveId: c.archiveId, type: c.type || 'Film', title: c.title, releaseYear: c.year || undefined, ...(c.mediaKind === 'reel' && { mediaKind: 'reel' }) }])
       .then(() => setArchiveCandidates((prev) => prev.filter((x) => x._id !== c._id)))
   }, [queueArchiveItems])
 
@@ -921,7 +1035,7 @@ export default function Admin() {
   const handleImportSelectedCandidates = useCallback(async () => {
     const chosen = archiveCandidates.filter((c) => candidateSelected[c._id])
     if (chosen.length === 0) return
-    const items = chosen.map((c) => ({ archiveId: c.archiveId, type: 'Film', title: c.title, releaseYear: c.year || undefined }))
+    const items = chosen.map((c) => ({ archiveId: c.archiveId, type: c.type || 'Film', title: c.title, releaseYear: c.year || undefined, ...(c.mediaKind === 'reel' && { mediaKind: 'reel' }) }))
     await queueArchiveItems(items)
     const chosenIds = new Set(chosen.map((c) => c._id))
     setArchiveCandidates((prev) => prev.filter((x) => !chosenIds.has(x._id)))
@@ -977,6 +1091,29 @@ export default function Admin() {
     const timer = setInterval(() => { loadDataRef.current().catch(() => {}) }, 5000)
     return () => clearInterval(timer)
   }, [adminAllowed, hasInProgressJobs])
+
+  // While archive import tasks are pending/processing, poll for their status so
+  // the per-task panel stays current. Once all reach done/skipped/failed the
+  // poll stops automatically.
+  const archiveTasksActive = archiveImportTasks.some((t) => t.status === 'pending' || t.status === 'processing')
+  useEffect(() => {
+    if (!adminAllowed || !archiveTasksActive) return
+    const timer = setInterval(() => {
+      loadArchiveTasks().catch(() => {})
+      // Also refresh the upload job list so the job summary strip updates.
+      loadDataRef.current().catch(() => {})
+    }, 5000)
+    return () => clearInterval(timer)
+  // loadArchiveTasks is stable (useCallback with empty deps)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminAllowed, archiveTasksActive])
+
+  // Load deleted items whenever the "Show deleted" toggle is switched on.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!showDeleted || !adminAllowed) return
+    loadDeletedContent()
+  }, [showDeleted, adminAllowed])
 
   const loadBunnyVideos = async (collectionId) => {
     setMapVideoError('')
@@ -1041,6 +1178,7 @@ export default function Admin() {
     }
     if (activeTab === 'archive' && adminAllowed) {
       void loadArchiveCandidates()
+      void loadArchiveTasks()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, adminAllowed])
@@ -1150,6 +1288,26 @@ export default function Admin() {
     }
   }
 
+  const loadDeletedContent = useCallback(async () => {
+    try {
+      const items = await listAdminContent({ showDeleted: true })
+      setDeletedItems(items)
+    } catch { /* non-fatal */ }
+  }, [])
+
+  const handleRestoreContent = async (item) => {
+    setRestoringId(item._id)
+    try {
+      await restoreAdminContent(item._id)
+      setDeletedItems((prev) => prev.filter((c) => c._id !== item._id))
+      showToast({ type: 'success', message: `"${item.title}" restored — upload a new video to publish it.` })
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Could not restore content' })
+    } finally {
+      setRestoringId(null)
+    }
+  }
+
   // ── Content editor handlers ───────────────────────────────────────────────
   const openEditModal = async (item) => {
     setEditNotice('')
@@ -1181,12 +1339,9 @@ export default function Admin() {
         certification:   full.certification    || '',
         contentWarnings: full.contentWarnings  || '',
         moodTags:        (full.moodTags        || []).join(', '),
-        episodes:        (full.episodes        || []).map((ep) => ({
-          number:      ep.number,
-          title:       ep.title       || '',
-          duration:    ep.duration    || '',
-          bunnyVideoId: ep.bunnyVideoId || '',
-        })),
+        subtitleUrl:     full.subtitleUrl       || '',
+        episodes:        flattenSeasons(full.seasons),
+        seasonMeta:      (full.seasons || []).map((s) => ({ number: s.number, title: s.title || '' })),
       })
     } catch (err) {
       setEditError(err?.message || 'Could not load content.')
@@ -1233,12 +1388,10 @@ export default function Admin() {
         certification:   editForm.certification || null,
         contentWarnings: editForm.contentWarnings.trim(),
         moodTags:        editForm.moodTags.split(',').map((s) => s.trim()).filter(Boolean),
-        episodes:        (editForm.episodes || []).map((ep) => ({
-          number:      Number(ep.number),
-          title:       ep.title.trim(),
-          duration:    ep.duration.trim(),
-          bunnyVideoId: ep.bunnyVideoId?.trim() || '',
-        })),
+        subtitleUrl:     editForm.subtitleUrl.trim(),
+        seasons:         (editForm.type === 'Series' || editForm.type === 'Serial Drama')
+          ? regroupEpisodes(editForm.episodes, editForm.seasonMeta)
+          : [],
       }
 
       if (editingId === NEW_CONTENT_ID) {
@@ -1266,15 +1419,7 @@ export default function Admin() {
     setEditForm((prev) => ({ ...prev, [field]: val }))
   }
 
-  const filteredContent = useMemo(() => {
-    if (!contentSearch.trim()) return contentItems
-    const q = contentSearch.toLowerCase()
-    return contentItems.filter((c) =>
-      c.title?.toLowerCase().includes(q) || c.type?.toLowerCase().includes(q)
-    )
-  }, [contentItems, contentSearch])
-
-  // Set of contentIds that still have an active transcoding job
+  // Set of contentIds that still have an active transcoding job (must come before filteredContent)
   const processingContentIds = useMemo(() => {
     const active = new Set()
     for (const job of jobs) {
@@ -1284,6 +1429,30 @@ export default function Admin() {
     }
     return active
   }, [jobs])
+
+  // Map contentId → job progress so content rows can show a progress bar
+  const contentJobProgress = useMemo(() => {
+    const map = new Map()
+    for (const job of jobs) {
+      if (job.contentId && ['queued', 'uploading', 'processing'].includes(job.status)) {
+        const id = typeof job.contentId === 'object' ? job.contentId._id ?? job.contentId : job.contentId
+        if (!map.has(id) || (job.progress || 0) > (map.get(id) || 0)) map.set(id, job.progress || 0)
+      }
+    }
+    return map
+  }, [jobs])
+
+  const filteredContent = useMemo(() => {
+    let items = contentItems
+    const q = contentSearch.toLowerCase().trim()
+    if (q) items = items.filter((c) => c.title?.toLowerCase().includes(q) || c.type?.toLowerCase().includes(q))
+    if (contentTypeFilter !== 'all') items = items.filter((c) => c.type === contentTypeFilter)
+    if (contentStatusFilter === 'published')   items = items.filter((c) => c.isPublished)
+    if (contentStatusFilter === 'unpublished') items = items.filter((c) => !c.isPublished && Boolean(c.bunnyVideoId) && !processingContentIds.has(c._id))
+    if (contentStatusFilter === 'processing')  items = items.filter((c) => processingContentIds.has(c._id))
+    if (contentStatusFilter === 'no-video')    items = items.filter((c) => !c.bunnyVideoId && !processingContentIds.has(c._id))
+    return items
+  }, [contentItems, contentSearch, contentTypeFilter, contentStatusFilter, processingContentIds])
 
   const handleImageUpload = async (field, file) => {
     if (!file) return
@@ -1412,6 +1581,7 @@ export default function Admin() {
   const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'video/webm', 'video/mkv']
   const ALLOWED_VIDEO_EXTS  = ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v']
   const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2 GB
+  const MAX_SUBTITLE_FILE_SIZE = 2 * 1024 * 1024 // 2 MB — plenty for a WebVTT track
 
   const validateVideoFile = (f) => {
     if (!f) return 'Please choose a video file.'
@@ -1421,6 +1591,20 @@ export default function Admin() {
     if (!typeOk) return `Unsupported file type. Use MP4, MOV, or MKV.`
     if (f.size > MAX_FILE_SIZE) return `File is too large (${(f.size / 1024 / 1024).toFixed(0)} MB). Maximum is 2 GB.`
     return null
+  }
+
+  const validateSubtitleFile = (f) => {
+    if (!f) return null  // subtitle is optional — no file is valid
+    const ext = f.name.split('.').pop()?.toLowerCase() || ''
+    if (ext !== 'vtt') return 'Subtitle file must be a WebVTT (.vtt) file.'
+    if (f.size > MAX_SUBTITLE_FILE_SIZE) return `Subtitle file is too large (${(f.size / 1024).toFixed(0)} KB). Maximum is 2 MB.`
+    return null
+  }
+
+  const handleSubtitleFileChange = (f) => {
+    const err = validateSubtitleFile(f)
+    if (err) { setError(err); return }
+    setError(''); setSubtitleFile(f)
   }
 
   const handleFileChange = (f) => {
@@ -1454,6 +1638,8 @@ export default function Admin() {
     setUploadCategory(cat)
     setSelectedContentId(''); setTitle(''); setFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
+    setSubtitleFile(null)
+    if (subtitleInputRef.current) subtitleInputRef.current.value = ''
     setSeasonNumber('1')
     setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration(''); setSeriesEpisodes([])
     setUploadMode('single')
@@ -1737,10 +1923,17 @@ export default function Admin() {
         if (!window.confirm(`"${sel.title}" already has a video linked.\n\nQueue another upload anyway? Use the Map tab if you want to replace the existing video instead.`)) return
       }
     }
+    if (subtitleFile && !selectedContentId) {
+      return setError('Select a content item before attaching a subtitle file.')
+    }
     // ─────────────────────────────────────────────────────────────────────
 
     setNotice(''); setError(''); setBusy(true)
     const fileToUpload = file
+    const subtitleToUpload = subtitleFile
+    const subtitleTargetId = selectedContentId
+    const subtitleSeasonNumber  = isSeries ? Number(seasonNumber)  : null
+    const subtitleEpisodeNumber = isSeries ? Number(episodeNumber) : null
     const uploadTitle = isSeries && episodeTitle.trim() ? episodeTitle.trim() : title
     try {
       const job = await createUploadJob({
@@ -1755,6 +1948,8 @@ export default function Admin() {
       // Reset the form immediately so admin can queue the next upload
       setTitle(''); setSelectedContentId(''); setFile(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
+      setSubtitleFile(null)
+      if (subtitleInputRef.current) subtitleInputRef.current.value = ''
       setSeasonNumber('1')
       setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration(''); setSeriesEpisodes([])
       setBusy(false)
@@ -1763,9 +1958,32 @@ export default function Admin() {
       const uid = _nextUploadUid++
       addActiveUpload({ uid, job, title: uploadTitle, progress: 0, status: 'uploading', xhr: null, file: fileToUpload })
       fireUploadJob(uid, job._id, fileToUpload)
+
+      // Subtitle files are tiny text tracks — upload them straight to Cloudinary
+      // and attach via a targeted PATCH, fully decoupled from the (much slower)
+      // video transfer/transcode job above.
+      if (subtitleToUpload && subtitleTargetId) {
+        attachSubtitle(subtitleTargetId, subtitleToUpload, {
+          seasonNumber:  subtitleSeasonNumber,
+          episodeNumber: subtitleEpisodeNumber,
+        })
+      }
     } catch (err) {
       setBusy(false)
       setError(err?.message || 'Upload failed.')
+    }
+  }
+
+  // Subtitle files are tiny text, so this skips the activeUploads progress
+  // pipeline entirely: upload straight to Cloudinary, then a single PATCH.
+  async function attachSubtitle(contentId, file, { seasonNumber, episodeNumber } = {}) {
+    try {
+      const url = await uploadToCloudinary(file, { folder: 'dhara/subtitles', resourceType: 'raw' })
+      await setContentSubtitle(contentId, { subtitleUrl: url, seasonNumber, episodeNumber })
+      showToast({ type: 'success', message: 'Subtitle attached.' })
+      loadData()
+    } catch (err) {
+      showToast({ type: 'error', message: `Subtitle upload failed: ${err?.message || 'unknown error'}` })
     }
   }
 
@@ -2084,92 +2302,171 @@ export default function Admin() {
               </button>
             </div>
           </div>
-          <div className={styles.libraryList}>
-            {filteredContent.length === 0 && <p className={styles.empty}>No content found.</p>}
-            {filteredContent.map((item) => (
-              <div key={item._id} className={styles.libraryRow}>
-                <div className={styles.libraryLeft}>
-                  <p className={styles.libraryTitle}>{item.title}</p>
-                  <p className={styles.libraryMeta}>
-                    {item.type}
-                    {item.releaseYear ? ` · ${item.releaseYear}` : ''}
-                    {item.genre?.length ? ` · ${item.genre.join(', ')}` : ''}
-                    {processingContentIds.has(item._id) ? ' · Transcoding…' : !item.bunnyVideoId ? ' · No video' : ''}
-                  </p>
-                  {/* Engagement stats — only shown for published content with activity */}
-                  {item.isPublished && (item.viewCount > 0 || item.likeCount > 0 || item.communityRatingCount > 0) && (
-                    <div className={styles.contentEngRow}>
-                      {item.viewCount > 0 && (
-                        <span className={styles.contentEngStat}>
-                          <Eye size={10} />
-                          {item.viewCount >= 1000 ? `${(item.viewCount/1000).toFixed(1)}k` : item.viewCount} views
-                        </span>
-                      )}
-                      {item.likeCount > 0 && (
-                        <span className={styles.contentEngStat}>
-                          <TrendingUp size={10} />
-                          {item.likeCount} likes
-                        </span>
-                      )}
-                      {item.communityRatingCount > 0 && (
-                        <span className={styles.contentEngStat} style={{ color: '#f472b6' }}>
-                          ★ {item.communityRating?.toFixed(1)} <span style={{ opacity: 0.6 }}>({item.communityRatingCount})</span>
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className={styles.libraryActions}>
-                  {(() => {
-                    const isProcessing = processingContentIds.has(item._id)
-                    const hasVideo = Boolean(item.bunnyVideoId)
-                    const canPublish = hasVideo && !isProcessing
-                    return (
-                      <button
-                        className={`${styles.proToggleBtn} ${item.isPublished ? styles.proToggleBtnOn : ''}`}
-                        onClick={() => handleTogglePublish(item)}
-                        disabled={togglingPublish === item._id || (!item.isPublished && !canPublish)}
-                        title={
-                          isProcessing ? 'Video is still transcoding — wait for it to finish'
-                          : !hasVideo ? 'No video uploaded yet'
-                          : item.isPublished ? 'Click to unpublish'
-                          : 'Click to publish'
-                        }
-                      >
-                        {isProcessing ? <RefreshCw size={11} className={styles.refreshIconSpinning} /> : <Eye size={11} />}
-                        {isProcessing ? 'Processing…' : item.isPublished ? 'Unpublish' : 'Publish'}
-                      </button>
-                    )
-                  })()}
-                  <button
-                    className={`${styles.proToggleBtn} ${item.isPremium ? styles.proToggleBtnOn : ''}`}
-                    onClick={() => handleTogglePremium(item)}
-                    disabled={togglingPremium === item._id}
-                    title={item.isPremium ? 'Click to make Free' : 'Click to make Premium'}
-                    aria-label={item.isPremium ? 'Mark as free' : 'Mark as premium'}
-                  >
-                    <Crown size={11} />
-                    {item.isPremium ? 'Free' : 'Premium'}
-                  </button>
-                  <button
-                    className={styles.editBtn}
-                    onClick={(e) => { e.currentTarget.blur(); openEditModal(item) }}
-                    disabled={editBusy && editingId === item._id}
-                  >
-                    <Pencil size={12} /> Edit
-                  </button>
-                  <button
-                    className={`${styles.deleteBtn} ${confirmDeleteId === item._id ? styles.deleteBtnConfirm : ''}`}
-                    onClick={() => handleDeleteContent(item)}
-                    onBlur={() => { if (confirmDeleteId === item._id) setConfirmDeleteId(null) }}
-                    title="Delete content"
-                  >
-                    <Trash2 size={12} />
-                    {confirmDeleteId === item._id ? 'Confirm?' : 'Delete'}
-                  </button>
-                </div>
-              </div>
+
+          {/* Filter row */}
+          <div className={styles.contentFilterRow}>
+            <SlidersHorizontal size={12} className={styles.contentFilterIcon} />
+            {['all', 'Film', 'Series', 'Documentary', 'Serial Drama'].map((t) => (
+              <button
+                key={t}
+                className={`${styles.contentFilterChip} ${contentTypeFilter === t ? styles.contentFilterChipActive : ''}`}
+                onClick={() => setContentTypeFilter(t)}
+              >
+                {t === 'all' ? 'All types' : t}
+              </button>
             ))}
+            <div className={styles.contentFilterDivider} />
+            {[
+              { value: 'all',         label: 'All status' },
+              { value: 'published',   label: 'Published' },
+              { value: 'unpublished', label: 'Unpublished' },
+              { value: 'processing',  label: 'Transcoding' },
+              { value: 'no-video',    label: 'No video' },
+            ].map(({ value, label }) => (
+              <button
+                key={value}
+                className={`${styles.contentFilterChip} ${contentStatusFilter === value ? styles.contentFilterChipActive : ''}`}
+                onClick={() => setContentStatusFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
+            <label className={styles.showDeletedToggle}>
+              <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
+              Deleted{deletedItems.length > 0 ? ` · ${deletedItems.length}` : ''}
+            </label>
+          </div>
+
+          <div className={styles.libraryList}>
+            {filteredContent.length === 0 && !showDeleted && <p className={styles.empty}>No content found.</p>}
+            {filteredContent.map((item) => {
+              const isProcessing = processingContentIds.has(item._id)
+              const hasVideo     = Boolean(item.bunnyVideoId)
+              const canPublish   = hasVideo && !isProcessing
+              const jobPct       = contentJobProgress.get(item._id)
+              return (
+                <div key={item._id} className={styles.libraryRow}>
+                  <div className={styles.libraryLeft}>
+                    <div className={styles.libraryTitleRow}>
+                      <p className={styles.libraryTitle}>{item.title}</p>
+                      {item.isPublished
+                        ? <span className={`${styles.contentStatusBadge} ${styles.contentStatusPublished}`}>Live</span>
+                        : isProcessing
+                          ? <span className={`${styles.contentStatusBadge} ${styles.contentStatusProcessing}`}>Transcoding{jobPct ? ` ${jobPct}%` : ''}</span>
+                          : !hasVideo
+                            ? <span className={`${styles.contentStatusBadge} ${styles.contentStatusNoVideo}`}>No video</span>
+                            : <span className={`${styles.contentStatusBadge} ${styles.contentStatusUnpublished}`}>Draft</span>
+                      }
+                    </div>
+                    <p className={styles.libraryMeta}>
+                      {item.type}
+                      {item.releaseYear ? ` · ${item.releaseYear}` : ''}
+                      {item.genre?.length ? ` · ${item.genre.slice(0, 2).join(', ')}` : ''}
+                    </p>
+                    {isProcessing && jobPct > 0 && (
+                      <div className={styles.contentProgressBar}>
+                        <div className={styles.contentProgressFill} style={{ width: `${jobPct}%` }} />
+                      </div>
+                    )}
+                    {item.isPublished && (item.viewCount > 0 || item.likeCount > 0 || item.communityRatingCount > 0) && (
+                      <div className={styles.contentEngRow}>
+                        {item.viewCount > 0 && (
+                          <span className={styles.contentEngStat}>
+                            <Eye size={10} />
+                            {item.viewCount >= 1000 ? `${(item.viewCount/1000).toFixed(1)}k` : item.viewCount} views
+                          </span>
+                        )}
+                        {item.likeCount > 0 && (
+                          <span className={styles.contentEngStat}>
+                            <TrendingUp size={10} />
+                            {item.likeCount} likes
+                          </span>
+                        )}
+                        {item.communityRatingCount > 0 && (
+                          <span className={styles.contentEngStat} style={{ color: '#f472b6' }}>
+                            ★ {item.communityRating?.toFixed(1)} <span style={{ opacity: 0.6 }}>({item.communityRatingCount})</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className={styles.libraryActions}>
+                    <button
+                      className={`${styles.proToggleBtn} ${item.isPublished ? styles.proToggleBtnOn : ''}`}
+                      onClick={() => handleTogglePublish(item)}
+                      disabled={togglingPublish === item._id || (!item.isPublished && !canPublish)}
+                      title={
+                        isProcessing ? 'Video is still transcoding — wait for it to finish'
+                        : !hasVideo   ? 'No video uploaded yet'
+                        : item.isPublished ? 'Click to unpublish'
+                        : 'Click to publish'
+                      }
+                    >
+                      {isProcessing ? <RefreshCw size={11} className={styles.refreshIconSpinning} /> : <Eye size={11} />}
+                      {isProcessing ? 'Processing…' : item.isPublished ? 'Unpublish' : 'Publish'}
+                    </button>
+                    <button
+                      className={`${styles.proToggleBtn} ${item.isPremium ? styles.proToggleBtnOn : ''}`}
+                      onClick={() => handleTogglePremium(item)}
+                      disabled={togglingPremium === item._id}
+                      title={item.isPremium ? 'Click to make Free' : 'Click to make Premium'}
+                    >
+                      <Crown size={11} />
+                      {item.isPremium ? 'Free' : 'Premium'}
+                    </button>
+                    <button
+                      className={styles.editBtn}
+                      onClick={(e) => { e.currentTarget.blur(); openEditModal(item) }}
+                      disabled={editBusy && editingId === item._id}
+                    >
+                      <Pencil size={12} /> Edit
+                    </button>
+                    <button
+                      className={`${styles.deleteBtn} ${confirmDeleteId === item._id ? styles.deleteBtnConfirm : ''}`}
+                      onClick={() => handleDeleteContent(item)}
+                      onBlur={() => { if (confirmDeleteId === item._id) setConfirmDeleteId(null) }}
+                      title="Delete content"
+                    >
+                      <Trash2 size={12} />
+                      {confirmDeleteId === item._id ? 'Confirm?' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+
+            {/* Deleted content section */}
+            {showDeleted && (
+              <div className={styles.deletedSection}>
+                <p className={styles.deletedSectionTitle}>
+                  <Trash2 size={11} /> Deleted · {deletedItems.length}
+                </p>
+                {deletedItems.length === 0 && <p className={styles.empty}>No deleted content.</p>}
+                {deletedItems.map((item) => (
+                  <div key={item._id} className={`${styles.libraryRow} ${styles.libraryRowDeleted}`}>
+                    <div className={styles.libraryLeft}>
+                      <div className={styles.libraryTitleRow}>
+                        <p className={styles.libraryTitle}>{item.title}</p>
+                        <span className={`${styles.contentStatusBadge} ${styles.contentStatusDeleted}`}>Deleted</span>
+                      </div>
+                      <p className={styles.libraryMeta}>
+                        {item.type}{item.releaseYear ? ` · ${item.releaseYear}` : ''}
+                      </p>
+                    </div>
+                    <div className={styles.libraryActions}>
+                      <button
+                        className={styles.restoreBtn}
+                        onClick={() => handleRestoreContent(item)}
+                        disabled={restoringId === item._id}
+                      >
+                        <RotateCcw size={12} />
+                        {restoringId === item._id ? 'Restoring…' : 'Restore'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -2179,19 +2476,77 @@ export default function Admin() {
         <section className={styles.jobsCard}>
           <div className={styles.libraryHeader}>
             <h2 className={styles.cardTitle}><Archive size={16} /> Import from Internet Archive</h2>
+            <div className={styles.archiveInfoWrapper}>
+              <button
+                className={styles.archiveInfoPill}
+                onClick={() => setArchiveHintOpen((v) => !v)}
+                aria-expanded={archiveHintOpen}
+                aria-label="About archive imports"
+              >
+                <Info size={12} />
+                <span>Info</span>
+              </button>
+              {archiveHintOpen && (
+                <div className={styles.archiveInfoPopover}>
+                  <p>
+                    Search archive.org for public&#8209;domain films to import into the catalog.
+                    Imports run in the background — each title takes <strong>30 s – 2 min</strong> to
+                    queue (metadata + poster + CDN push), then shows <strong>Transcoding&hellip;</strong> here
+                    until ready to publish. The progress strip above updates automatically. Items with a
+                    detected public&#8209;domain / Creative&#8209;Commons licence are pre&#8209;selected.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           {jobSummaryStrip}
 
-          <div className={styles.archiveHint}>
-            <AlertCircle size={14} />
-            <p>
-              Search archive.org for public&#8209;domain films to import into the catalog. Imports run in
-              the background — titles land <strong>unpublished</strong> and show <strong>Transcoding…</strong> until
-              ready to publish. Items with a detected public&#8209;domain / Creative&#8209;Commons licence
-              are pre&#8209;selected.
-            </p>
-          </div>
+          {archiveImportTasks.length > 0 && (
+            <div className={styles.archiveTasksPanel}>
+              <div className={styles.archiveTasksPanelHeader}>
+                <span className={styles.archiveTasksPanelTitle}>
+                  {archiveTasksActive
+                    ? <><RefreshCw size={11} className={styles.refreshIconSpinning} /> Import progress</>
+                    : <><CheckCircle2 size={11} /> Import complete</>
+                  }
+                </span>
+                {archiveTasksActive && (
+                  <span className={styles.archiveTasksPanelHint}>
+                    Fetching metadata &amp; pushing to CDN. Upload jobs appear in the strip above when ready.
+                  </span>
+                )}
+              </div>
+              <div className={styles.archiveTasksList}>
+                {archiveImportTasks.map((t) => {
+                  const isPending    = t.status === 'pending'
+                  const isProcessing = t.status === 'processing'
+                  const isDone       = t.status === 'done'
+                  const isSkipped    = t.status === 'skipped'
+                  const isFailed     = t.status === 'failed'
+                  return (
+                    <div key={t._id} className={`${styles.archiveTaskRow} ${isFailed ? styles.archiveTaskRowFailed : isDone ? styles.archiveTaskRowDone : isSkipped ? styles.archiveTaskRowSkipped : ''}`}>
+                      <span className={styles.archiveTaskIcon}>
+                        {isProcessing && <RefreshCw size={11} className={styles.refreshIconSpinning} />}
+                        {isPending    && <Clock size={11} />}
+                        {isDone       && <CheckCircle2 size={11} />}
+                        {isSkipped    && <CheckCircle2 size={11} />}
+                        {isFailed     && <XCircle size={11} />}
+                      </span>
+                      <span className={styles.archiveTaskTitle}>{t.title || t._id}</span>
+                      <span className={styles.archiveTaskStatus}>
+                        {isProcessing && 'Fetching…'}
+                        {isPending    && 'Queued'}
+                        {isDone       && 'CDN queued'}
+                        {isSkipped    && `Skipped${t.reason ? ` — ${t.reason}` : ''}`}
+                        {isFailed     && (t.error || 'Failed')}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {archiveCandidates.length > 0 && (
             <div className={styles.archiveCandidates}>
@@ -2209,6 +2564,14 @@ export default function Admin() {
                     onChange={toggleAllCandidates}
                   />
                   Select all · {selectedCandidateCount} selected
+                </label>
+                <label className={styles.archiveUnlicensedToggle}>
+                  <input
+                    type="checkbox"
+                    checked={!allowUnlicensed}
+                    onChange={(e) => setAllowUnlicensed(!e.target.checked)}
+                  />
+                  Verified PD / CC only
                 </label>
                 <button
                   className={styles.primaryBtn}
@@ -2232,9 +2595,14 @@ export default function Admin() {
                     <div className={styles.libraryLeft}>
                       <p className={styles.libraryTitle}>{c.title || c.archiveId}</p>
                       <p className={styles.libraryMeta}>
-                        {c.year ? `${c.year} · ` : ''}{c.language || ''}
+                        {c.year ? `${c.year} · ` : ''}{c.type && c.type !== 'Film' ? `${c.type} · ` : ''}{c.language || ''}
                       </p>
                     </div>
+                    {c.mediaKind === 'reel' && (
+                      <span className={styles.archiveBadge}>
+                        Reel{c.durationSecs ? ` · ${c.durationSecs}s` : ''}
+                      </span>
+                    )}
                     <span className={`${styles.archiveBadge} ${c.licensed ? styles.archiveBadgeOk : styles.archiveBadgeWarn}`}>
                       {c.licensed ? 'PD / CC' : 'Unverified'}
                     </span>
@@ -2254,6 +2622,16 @@ export default function Admin() {
                   </div>
                 ))}
               </div>
+              {candidatesHasMore && (
+                <button
+                  className={styles.editBtn}
+                  style={{ margin: '10px auto 0', display: 'block' }}
+                  onClick={loadMoreCandidates}
+                  disabled={candidatesLoadingMore}
+                >
+                  {candidatesLoadingMore ? 'Loading…' : 'Load more'}
+                </button>
+              )}
             </div>
           )}
 
@@ -2306,10 +2684,10 @@ export default function Admin() {
                 <label className={styles.archiveUnlicensedToggle}>
                   <input
                     type="checkbox"
-                    checked={allowUnlicensed}
-                    onChange={(e) => setAllowUnlicensed(e.target.checked)}
+                    checked={!allowUnlicensed}
+                    onChange={(e) => setAllowUnlicensed(!e.target.checked)}
                   />
-                  Allow items with no detected licence
+                  Verified PD / CC only
                 </label>
                 <button
                   className={styles.primaryBtn}
@@ -2324,11 +2702,16 @@ export default function Admin() {
 
               <div className={styles.libraryList}>
                 {archiveResults.map((r) => (
-                  <label key={r.archiveId} className={styles.archiveRow}>
+                  <label
+                    key={r.archiveId}
+                    className={`${styles.archiveRow} ${r.alreadyImported ? styles.archiveRowDisabled : ''}`}
+                    title={r.alreadyImported ? 'Already in the catalog — delete it to import again' : ''}
+                  >
                     <input
                       type="checkbox"
                       checked={Boolean(archiveSelected[r.archiveId])}
                       onChange={() => toggleArchiveSelect(r.archiveId)}
+                      disabled={r.alreadyImported}
                     />
                     <div className={styles.archiveThumb}>
                       <img src={r.thumbUrl} alt="" loading="lazy" />
@@ -2336,12 +2719,16 @@ export default function Admin() {
                     <div className={styles.libraryLeft}>
                       <p className={styles.libraryTitle}>{r.title || r.archiveId}</p>
                       <p className={styles.libraryMeta}>
-                        {r.year ? `${r.year} · ` : ''}{r.archiveId}
+                        {r.year ? `${r.year} · ` : ''}{r.type && r.type !== 'Film' ? `${r.type} · ` : ''}{r.archiveId}
                       </p>
                     </div>
-                    <span className={`${styles.archiveBadge} ${r.licensed ? styles.archiveBadgeOk : styles.archiveBadgeWarn}`}>
-                      {r.licensed ? 'PD / CC' : 'Unverified'}
-                    </span>
+                    {r.alreadyImported ? (
+                      <span className={`${styles.archiveBadge} ${styles.archiveBadgeDone}`}>Already imported</span>
+                    ) : (
+                      <span className={`${styles.archiveBadge} ${r.licensed ? styles.archiveBadgeOk : styles.archiveBadgeWarn}`}>
+                        {r.licensed ? 'PD / CC' : 'Unverified'}
+                      </span>
+                    )}
                     <a
                       className={styles.archiveLink}
                       href={r.detailUrl}
@@ -2766,6 +3153,31 @@ export default function Admin() {
                     <input ref={fileInputRef} className={styles.fileInput} type="file" accept=".mp4,.mov,.mkv,video/mp4,video/quicktime,video/x-matroska" onChange={(e) => handleFileChange(e.target.files?.[0] || null)} required />
                   </div>
                 </div>
+
+                {uploadMode === 'single' && (
+                  selectedContentId ? (
+                    <div className={styles.label} style={{ marginTop: 10 }}>
+                      <div className={styles.dropZone} style={{ padding: '14px 16px', flexDirection: 'row', justifyContent: 'center' }}>
+                        <FileCheck size={16} className={styles.dropZoneIcon} />
+                        {subtitleFile
+                          ? <><span className={styles.dropZoneFile}>{subtitleFile.name}</span><span className={styles.dropZoneHint}>{(subtitleFile.size / 1024).toFixed(0)} KB</span></>
+                          : <><span className={styles.dropZoneText}>Optional: drop a .vtt subtitle file</span><span className={styles.dropZoneHint}>or click to browse · max 2 MB</span></>
+                        }
+                        <input
+                          ref={subtitleInputRef}
+                          className={styles.fileInput}
+                          type="file"
+                          accept=".vtt"
+                          onChange={(e) => handleSubtitleFileChange(e.target.files?.[0] || null)}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 11, color: 'var(--color-text-dim)', margin: '10px 0 0' }}>
+                      Select a content item above to optionally attach a WebVTT subtitle file.
+                    </p>
+                  )
+                )}
 
                 {autoThumbUploading && (
                   <p style={{ fontSize: 11, color: 'var(--color-accent)', margin: '0 0 8px' }}>
@@ -3964,6 +4376,13 @@ export default function Admin() {
                     </div>
                   )}
 
+                  {editForm.type !== 'Series' && editForm.type !== 'Serial Drama' && (
+                    <label className={`${styles.label} ${styles.spanFull}`}>
+                      <span>Subtitle URL <span className={styles.labelHint}>(WebVTT .vtt — optional)</span></span>
+                      <input className={styles.input} value={editForm.subtitleUrl} onChange={ef('subtitleUrl')} placeholder="https://…/subtitles.vtt" />
+                    </label>
+                  )}
+
                   <label className={`${styles.label} ${styles.spanFull}`}>
                     Synopsis / Description
                     <textarea className={`${styles.input} ${styles.textarea}`} value={editForm.desc} onChange={ef('desc')} rows={4} placeholder="গল্পের সারসংক্ষেপ লিখুন…" />
@@ -3993,9 +4412,12 @@ export default function Admin() {
                             const next = editForm.episodes.length > 0
                               ? Math.max(...editForm.episodes.map((e) => e.number)) + 1
                               : 1
+                            const seasonNumber = editForm.episodes.length > 0
+                              ? editForm.episodes[editForm.episodes.length - 1].seasonNumber
+                              : 1
                             setEditForm((prev) => ({
                               ...prev,
-                              episodes: [...prev.episodes, { number: next, title: '', duration: '', bunnyVideoId: '' }],
+                              episodes: [...prev.episodes, { seasonNumber, number: next, title: '', desc: '', duration: '', bunnyVideoId: '', subtitleUrl: '', viewCount: 0 }],
                             }))
                           }}
                         >
@@ -4054,6 +4476,15 @@ export default function Admin() {
                               episodes: prev.episodes.map((x, i) => i === idx ? { ...x, bunnyVideoId: e.target.value } : x),
                             }))}
                             placeholder="Bunny video ID"
+                          />
+                          <input
+                            className={`${styles.input} ${styles.epInput}`}
+                            value={ep.subtitleUrl}
+                            onChange={(e) => setEditForm((prev) => ({
+                              ...prev,
+                              episodes: prev.episodes.map((x, i) => i === idx ? { ...x, subtitleUrl: e.target.value } : x),
+                            }))}
+                            placeholder="Subtitle .vtt URL (optional)"
                           />
                           <button
                             type="button"

@@ -7,6 +7,7 @@ const reelSchema = new mongoose.Schema(
   {
     // Ownership
     creatorId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    archiveId:   { type: String, default: null, index: true },  // archive.org identifier, set when sourced from an import
 
     // Human-readable metadata — creator-writable
     title:       { type: String, default: '' },
@@ -21,7 +22,7 @@ const reelSchema = new mongoose.Schema(
 
     // State machine — mirrors Content
     isPublished:      { type: Boolean, default: false },
-    isDeleted:        { type: Boolean, default: false },
+    isDeleted:        { type: Boolean, default: false },     // soft-delete — excluded from all public queries
     submissionStatus: {
       type:    String,
       enum:    ['pending', 'approved', 'rejected'],

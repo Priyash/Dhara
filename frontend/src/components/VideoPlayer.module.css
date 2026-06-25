@@ -488,31 +488,25 @@
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px 0 9px;
-  border-radius: 999px;
-  background: rgba(0,0,0,0.45);
-  border: 1px solid rgba(255,255,255,0.18);
-  color: rgba(255,255,255,0.9);
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.92);
   cursor: pointer;
   pointer-events: all;
-  transition: background 0.15s, border-color 0.15s, transform 0.12s;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  white-space: nowrap;
+  transition: background 0.15s, transform 0.12s;
 }
 
 .backOverlayBtn:hover {
-  background: rgba(255,255,255,0.12);
-  border-color: rgba(255,255,255,0.32);
-  transform: translateX(-2px);
+  background: rgba(255,255,255,0.14);
 }
 
-.backOverlayText {
-  font-size: 13px;
-  font-weight: 500;
-  font-family: var(--font-body, sans-serif);
+.backOverlayBtn:active {
+  background: rgba(255,255,255,0.22);
+  transform: scale(0.92);
 }
 
 /* Large center play button — shown when paused */

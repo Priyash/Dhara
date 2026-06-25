@@ -6,6 +6,7 @@ const episodeSchema = new mongoose.Schema({
   desc:         { type: String, default: '' },
   duration:     { type: String, default: '' },
   bunnyVideoId: String,  // Bunny Stream video GUID for this episode
+  subtitleUrl:  { type: String, default: '' },  // WebVTT (.vtt) URL for this episode
   viewCount:    { type: Number, default: 0, min: 0 },
 })
 
@@ -19,6 +20,7 @@ const contentSchema = new mongoose.Schema(
   {
     title:        { type: String, required: true },
     subtitle:     String,
+    archiveId:    { type: String, default: null, index: true },  // archive.org identifier, set when sourced from an import
     type:         { type: String, enum: ['Film', 'Series', 'Serial Drama', 'Documentary', 'Live'], required: true },
     duration:     { type: String, default: '' },  // Film/Documentary runtime e.g. "1h 45m"; Series/Serial Drama use episode durations
     genre:        [String],
@@ -34,6 +36,7 @@ const contentSchema = new mongoose.Schema(
     posterUrl:    String,                            // Cloudinary portrait image (2:3)
     backdropUrl:  String,                            // Cloudinary landscape image (16:9) for hero
     trailerVideoId: String,                          // optional Bunny trailer GUID
+    subtitleUrl:    { type: String, default: '' },   // WebVTT (.vtt) URL — Film/Documentary root video only
     seasons:      [seasonSchema],
     cast:         [String],
     director:     String,

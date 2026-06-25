@@ -7,6 +7,7 @@
  */
 import { v2 as cloudinary } from 'cloudinary'
 import { bunnyRequest } from './bunnyUpload.js'
+import { REEL_MAX_DURATION_SECS } from '../models/Reel.js'
 
 const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID
 
@@ -19,15 +20,27 @@ cloudinary.config({
 // Collections that are public-domain / openly licensed film libraries.
 export const DEFAULT_PD_COLLECTIONS = ['feature_films', 'prelinger', 'classic_tv', 'publicmovies', 'film_noir']
 
+// Collections that indicate a catalog `type` other than the 'Film' default.
+const TYPE_BY_COLLECTION = {
+  classic_tv:           'Series',
+  television:           'Series',
+  newsandpublicaffairs: 'Documentary',
+  prelinger:            'Documentary',
+}
+
 export function slugify(str) {
   return String(str).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+}
+
+function normalizeCollections(meta = {}) {
+  return Array.isArray(meta.collection) ? meta.collection : [meta.collection].filter(Boolean)
 }
 
 /** Classify an archive.org metadata object's licensing. */
 export function detectLicense(meta = {}) {
   const licenseUrl  = meta.licenseurl || ''
   const rights      = String(meta.rights || meta.possible_copyright_status || '').toLowerCase()
-  const collections = Array.isArray(meta.collection) ? meta.collection : [meta.collection].filter(Boolean)
+  const collections = normalizeCollections(meta)
   const pd = new Set(DEFAULT_PD_COLLECTIONS)
 
   if (/creativecommons\.org|spdx\.org/i.test(licenseUrl)) return { ok: true, label: licenseUrl }
@@ -35,6 +48,15 @@ export function detectLicense(meta = {}) {
   const inPd = collections.find(c => pd.has(c))
   if (inPd) return { ok: true, label: `collection:${inPd}` }
   return { ok: false, label: licenseUrl || rights || 'unknown' }
+}
+
+/** Infer a catalog `type` from an archive.org item's collection tags. Defaults to 'Film'. */
+export function inferType(meta = {}) {
+  const collections = normalizeCollections(meta)
+  for (const c of collections) {
+    if (TYPE_BY_COLLECTION[c]) return TYPE_BY_COLLECTION[c]
+  }
+  return 'Film'
 }
 
 /** Pick the best MP4 / H.264 file (largest = highest quality) from an item's files. */
@@ -99,6 +121,7 @@ export async function searchArchive({ language = 'Bengali', query = '', collecti
       archiveId:   d.identifier,
       title:       Array.isArray(d.title) ? d.title[0] : d.title,
       year:        d.year ? Number(String(d.year).slice(0, 4)) : null,
+      type:        inferType(d),
       licenseLabel: license.label,
       licensed:    license.ok,
       detailUrl:   `https://archive.org/details/${d.identifier}`,
@@ -139,6 +162,43 @@ export async function uploadPosterFromUrl(remoteUrl, slug) {
 
 const EPISODIC_TYPES = new Set(['Series', 'Serial Drama'])
 
+/** Parse archive.org's per-file `length` field — either a plain-seconds string or "HH:MM:SS" — into integer seconds. Returns null if unparseable. */
+export function parseDurationSecs(length) {
+  if (length == null || length === '') return null
+  const str = String(length).trim()
+  if (/^\d+(\.\d+)?$/.test(str)) return Math.round(Number(str))
+  const parts = str.split(':').map(Number)
+  if (parts.some((n) => !Number.isFinite(n))) return null
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
+  return null
+}
+
+const ARCHIVE_REEL_CREATOR_UID = 'system:archive-import'
+
+/**
+ * Find-or-create the synthetic "system" User that owns archive-imported Reels.
+ * Reel.creatorId is required, and no admin route creates Reels directly, so
+ * archive-sourced reels need a stable, real User document to reference.
+ * Atomic upsert (mirrors ensureArchiveCollection) avoids a race against
+ * User's unique firebaseUid index when multiple import tasks run concurrently.
+ */
+export async function ensureArchiveReelCreator({ UserModel }) {
+  return UserModel.findOneAndUpdate(
+    { firebaseUid: ARCHIVE_REEL_CREATOR_UID },
+    {
+      $setOnInsert: {
+        firebaseUid: ARCHIVE_REEL_CREATOR_UID,
+        email:       'archive-import@dhara.system',
+        displayName: 'Internet Archive',
+        isCreator:   true,
+        creatorStatus: 'approved',
+      },
+    },
+    { upsert: true, new: true }
+  )
+}
+
 /**
  * Find-or-create the dedicated "Internet Archive" collection that imported
  * titles are grouped under. Creates a matching Bunny Stream collection the
@@ -173,7 +233,10 @@ export async function ensureArchiveCollection({ StreamCollectionModel }) {
  * Models are injected to avoid circular imports. Returns
  * { created | skipped, title, ... } and throws only on hard failures.
  */
-export async function queueArchiveImport(item, { ContentModel, UploadJobModel, collection, allowUnlicensed = false, createdByEmail = '' }) {
+export async function queueArchiveImport(item, { ContentModel, UploadJobModel, ReelModel, collection, allowUnlicensed = false, createdByEmail = '', reelCreatorId = null }) {
+  if (item.mediaKind === 'reel') {
+    return queueReel(item, { ReelModel, UploadJobModel, collection, allowUnlicensed, createdByEmail, creatorId: reelCreatorId })
+  }
   const episodic = EPISODIC_TYPES.has(item.type) || Array.isArray(item.seasons)
   return episodic
     ? queueEpisodic(item, { ContentModel, UploadJobModel, collection, allowUnlicensed, createdByEmail })
@@ -196,6 +259,11 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
   const id = item.archiveId
   if (!id) throw new Error('item missing "archiveId"')
 
+  // Already in the catalog and not soft-deleted — don't push it to the CDN again.
+  if (await ContentModel.findOne({ archiveId: id, isDeleted: { $ne: true } }).lean()) {
+    return { skipped: true, reason: 'already imported', title: item.title || id }
+  }
+
   const archive = await fetchArchiveMetadata(id)
   const license = detectLicense(archive.metadata)
   const meta    = archive.metadata
@@ -203,7 +271,11 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
   if (!license.ok && !allowUnlicensed) {
     return { skipped: true, reason: `no PD/CC license (${license.label})`, title }
   }
-  if (await ContentModel.findOne({ title }).lean()) return { skipped: true, reason: 'already exists', title }
+  // Title collision with a *live* doc only — a same-titled doc that was soft-deleted
+  // (e.g. freed by cdnReconcile, or manually removed) must not block reimport.
+  if (await ContentModel.findOne({ title, isDeleted: { $ne: true } }).lean()) {
+    return { skipped: true, reason: 'already exists', title }
+  }
 
   const videoFile = pickVideoFile(archive.files || [])
   if (!videoFile) throw new Error('no MP4 / H.264 file found in this archive.org item')
@@ -226,7 +298,7 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
     bunnyVideoId:     '',
     isPublished:      false,
     submissionStatus: 'approved',
-    archiveId:        undefined,
+    archiveId:        id,
   })
 
   const videoUrl = archiveVideoUrl(id, videoFile.name)
@@ -245,9 +317,22 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
 
 async function queueEpisodic(item, { ContentModel, UploadJobModel, collection, allowUnlicensed, createdByEmail }) {
   const title = item.title || item.archiveId || 'Untitled Series'
-  const seasons = item.seasons || []
+  // A single archive.org item typed as a series with no companion manifest
+  // (e.g. one classic_tv result with no season/episode breakdown supplied) —
+  // land it as Season 1, Episode 1 instead of requiring a hand-built seasons array.
+  const seasons = item.seasons?.length
+    ? item.seasons
+    : (item.archiveId ? [{ number: 1, episodes: [{ number: 1, title: item.title || '', archiveId: item.archiveId }] }] : [])
   if (seasons.length === 0) throw new Error(`episodic item "${title}" has no "seasons"`)
-  if (await ContentModel.findOne({ title }).lean()) return { skipped: true, reason: 'already exists', title }
+
+  // Already in the catalog and not soft-deleted — don't push it to the CDN again.
+  if (item.archiveId && await ContentModel.findOne({ archiveId: item.archiveId, isDeleted: { $ne: true } }).lean()) {
+    return { skipped: true, reason: 'already imported', title }
+  }
+  // Title collision with a *live* doc only — see comment in queueFilm above.
+  if (await ContentModel.findOne({ title, isDeleted: { $ne: true } }).lean()) {
+    return { skipped: true, reason: 'already exists', title }
+  }
 
   // Resolve + license-gate every episode before creating anything.
   const resolved = []
@@ -301,7 +386,7 @@ async function queueEpisodic(item, { ContentModel, UploadJobModel, collection, a
     seasons:   [...seasonMap.values()].sort((a, b) => a.number - b.number),
     isPublished:      false,
     submissionStatus: 'approved',
-    archiveId:        undefined,
+    archiveId:        item.archiveId || null,
     posterArchiveId:  undefined,
   })
 
@@ -322,4 +407,67 @@ async function queueEpisodic(item, { ContentModel, UploadJobModel, collection, a
   }
 
   return { created: true, id: doc._id, title, jobs: resolved.length }
+}
+
+/**
+ * Queue one archive.org item as a short-form Reel. Mirrors queueFilm but
+ * targets the Reel collection/Bunny "dhara-reels" collection instead of
+ * Content/"internet-archive", so archive-sourced reels land in the exact
+ * same feed as creator-uploaded ones. Requires `creatorId` (the synthetic
+ * system creator from ensureArchiveReelCreator) since Reel.creatorId is
+ * required.
+ */
+async function queueReel(item, { ReelModel, UploadJobModel, collection, allowUnlicensed, createdByEmail, creatorId }) {
+  const id = item.archiveId
+  if (!id) throw new Error('item missing "archiveId"')
+  if (!creatorId) throw new Error('queueReel requires a creatorId')
+
+  // Already in the catalog (as a reel) and not soft-deleted — don't push it to the CDN again.
+  if (await ReelModel.findOne({ archiveId: id, isDeleted: { $ne: true } }).lean()) {
+    return { skipped: true, reason: 'already imported', title: item.title || id }
+  }
+
+  const archive = await fetchArchiveMetadata(id)
+  const license = detectLicense(archive.metadata)
+  const meta    = archive.metadata
+  const title   = item.title || meta.title || id
+  if (!license.ok && !allowUnlicensed) {
+    return { skipped: true, reason: `no PD/CC license (${license.label})`, title }
+  }
+
+  const videoFile = pickVideoFile(archive.files || [])
+  if (!videoFile) return { skipped: true, reason: 'no MP4 / H.264 file found', title }
+
+  const durationSecs = parseDurationSecs(videoFile.length)
+  if (durationSecs == null) {
+    return { skipped: true, reason: 'duration unknown — cannot confirm it fits the reel limit', title }
+  }
+  if (durationSecs > REEL_MAX_DURATION_SECS) {
+    return { skipped: true, reason: `clip is ${durationSecs}s — exceeds the ${REEL_MAX_DURATION_SECS}s reel limit`, title }
+  }
+
+  // Reel created without bunnyVideoId — the job-sync links it once ready.
+  const doc = await ReelModel.create({
+    creatorId,
+    title,
+    description:      item.desc || (Array.isArray(meta.description) ? meta.description[0] : meta.description) || '',
+    durationSecs,
+    archiveId:         id,
+    bunnyVideoId:      '',
+    isPublished:       false,
+    submissionStatus:  'pending',
+  })
+
+  const videoUrl = archiveVideoUrl(id, videoFile.name)
+  const bunnyVideoId = await bunnyFetchFromUrl(videoUrl, title, collection.bunnyCollectionId)
+  await UploadJobModel.create({
+    ...jobBase(collection, createdByEmail),
+    title,
+    reelId:    doc._id,
+    bunnyVideoId,
+    fileName:  videoFile.name,
+    sourceUrl: videoUrl,
+  })
+
+  return { created: true, id: doc._id, title, jobs: 1 }
 }

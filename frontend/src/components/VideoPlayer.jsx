@@ -90,6 +90,17 @@ function qualityLabel(level) {
   return kbps ? `${h} · ${kbps}kbps` : h
 }
 
+const MAX_NETWORK_RETRIES = 5   // fatal NETWORK_ERROR retries before giving up (with backoff)
+const MAX_MEDIA_RETRIES   = 5   // fatal MEDIA_ERROR recovery attempts before giving up
+
+// NetworkInformation API — Chrome/Android only, feature-detected; null elsewhere.
+function getConnectionInfo() {
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection
+  if (!conn) return { slow: false }
+  const slow = Boolean(conn.saveData) || ['slow-2g', '2g', '3g'].includes(conn.effectiveType)
+  return { slow }
+}
+
 const WATERMARK_POSITIONS = [
   { top: '10%',  left: '6%'  },
   { top: '10%',  right: '6%' },
@@ -121,6 +132,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const rVFCRef           = useRef(null)        // rVFC handle on main video (playback capture)
   const thumbRVFCRef      = useRef(null)        // rVFC handle on thumb video (seek capture)
   const hoverTimeRef      = useRef(null)        // latest requested hover/drag time
+  const dragCleanupRef    = useRef(null)        // active progress-bar drag teardown, if any
 
   const thumbUrlFor = null
   const thumbHasFrame = useRef(false)
@@ -142,6 +154,9 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const [hoverTime,        setHoverTime]        = useState(null)
   const [hoverPct,         setHoverPct]         = useState(0)
   const [isDragging,       setIsDragging]       = useState(false)
+  // First hover/drag on the progress bar — gates the background thumbnail
+  // harvest below so it doesn't burn bandwidth for viewers who never scrub.
+  const [progressTouched,  setProgressTouched]  = useState(false)
   const [videoHovered,     setVideoHovered]     = useState(false)
   const [showControls,     setShowControls]     = useState(true)
   const [videoNaturalSize, setVideoNaturalSize] = useState({ w: 0, h: 0 })
@@ -215,6 +230,16 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const stallTimerRef   = useRef(null)
   const lastTimeRef     = useRef(null)
 
+  // ── Fatal-error retry hardening (backoff + cap so a dead connection can't
+  //    retry-storm forever and drain battery/data) ─────────────────────────────
+  const networkRetryCountRef = useRef(0)
+  const networkRetryTimerRef = useRef(null)
+  const mediaRetryCountRef   = useRef(0)
+
+  // ── Page Visibility: remember the quality level active before backgrounding
+  //    so it can be restored when the tab/app becomes visible again ───────────
+  const hiddenPrevLevelRef = useRef(null)
+
   // ── Mobile swipe gestures ────────────────────────────────────────────────────
   const gestureStartRef  = useRef(null)
   const gestureTypeRef   = useRef(null)   // 'seek' | 'volume' | 'brightness' | null
@@ -225,6 +250,9 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const [videoBrightness, setVideoBrightness] = useState(1)
   const videoBrightnessRef = useRef(1)
   const longPressTimerRef  = useRef(null)
+  // Touch started on an interactive control (button/input/link) — let it handle
+  // its own click/touch instead of hijacking the gesture for player taps/swipes.
+  const touchOnControlRef  = useRef(false)
 
   // ── Watermark position cycling ───────────────────────────────────────────────
   const [watermarkIdx, setWatermarkIdx] = useState(0)
@@ -330,6 +358,10 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
   const cleanupHls = useCallback(() => {
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
+    clearTimeout(networkRetryTimerRef.current)
+    networkRetryCountRef.current = 0
+    mediaRetryCountRef.current   = 0
+    hiddenPrevLevelRef.current   = null
   }, [])
 
   const autoPlayAndResume = useCallback(() => {
@@ -356,13 +388,20 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   }, [autoPlayAndResume])
 
   const attachHlsSource = useCallback((v, nextSrc) => {
+    // Start lower and buffer less aggressively on cellular/save-data connections —
+    // faster first frame, less wasted data if the user abandons the video early.
+    const { slow: slowConn } = getConnectionInfo()
     const hls = new Hls({
       enableWorker: true,
       lowLatencyMode: true,
       backBufferLength: 90,
-      maxBufferLength: 60,
-      maxMaxBufferLength: 120,
+      maxBufferLength: slowConn ? 30 : 60,
+      maxMaxBufferLength: slowConn ? 60 : 120,
+      startLevel: slowConn ? 0 : -1,
     })
+
+    networkRetryCountRef.current = 0
+    mediaRetryCountRef.current   = 0
 
     setStreamMode('hls')
     setActiveQualityLabel('Auto')
@@ -415,18 +454,43 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
       }
     })
 
+    // A successful fragment load means the connection has recovered — reset both
+    // retry counters so a later, unrelated failure starts its backoff from zero.
+    hls.on(Hls.Events.FRAG_LOADED, () => {
+      networkRetryCountRef.current = 0
+      mediaRetryCountRef.current   = 0
+    })
+
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (!data.fatal) return
+
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        clearTimeout(networkRetryTimerRef.current)
+        if (networkRetryCountRef.current >= MAX_NETWORK_RETRIES) {
+          setPlayerError('Lost connection to the stream. Please retry.')
+          return
+        }
+        // Exponential backoff (1s, 2s, 4s, 8s, 16s) instead of hammering the CDN
+        // in a tight retry loop on a dead/flaky connection.
+        const delay = 1000 * 2 ** networkRetryCountRef.current
+        networkRetryCountRef.current += 1
         setPlayerError('')
-        hls.startLoad()
+        showHintRef.current?.('Reconnecting…')
+        networkRetryTimerRef.current = setTimeout(() => hls.startLoad(), delay)
         return
       }
+
       if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        if (mediaRetryCountRef.current >= MAX_MEDIA_RETRIES) {
+          setPlayerError('Playback failed. Please retry.')
+          return
+        }
+        mediaRetryCountRef.current += 1
         setPlayerError('')
         hls.recoverMediaError()
         return
       }
+
       setPlayerError('Playback failed. Please retry.')
     })
 
@@ -515,9 +579,12 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   }, [duration, thumbUrlFor, preloadImg])
 
   // Fallback harvest: seek the thumb video through the timeline when no Bunny
-  // thumbnail API is available (non-Bunny hosts or localhost dev).
+  // thumbnail API is available (non-Bunny hosts or localhost dev). Deferred
+  // until the viewer actually touches the progress bar — most viewers never
+  // scrub, so starting this unconditionally on mount wasted a full extra
+  // lowest-quality stream's worth of background bandwidth per session.
   useEffect(() => {
-    if (duration <= 0 || thumbUrlFor) return   // skip when JPEG approach is active
+    if (!progressTouched || duration <= 0 || thumbUrlFor) return   // skip when JPEG approach is active
     const tv = thumbVideoRef.current
     if (!tv) return
 
@@ -559,7 +626,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
     harvest()
     return () => { cancelled = true }
-  }, [duration])
+  }, [duration, progressTouched])
 
   // Build a per-second frame cache using requestVideoFrameCallback.
   // Playback frame cache via rVFC — fallback only when no Bunny thumbnail API.
@@ -616,18 +683,31 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
   // Auto-enter fullscreen when phone rotates to landscape while playing
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.screen?.orientation) return
-    const onOrientationChange = () => {
-      const angle = window.screen.orientation?.angle ?? 0
-      const isLandscape = angle === 90 || angle === 270
+    if (typeof window === 'undefined') return
+    const enterFsIfLandscape = (isLandscape) => {
       const el = containerRef.current
       if (!el) return
       if (isLandscape && !document.fullscreenElement && !fullscreen) {
         el.requestFullscreen?.().catch(() => {})
       }
     }
-    window.screen.orientation.addEventListener('change', onOrientationChange)
-    return () => window.screen.orientation.removeEventListener('change', onOrientationChange)
+
+    if (window.screen?.orientation) {
+      const onOrientationChange = () => {
+        const angle = window.screen.orientation?.angle ?? 0
+        enterFsIfLandscape(angle === 90 || angle === 270)
+      }
+      window.screen.orientation.addEventListener('change', onOrientationChange)
+      return () => window.screen.orientation.removeEventListener('change', onOrientationChange)
+    }
+
+    // iOS Safari doesn't implement the Screen Orientation API at all, so the
+    // branch above silently never fires there — fall back to matchMedia,
+    // which Safari does support, so rotate-to-fullscreen still works on iPhone/iPad.
+    const mq = window.matchMedia('(orientation: landscape)')
+    const onMqChange = (e) => enterFsIfLandscape(e.matches)
+    mq.addEventListener('change', onMqChange)
+    return () => mq.removeEventListener('change', onMqChange)
   }, [fullscreen])
 
   // Sample dominant color from video frame every 2s while playing; drives ambient glow
@@ -775,6 +855,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
   const handleProgressHover = (e) => {
     if (isDragging) return
+    if (!progressTouched) setProgressTouched(true)
     const rect = progressRef.current?.getBoundingClientRect()
     if (!rect) return
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
@@ -818,6 +899,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const handleDragStart = (e) => {
     e.preventDefault()
     setIsDragging(true)
+    if (!progressTouched) setProgressTouched(true)
 
     const startX = 'clientX' in e ? e.clientX : e.touches[0].clientX
     seekFromClientX(startX)
@@ -861,15 +943,21 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         tv.cancelVideoFrameCallback(thumbRVFCRef.current)
         thumbRVFCRef.current = null
       }
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup',   onUp)
-      window.removeEventListener('touchmove', onMove)
-      window.removeEventListener('touchend',  onUp)
+      window.removeEventListener('mousemove',   onMove)
+      window.removeEventListener('mouseup',     onUp)
+      window.removeEventListener('touchmove',   onMove)
+      window.removeEventListener('touchend',    onUp)
+      window.removeEventListener('touchcancel', onUp)
+      dragCleanupRef.current = null
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup',   onUp)
     window.addEventListener('touchmove', onMove, { passive: true })
     window.addEventListener('touchend',  onUp)
+    // touchcancel fires when the OS interrupts the gesture (incoming call, notification
+    // shade, etc.) — without this the drag listeners and isDragging state would stick.
+    window.addEventListener('touchcancel', onUp)
+    dragCleanupRef.current = onUp
   }
 
   // ── Controls ─────────────────────────────────────────────────────────────────
@@ -908,11 +996,11 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     // which doesn't set document.fullscreenElement.
     if (!isFs && !fullscreen) {
       // Standard → webkit prefixed → iOS video-level fallback
-      if      (el.requestFullscreen)            el.requestFullscreen()
+      if      (el.requestFullscreen)            el.requestFullscreen().catch(() => {})
       else if (el.webkitRequestFullscreen)      el.webkitRequestFullscreen()
       else if (v?.webkitEnterFullscreen)        v.webkitEnterFullscreen()
     } else {
-      if      (document.exitFullscreen)         document.exitFullscreen()
+      if      (document.exitFullscreen)         document.exitFullscreen().catch(() => {})
       else if (document.webkitExitFullscreen)   document.webkitExitFullscreen()
       else if (v?.webkitExitFullscreen)         v.webkitExitFullscreen()
     }
@@ -1152,6 +1240,72 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     return () => clearInterval(stallTimerRef.current)
   }, [])
 
+  // Page Visibility: drop to the lowest HLS level while backgrounded (tab switch,
+  // app minimized, screen off) to save battery/data, then restore whatever level
+  // (auto or a manual pick) was active before backgrounding once visible again.
+  useEffect(() => {
+    const onVisibility = () => {
+      const hls = hlsRef.current
+      if (!hls || !hls.levels?.length) return
+      if (document.hidden) {
+        hiddenPrevLevelRef.current = hls.currentLevel
+        hls.currentLevel = 0
+      } else if (hiddenPrevLevelRef.current !== null) {
+        hls.currentLevel = hiddenPrevLevelRef.current
+        hiddenPrevLevelRef.current = null
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [])
+
+  // MediaSession: lock-screen / Now Playing metadata + hardware controls (mobile
+  // OS notification, Bluetooth headset buttons, smart-TV remotes). No-ops where
+  // the API doesn't exist (Safari < 15, older Firefox).
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: title || 'Dhara',
+      artwork: poster ? [{ src: poster, sizes: '512x512', type: 'image/jpeg' }] : [],
+    })
+  }, [title, poster])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'
+  }, [playing])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    const ms = navigator.mediaSession
+    const setHandler = (action, handler) => {
+      try { ms.setActionHandler(action, handler) } catch { /* action unsupported in this browser */ }
+    }
+    setHandler('play',  () => { videoRef.current?.play().catch(() => {}) })
+    setHandler('pause', () => { videoRef.current?.pause() })
+    setHandler('seekbackward', (details) => {
+      const v = videoRef.current
+      if (v) v.currentTime = Math.max(0, v.currentTime - (details.seekOffset || 10))
+    })
+    setHandler('seekforward', (details) => {
+      const v = videoRef.current
+      if (v) v.currentTime = Math.min(v.duration || Infinity, v.currentTime + (details.seekOffset || 10))
+    })
+    setHandler('seekto', (details) => {
+      const v = videoRef.current
+      if (v && details.seekTime != null) v.currentTime = details.seekTime
+    })
+    setHandler('nexttrack', nextEp && onNextEp ? () => onNextEp() : null)
+    return () => {
+      setHandler('play', null)
+      setHandler('pause', null)
+      setHandler('seekbackward', null)
+      setHandler('seekforward', null)
+      setHandler('seekto', null)
+      setHandler('nexttrack', null)
+    }
+  }, [nextEp, onNextEp])
+
   // Skip intro: show button when currentTime is inside intro window
   useEffect(() => {
     if (introStart == null || introEnd == null) { setShowSkipIntro(false); return }
@@ -1272,6 +1426,9 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     clearTimeout(rippleTimerRef.current)
     clearTimeout(ambientRafRef.current)
     if (volumeFadeRef.current) cancelAnimationFrame(volumeFadeRef.current)
+    // If the component unmounts mid-drag (e.g. navigating away while scrubbing),
+    // tear down the window-level drag listeners instead of leaking them.
+    dragCleanupRef.current?.()
   }, [])
 
   // Cast / AirPlay
@@ -1297,8 +1454,8 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current)
       clickTimerRef.current = null
-      if (!document.fullscreenElement && !fullscreen) containerRef.current?.requestFullscreen?.()
-      else if (document.fullscreenElement) document.exitFullscreen?.()
+      if (!document.fullscreenElement && !fullscreen) containerRef.current?.requestFullscreen?.()?.catch(() => {})
+      else if (document.fullscreenElement) document.exitFullscreen?.()?.catch(() => {})
       else if (fullscreen) videoRef.current?.webkitExitFullscreen?.()
     } else {
       clickTimerRef.current = setTimeout(() => {
@@ -1310,7 +1467,20 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
   // Mobile swipe gestures: vertical on left half = brightness, right half = volume, horizontal = seek
   const handleTouchStartPlayer = (e) => {
+    // Tap landed on a button/input/link — let it run its own click/touch
+    // handling untouched, instead of also feeding the gesture/tap pipeline
+    // below (which previously double-fired togglePlay() via the trailing
+    // synthetic click and could even trigger an unwanted fullscreen toggle).
+    if (e.target.closest('button, input, a, [role="slider"]')) {
+      touchOnControlRef.current = true
+      return
+    }
+    touchOnControlRef.current = false
+
     resetIdleTimer()
+    // Suppress the synthetic click the browser fires after touchend — our
+    // own tap/double-tap/swipe logic already handles the interaction.
+    e.preventDefault()
     const touch = e.touches[0]
     gestureStartRef.current = { x: touch.clientX, y: touch.clientY }
     gestureTypeRef.current  = null
@@ -1325,6 +1495,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   }
 
   const handleTouchMovePlayer = (e) => {
+    if (touchOnControlRef.current) return
     const start = gestureStartRef.current
     if (!start) return
     const touch = e.touches[0]
@@ -1373,6 +1544,10 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   }
 
   const handleTouchEndPlayer = (e) => {
+    if (touchOnControlRef.current) {
+      touchOnControlRef.current = false
+      return
+    }
     clearTimeout(longPressTimerRef.current)
     const type = gestureTypeRef.current
     gestureTypeRef.current  = null
@@ -1487,8 +1662,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
                 onClick={(e) => { e.stopPropagation(); onBack() }}
                 aria-label="Go back"
               >
-                <ArrowLeft size={16} />
-                <span className={styles.backOverlayText}>Back</span>
+                <ArrowLeft size={20} />
               </button>
             )}
             {title && <p className={styles.titleOverlayText}>{title}</p>}
@@ -1530,6 +1704,15 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
             clearBuffering()
             setCurrentTime(e.target.currentTime)
             if (e.target.buffered.length) setBuffered(e.target.buffered.end(e.target.buffered.length - 1))
+            if ('mediaSession' in navigator && !isLive && isFinite(e.target.duration) && e.target.duration > 0) {
+              try {
+                navigator.mediaSession.setPositionState({
+                  duration:     e.target.duration,
+                  playbackRate: e.target.playbackRate,
+                  position:     Math.min(e.target.currentTime, e.target.duration),
+                })
+              } catch { /* state stale mid-seek — ignore */ }
+            }
           }}
           onPlay={() => {
             setPlaying(true)
@@ -1678,14 +1861,18 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
             ref={progressRef}
             className={`${styles.progressTrack} ${isDragging ? styles.progressDragging : ''}`}
             onMouseDown={handleDragStart}
-            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); handleDragStart(e.touches[0]) }}
+            onTouchStart={(e) => { e.stopPropagation(); handleDragStart(e) }}
             onTouchEnd={(e) => e.stopPropagation()}
             onMouseMove={handleProgressHover}
             onMouseLeave={clearHoverPreview}
             onClick={handleProgressClick}
             role="slider"
+            tabIndex={0}
             aria-label="Seek"
+            aria-valuemin={0}
+            aria-valuemax={100}
             aria-valuenow={Math.round(progress)}
+            aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
           >
             <div className={styles.progressBuffer} style={{ width: `${bufferPct}%` }} />
             <div ref={fillRef}  className={styles.progressFill}  style={{ width: `${progress}%` }} />
@@ -1876,6 +2063,24 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
                 ))}
               </div>
             </div>
+            {qualityOptions.length > 0 && (
+              <div className={styles.settingsGroup}>
+                <p className={styles.settingsLabel}>Quality</p>
+                <div className={styles.settingsChips}>
+                  <button
+                    className={`${styles.chipBtn} ${qualityValue === 'auto' ? styles.chipBtnActive : ''}`}
+                    onClick={() => handleQualityChange('auto')}
+                  >Auto</button>
+                  {qualityOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={`${styles.chipBtn} ${qualityValue === opt.value ? styles.chipBtnActive : ''}`}
+                      onClick={() => handleQualityChange(opt.value)}
+                    >{opt.label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
             {(onTheaterToggle || document.pictureInPictureEnabled || castAvailable) && (
               <div className={styles.settingsGroup}>
                 <p className={styles.settingsLabel}>View</p>

@@ -9,6 +9,9 @@ const archiveCandidateSchema = new mongoose.Schema(
     archiveId:    { type: String, required: true, unique: true, trim: true },
     title:        { type: String, default: '' },
     year:         { type: Number, default: null },
+    type:         { type: String, default: 'Film' },
+    mediaKind:    { type: String, enum: ['content', 'reel'], default: 'content' },  // 'reel' = short-form (<=30s) discovery candidate
+    durationSecs: { type: Number, default: null },
     language:     { type: String, default: '' },
     licenseLabel: { type: String, default: '' },
     licensed:     { type: Boolean, default: false },
