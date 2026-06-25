@@ -7,7 +7,7 @@ import {
   GripVertical, Layers, Plus, UploadIcon, IndianRupee,
   Calculator, Wallet, Clock, ChevronDown, ChevronLeft, ChevronRight, TrendingUp, Users, BarChart2,
   Activity, Server, AlertCircle, Database, Heart, MessageCircle, Play,
-  Archive, Search,
+  Archive, Search, Info,
 } from 'lucide-react'
 import { uploadToCloudinary, cloudinaryTransform } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
@@ -24,7 +24,7 @@ import {
   listAdminCreatorEarnings, calculateCreatorEarnings, processCreatorPayout, listAdminCreatorPayouts,
   getAdminRevenue, getAdminMonitor,
   listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
-  searchArchive, importFromArchive, getArchiveImportBatch, listArchiveCandidates, dismissArchiveCandidate,
+  searchArchive, importFromArchive, getArchiveImportBatch, listArchiveCandidates, listArchiveTasks, dismissArchiveCandidate,
   cancelUploadJob, retryUploadJob, setContentSubtitle,
 } from '../services/api'
 import styles from './Admin.module.css'
@@ -791,12 +791,14 @@ export default function Admin() {
   const [archivePage, setArchivePage]           = useState(1)
   const [archiveTotal, setArchiveTotal]         = useState(0)
   const ARCHIVE_PAGE_SIZE = 40
-  const [allowUnlicensed, setAllowUnlicensed]   = useState(false)
+  const [allowUnlicensed, setAllowUnlicensed]   = useState(true)
   const [archiveCandidates, setArchiveCandidates] = useState([])
   const [candidatesPage, setCandidatesPage] = useState(1)
   const [candidatesHasMore, setCandidatesHasMore] = useState(false)
   const [candidatesLoadingMore, setCandidatesLoadingMore] = useState(false)
   const [candidateSelected, setCandidateSelected] = useState({})   // candidate _id -> true
+  const [archiveImportTasks, setArchiveImportTasks] = useState([])   // recent ArchiveImportTask rows
+  const [archiveHintOpen, setArchiveHintOpen]       = useState(false)
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const showToast = useCallback((t) => {
@@ -910,13 +912,27 @@ export default function Admin() {
         message: `Queued ${queued} title${queued === 1 ? '' : 's'} — they'll appear in the library as they transcode.`,
       })
       setArchiveSelected({})
-      // Pick up the freshly created jobs/content; the 5s auto-poll takes over after.
-      setTimeout(() => loadData().catch(() => {}), 2500)
-      setTimeout(() => loadData().catch(() => {}), 7000)
-      // The worker processes the batch async — check back once it's likely done
-      // and call out any titles that were silently skipped/failed at queue time
-      // (dedup, missing license, no usable video file), since those never
-      // produce an UploadJob and would otherwise look identical to "no progress yet".
+      // Optimistic task rows — immediately shows placeholder rows before the
+      // first loadArchiveTasks poll returns real data from the backend.
+      setArchiveImportTasks((prev) => [
+        ...Array.from({ length: queued }, (_, i) => ({
+          _id: `optimistic-${Date.now()}-${i}`,
+          title: items[i]?.title || items[i]?.archiveId || 'Queued…',
+          status: 'pending',
+          error: '',
+          reason: '',
+          createdAt: new Date().toISOString(),
+        })),
+        ...prev,
+      ])
+      // Poll at increasing intervals so at least one poll catches the first
+      // created job; the 5 s auto-poll takes over once hasInProgressJobs is true.
+      for (const delay of [3_000, 8_000, 15_000, 30_000, 60_000, 90_000, 120_000]) {
+        setTimeout(() => loadDataRef.current().catch(() => {}), delay)
+      }
+      // After the worker has had time to settle, surface any titles that were
+      // silently skipped/failed (dedup, missing licence, no usable video file)
+      // since those never produce an UploadJob and look like "no progress" otherwise.
       if (batchId) {
         setTimeout(async () => {
           try {
@@ -932,8 +948,8 @@ export default function Admin() {
               type: 'error',
               message: `${problems.length} of ${tasks.length} title${tasks.length === 1 ? '' : 's'} did not import: ${detail}${more}.`,
             })
-          } catch { /* best-effort status check — non-fatal if it fails */ }
-        }, 8000)
+          } catch { /* best-effort — non-fatal if the check fails */ }
+        }, 8_000)
       }
     } catch (err) {
       showToast({ type: 'error', message: err?.message || 'Import failed.' })
@@ -972,6 +988,13 @@ export default function Admin() {
       setCandidatesLoadingMore(false)
     }
   }, [candidatesPage])
+
+  const loadArchiveTasks = useCallback(async () => {
+    try {
+      const { tasks = [] } = await listArchiveTasks()
+      setArchiveImportTasks(tasks)
+    } catch { /* non-fatal */ }
+  }, [])
 
   const handleImportCandidate = useCallback((c) => {
     return queueArchiveItems([{ archiveId: c.archiveId, type: c.type || 'Film', title: c.title, releaseYear: c.year || undefined, ...(c.mediaKind === 'reel' && { mediaKind: 'reel' }) }])
@@ -1064,6 +1087,22 @@ export default function Admin() {
     return () => clearInterval(timer)
   }, [adminAllowed, hasInProgressJobs])
 
+  // While archive import tasks are pending/processing, poll for their status so
+  // the per-task panel stays current. Once all reach done/skipped/failed the
+  // poll stops automatically.
+  const archiveTasksActive = archiveImportTasks.some((t) => t.status === 'pending' || t.status === 'processing')
+  useEffect(() => {
+    if (!adminAllowed || !archiveTasksActive) return
+    const timer = setInterval(() => {
+      loadArchiveTasks().catch(() => {})
+      // Also refresh the upload job list so the job summary strip updates.
+      loadDataRef.current().catch(() => {})
+    }, 5000)
+    return () => clearInterval(timer)
+  // loadArchiveTasks is stable (useCallback with empty deps)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminAllowed, archiveTasksActive])
+
   const loadBunnyVideos = async (collectionId) => {
     setMapVideoError('')
     if (!collectionId) { setBunnyVideos([]); return }
@@ -1127,6 +1166,7 @@ export default function Admin() {
     }
     if (activeTab === 'archive' && adminAllowed) {
       void loadArchiveCandidates()
+      void loadArchiveTasks()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, adminAllowed])
@@ -2309,19 +2349,77 @@ export default function Admin() {
         <section className={styles.jobsCard}>
           <div className={styles.libraryHeader}>
             <h2 className={styles.cardTitle}><Archive size={16} /> Import from Internet Archive</h2>
+            <div className={styles.archiveInfoWrapper}>
+              <button
+                className={styles.archiveInfoPill}
+                onClick={() => setArchiveHintOpen((v) => !v)}
+                aria-expanded={archiveHintOpen}
+                aria-label="About archive imports"
+              >
+                <Info size={12} />
+                <span>Info</span>
+              </button>
+              {archiveHintOpen && (
+                <div className={styles.archiveInfoPopover}>
+                  <p>
+                    Search archive.org for public&#8209;domain films to import into the catalog.
+                    Imports run in the background — each title takes <strong>30 s – 2 min</strong> to
+                    queue (metadata + poster + CDN push), then shows <strong>Transcoding&hellip;</strong> here
+                    until ready to publish. The progress strip above updates automatically. Items with a
+                    detected public&#8209;domain / Creative&#8209;Commons licence are pre&#8209;selected.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           {jobSummaryStrip}
 
-          <div className={styles.archiveHint}>
-            <AlertCircle size={14} />
-            <p>
-              Search archive.org for public&#8209;domain films to import into the catalog. Imports run in
-              the background — titles land <strong>unpublished</strong> and show <strong>Transcoding…</strong> until
-              ready to publish. Items with a detected public&#8209;domain / Creative&#8209;Commons licence
-              are pre&#8209;selected.
-            </p>
-          </div>
+          {archiveImportTasks.length > 0 && (
+            <div className={styles.archiveTasksPanel}>
+              <div className={styles.archiveTasksPanelHeader}>
+                <span className={styles.archiveTasksPanelTitle}>
+                  {archiveTasksActive
+                    ? <><RefreshCw size={11} className={styles.refreshIconSpinning} /> Import progress</>
+                    : <><CheckCircle2 size={11} /> Import complete</>
+                  }
+                </span>
+                {archiveTasksActive && (
+                  <span className={styles.archiveTasksPanelHint}>
+                    Fetching metadata &amp; pushing to CDN. Upload jobs appear in the strip above when ready.
+                  </span>
+                )}
+              </div>
+              <div className={styles.archiveTasksList}>
+                {archiveImportTasks.map((t) => {
+                  const isPending    = t.status === 'pending'
+                  const isProcessing = t.status === 'processing'
+                  const isDone       = t.status === 'done'
+                  const isSkipped    = t.status === 'skipped'
+                  const isFailed     = t.status === 'failed'
+                  return (
+                    <div key={t._id} className={`${styles.archiveTaskRow} ${isFailed ? styles.archiveTaskRowFailed : isDone ? styles.archiveTaskRowDone : isSkipped ? styles.archiveTaskRowSkipped : ''}`}>
+                      <span className={styles.archiveTaskIcon}>
+                        {isProcessing && <RefreshCw size={11} className={styles.refreshIconSpinning} />}
+                        {isPending    && <Clock size={11} />}
+                        {isDone       && <CheckCircle2 size={11} />}
+                        {isSkipped    && <CheckCircle2 size={11} />}
+                        {isFailed     && <XCircle size={11} />}
+                      </span>
+                      <span className={styles.archiveTaskTitle}>{t.title || t._id}</span>
+                      <span className={styles.archiveTaskStatus}>
+                        {isProcessing && 'Fetching…'}
+                        {isPending    && 'Queued'}
+                        {isDone       && 'CDN queued'}
+                        {isSkipped    && `Skipped${t.reason ? ` — ${t.reason}` : ''}`}
+                        {isFailed     && (t.error || 'Failed')}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {archiveCandidates.length > 0 && (
             <div className={styles.archiveCandidates}>
@@ -2339,6 +2437,14 @@ export default function Admin() {
                     onChange={toggleAllCandidates}
                   />
                   Select all · {selectedCandidateCount} selected
+                </label>
+                <label className={styles.archiveUnlicensedToggle}>
+                  <input
+                    type="checkbox"
+                    checked={!allowUnlicensed}
+                    onChange={(e) => setAllowUnlicensed(!e.target.checked)}
+                  />
+                  Verified PD / CC only
                 </label>
                 <button
                   className={styles.primaryBtn}
@@ -2451,10 +2557,10 @@ export default function Admin() {
                 <label className={styles.archiveUnlicensedToggle}>
                   <input
                     type="checkbox"
-                    checked={allowUnlicensed}
-                    onChange={(e) => setAllowUnlicensed(e.target.checked)}
+                    checked={!allowUnlicensed}
+                    onChange={(e) => setAllowUnlicensed(!e.target.checked)}
                   />
-                  Allow items with no detected licence
+                  Verified PD / CC only
                 </label>
                 <button
                   className={styles.primaryBtn}

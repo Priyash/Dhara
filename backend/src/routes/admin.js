@@ -546,9 +546,8 @@ router.post('/archive/import', async (req, res, next) => {
   }
 })
 
-// Per-item status for a batch queued above — lets the UI tell the admin which
-// titles actually landed vs. were skipped/failed, instead of a single opaque
-// "queued" toast that hides dedup skips and license/duration rejections.
+// Per-batch task status — lets the UI report which titles were skipped/failed
+// vs. actually queued, instead of an opaque single "queued N" toast.
 router.get('/archive/import/:batchId', async (req, res, next) => {
   try {
     const tasks = await ArchiveImportTask.find({ batchId: req.params.batchId })
@@ -556,6 +555,29 @@ router.get('/archive/import/:batchId', async (req, res, next) => {
       .lean()
     if (tasks.length === 0) return res.status(404).json({ error: 'Batch not found' })
     res.json({ tasks })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Archive import task list — returns active tasks plus anything completed in the
+// last 2 hours so the per-title progress panel stays current automatically.
+router.get('/archive/tasks', async (req, res, next) => {
+  try {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const tasks = await ArchiveImportTask.find({
+      $or: [
+        { status: { $in: ['pending', 'processing', 'failed'] } },
+        { status: { $in: ['done', 'skipped'] }, updatedAt: { $gte: twoHoursAgo } },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .limit(40)
+      .select('title status error reason attempts createdAt updatedAt')
+      .lean()
+    const counts = { pending: 0, processing: 0, failed: 0, done: 0, skipped: 0 }
+    for (const t of tasks) if (counts[t.status] !== undefined) counts[t.status]++
+    res.json({ counts, tasks })
   } catch (err) {
     next(err)
   }

@@ -403,6 +403,10 @@ export async function retryUploadJob(id) {
   return request(`/api/admin/upload-jobs/${id}/retry`, { method: 'PATCH' })
 }
 
+export async function listArchiveTasks() {
+  return request('/api/admin/archive/tasks')
+}
+
 export async function listArchiveCandidates(status = 'new', { page, limit } = {}) {
   const qs = new URLSearchParams({ status })
   if (page) qs.set('page', page)
