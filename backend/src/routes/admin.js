@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { Router } from 'express'
 import { pipeline } from 'stream/promises'
 import { createWriteStream, createReadStream, unlink } from 'fs'
 import { tmpdir } from 'os'
@@ -541,6 +542,31 @@ router.post('/archive/import', async (req, res, next) => {
 
     // Kick the worker; if the process dies, startup/interval drain resumes the queue.
     triggerImportDrain()
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Archive import task list — returns active tasks plus anything completed in the last 2 hours
+// so the UI can show per-title progress (pending → processing → done/skipped/failed).
+router.get('/archive/tasks', async (req, res, next) => {
+  try {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const tasks = await ArchiveImportTask.find({
+      $or: [
+        { status: { $in: ['pending', 'processing', 'failed'] } },
+        { status: { $in: ['done', 'skipped'] }, updatedAt: { $gte: twoHoursAgo } },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .limit(40)
+      .select('title status error reason attempts createdAt updatedAt')
+      .lean()
+
+    const counts = { pending: 0, processing: 0, failed: 0, done: 0, skipped: 0 }
+    for (const t of tasks) if (counts[t.status] !== undefined) counts[t.status]++
+
+    res.json({ counts, tasks })
   } catch (err) {
     next(err)
   }
