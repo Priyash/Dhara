@@ -25,7 +25,7 @@ import {
   getAdminRevenue, getAdminMonitor,
   listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
   searchArchive, importFromArchive, getArchiveImportBatch, listArchiveCandidates, dismissArchiveCandidate,
-  cancelUploadJob, retryUploadJob,
+  cancelUploadJob, retryUploadJob, setContentSubtitle,
 } from '../services/api'
 import styles from './Admin.module.css'
 import { isValidDuration } from '../utils/duration'
@@ -698,6 +698,8 @@ export default function Admin() {
   const [mapContentId, setMapContentId]       = useState('')
   const [mapVideoError, setMapVideoError]     = useState('')
   const [file, setFile]                       = useState(null)
+  const [subtitleFile, setSubtitleFile]       = useState(null)
+  const subtitleInputRef                      = useRef(null)
   const [busy, setBusy]                       = useState(false)
   const [notice, setNotice]                   = useState('')
   const [error, setError]                     = useState('')
@@ -791,6 +793,9 @@ export default function Admin() {
   const ARCHIVE_PAGE_SIZE = 40
   const [allowUnlicensed, setAllowUnlicensed]   = useState(false)
   const [archiveCandidates, setArchiveCandidates] = useState([])
+  const [candidatesPage, setCandidatesPage] = useState(1)
+  const [candidatesHasMore, setCandidatesHasMore] = useState(false)
+  const [candidatesLoadingMore, setCandidatesLoadingMore] = useState(false)
   const [candidateSelected, setCandidateSelected] = useState({})   // candidate _id -> true
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -945,12 +950,28 @@ export default function Admin() {
   }, [archiveResults, archiveSelected, queueArchiveItems])
 
   // ── Discovered candidates (scheduled discovery) ────────────────────────────
+  const CANDIDATES_PAGE_SIZE = 30
   const loadArchiveCandidates = useCallback(async () => {
     try {
-      const { candidates = [] } = await listArchiveCandidates('new')
+      const { candidates = [], pages = 1 } = await listArchiveCandidates('new', { page: 1, limit: CANDIDATES_PAGE_SIZE })
       setArchiveCandidates(candidates)
+      setCandidatesPage(1)
+      setCandidatesHasMore(pages > 1)
     } catch { /* discovery may be disabled — non-fatal */ }
   }, [])
+
+  const loadMoreCandidates = useCallback(async () => {
+    const nextPage = candidatesPage + 1
+    setCandidatesLoadingMore(true)
+    try {
+      const { candidates = [], pages = 1 } = await listArchiveCandidates('new', { page: nextPage, limit: CANDIDATES_PAGE_SIZE })
+      setArchiveCandidates((prev) => [...prev, ...candidates])
+      setCandidatesPage(nextPage)
+      setCandidatesHasMore(nextPage < pages)
+    } catch { /* non-fatal */ } finally {
+      setCandidatesLoadingMore(false)
+    }
+  }, [candidatesPage])
 
   const handleImportCandidate = useCallback((c) => {
     return queueArchiveItems([{ archiveId: c.archiveId, type: c.type || 'Film', title: c.title, releaseYear: c.year || undefined, ...(c.mediaKind === 'reel' && { mediaKind: 'reel' }) }])
@@ -1472,6 +1493,7 @@ export default function Admin() {
   const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'video/webm', 'video/mkv']
   const ALLOWED_VIDEO_EXTS  = ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v']
   const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024 // 2 GB
+  const MAX_SUBTITLE_FILE_SIZE = 2 * 1024 * 1024 // 2 MB — plenty for a WebVTT track
 
   const validateVideoFile = (f) => {
     if (!f) return 'Please choose a video file.'
@@ -1481,6 +1503,20 @@ export default function Admin() {
     if (!typeOk) return `Unsupported file type. Use MP4, MOV, or MKV.`
     if (f.size > MAX_FILE_SIZE) return `File is too large (${(f.size / 1024 / 1024).toFixed(0)} MB). Maximum is 2 GB.`
     return null
+  }
+
+  const validateSubtitleFile = (f) => {
+    if (!f) return null  // subtitle is optional — no file is valid
+    const ext = f.name.split('.').pop()?.toLowerCase() || ''
+    if (ext !== 'vtt') return 'Subtitle file must be a WebVTT (.vtt) file.'
+    if (f.size > MAX_SUBTITLE_FILE_SIZE) return `Subtitle file is too large (${(f.size / 1024).toFixed(0)} KB). Maximum is 2 MB.`
+    return null
+  }
+
+  const handleSubtitleFileChange = (f) => {
+    const err = validateSubtitleFile(f)
+    if (err) { setError(err); return }
+    setError(''); setSubtitleFile(f)
   }
 
   const handleFileChange = (f) => {
@@ -1514,6 +1550,8 @@ export default function Admin() {
     setUploadCategory(cat)
     setSelectedContentId(''); setTitle(''); setFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
+    setSubtitleFile(null)
+    if (subtitleInputRef.current) subtitleInputRef.current.value = ''
     setSeasonNumber('1')
     setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration(''); setSeriesEpisodes([])
     setUploadMode('single')
@@ -1797,10 +1835,17 @@ export default function Admin() {
         if (!window.confirm(`"${sel.title}" already has a video linked.\n\nQueue another upload anyway? Use the Map tab if you want to replace the existing video instead.`)) return
       }
     }
+    if (subtitleFile && !selectedContentId) {
+      return setError('Select a content item before attaching a subtitle file.')
+    }
     // ─────────────────────────────────────────────────────────────────────
 
     setNotice(''); setError(''); setBusy(true)
     const fileToUpload = file
+    const subtitleToUpload = subtitleFile
+    const subtitleTargetId = selectedContentId
+    const subtitleSeasonNumber  = isSeries ? Number(seasonNumber)  : null
+    const subtitleEpisodeNumber = isSeries ? Number(episodeNumber) : null
     const uploadTitle = isSeries && episodeTitle.trim() ? episodeTitle.trim() : title
     try {
       const job = await createUploadJob({
@@ -1815,6 +1860,8 @@ export default function Admin() {
       // Reset the form immediately so admin can queue the next upload
       setTitle(''); setSelectedContentId(''); setFile(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
+      setSubtitleFile(null)
+      if (subtitleInputRef.current) subtitleInputRef.current.value = ''
       setSeasonNumber('1')
       setEpisodeNumber(''); setEpisodeTitle(''); setEpisodeDuration(''); setSeriesEpisodes([])
       setBusy(false)
@@ -1823,9 +1870,32 @@ export default function Admin() {
       const uid = _nextUploadUid++
       addActiveUpload({ uid, job, title: uploadTitle, progress: 0, status: 'uploading', xhr: null, file: fileToUpload })
       fireUploadJob(uid, job._id, fileToUpload)
+
+      // Subtitle files are tiny text tracks — upload them straight to Cloudinary
+      // and attach via a targeted PATCH, fully decoupled from the (much slower)
+      // video transfer/transcode job above.
+      if (subtitleToUpload && subtitleTargetId) {
+        attachSubtitle(subtitleTargetId, subtitleToUpload, {
+          seasonNumber:  subtitleSeasonNumber,
+          episodeNumber: subtitleEpisodeNumber,
+        })
+      }
     } catch (err) {
       setBusy(false)
       setError(err?.message || 'Upload failed.')
+    }
+  }
+
+  // Subtitle files are tiny text, so this skips the activeUploads progress
+  // pipeline entirely: upload straight to Cloudinary, then a single PATCH.
+  async function attachSubtitle(contentId, file, { seasonNumber, episodeNumber } = {}) {
+    try {
+      const url = await uploadToCloudinary(file, { folder: 'dhara/subtitles', resourceType: 'raw' })
+      await setContentSubtitle(contentId, { subtitleUrl: url, seasonNumber, episodeNumber })
+      showToast({ type: 'success', message: 'Subtitle attached.' })
+      loadData()
+    } catch (err) {
+      showToast({ type: 'error', message: `Subtitle upload failed: ${err?.message || 'unknown error'}` })
     }
   }
 
@@ -2319,6 +2389,16 @@ export default function Admin() {
                   </div>
                 ))}
               </div>
+              {candidatesHasMore && (
+                <button
+                  className={styles.editBtn}
+                  style={{ margin: '10px auto 0', display: 'block' }}
+                  onClick={loadMoreCandidates}
+                  disabled={candidatesLoadingMore}
+                >
+                  {candidatesLoadingMore ? 'Loading…' : 'Load more'}
+                </button>
+              )}
             </div>
           )}
 
@@ -2840,6 +2920,31 @@ export default function Admin() {
                     <input ref={fileInputRef} className={styles.fileInput} type="file" accept=".mp4,.mov,.mkv,video/mp4,video/quicktime,video/x-matroska" onChange={(e) => handleFileChange(e.target.files?.[0] || null)} required />
                   </div>
                 </div>
+
+                {uploadMode === 'single' && (
+                  selectedContentId ? (
+                    <div className={styles.label} style={{ marginTop: 10 }}>
+                      <div className={styles.dropZone} style={{ padding: '14px 16px', flexDirection: 'row', justifyContent: 'center' }}>
+                        <FileCheck size={16} className={styles.dropZoneIcon} />
+                        {subtitleFile
+                          ? <><span className={styles.dropZoneFile}>{subtitleFile.name}</span><span className={styles.dropZoneHint}>{(subtitleFile.size / 1024).toFixed(0)} KB</span></>
+                          : <><span className={styles.dropZoneText}>Optional: drop a .vtt subtitle file</span><span className={styles.dropZoneHint}>or click to browse · max 2 MB</span></>
+                        }
+                        <input
+                          ref={subtitleInputRef}
+                          className={styles.fileInput}
+                          type="file"
+                          accept=".vtt"
+                          onChange={(e) => handleSubtitleFileChange(e.target.files?.[0] || null)}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 11, color: 'var(--color-text-dim)', margin: '10px 0 0' }}>
+                      Select a content item above to optionally attach a WebVTT subtitle file.
+                    </p>
+                  )
+                )}
 
                 {autoThumbUploading && (
                   <p style={{ fontSize: 11, color: 'var(--color-accent)', margin: '0 0 8px' }}>

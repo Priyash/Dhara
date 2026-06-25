@@ -562,14 +562,31 @@ router.get('/archive/import/:batchId', async (req, res, next) => {
 })
 
 // List discovered candidates surfaced by the scheduled discovery job.
+// Backward compatible: with no `page` query param, behaves exactly as before
+// (flat { candidates }, capped at 100). Pass `page` to get paginated results.
 router.get('/archive/candidates', async (req, res, next) => {
   try {
     const status = String(req.query.status || 'new')
-    const candidates = await ArchiveCandidate.find({ status })
-      .sort({ discoveredAt: -1 })
-      .limit(100)
-      .lean()
-    res.json({ candidates })
+    const query = { status }
+
+    if (req.query.page === undefined) {
+      const candidates = await ArchiveCandidate.find(query)
+        .sort({ discoveredAt: -1 })
+        .limit(100)
+        .lean()
+      return res.json({ candidates })
+    }
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 30))
+    const skip = (page - 1) * limit
+
+    const [candidates, total] = await Promise.all([
+      ArchiveCandidate.find(query).sort({ discoveredAt: -1 }).skip(skip).limit(limit).lean(),
+      ArchiveCandidate.countDocuments(query),
+    ])
+
+    res.json({ candidates, total, page, pages: Math.ceil(total / limit), limit })
   } catch (err) {
     next(err)
   }
@@ -794,6 +811,44 @@ router.post('/map-existing-video', async (req, res, next) => {
 
     bustContentCache()
     res.json({ success: true, content: updated, message: `Mapped Bunny video to "${updated.title}".` })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Attach a WebVTT subtitle URL to a content item or a specific episode,
+// without requiring the client to resend the full seasons array.
+router.patch('/content/:id/subtitle', async (req, res, next) => {
+  try {
+    const { subtitleUrl = '', seasonNumber, episodeNumber } = req.body
+    const url = String(subtitleUrl).trim()
+
+    if (episodeNumber) {
+      const sNum = Number(seasonNumber || 1)
+      const eNum = Number(episodeNumber)
+
+      const linked = await Content.findOneAndUpdate(
+        { _id: req.params.id, 'seasons.number': sNum, 'seasons.episodes.number': eNum },
+        { $set: { 'seasons.$[s].episodes.$[e].subtitleUrl': url } },
+        { arrayFilters: [{ 's.number': sNum }, { 'e.number': eNum }], new: true }
+      ).select('title').lean()
+
+      if (!linked) return res.status(404).json({ error: `Episode S${sNum}E${eNum} not found` })
+
+      bustContentCache()
+      return res.json({ success: true, message: `Subtitle attached to S${sNum}E${eNum} of "${linked.title}".` })
+    }
+
+    const updated = await Content.findByIdAndUpdate(
+      req.params.id,
+      { $set: { subtitleUrl: url } },
+      { new: true }
+    ).select('title subtitleUrl').lean()
+
+    if (!updated) return res.status(404).json({ error: 'Content not found' })
+
+    bustContentCache()
+    res.json({ success: true, content: updated })
   } catch (err) {
     next(err)
   }

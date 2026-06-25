@@ -403,8 +403,15 @@ export async function retryUploadJob(id) {
   return request(`/api/admin/upload-jobs/${id}/retry`, { method: 'PATCH' })
 }
 
-export async function listArchiveCandidates(status = 'new') {
-  return request(`/api/admin/archive/candidates?status=${encodeURIComponent(status)}`)
+export async function listArchiveCandidates(status = 'new', { page, limit } = {}) {
+  const qs = new URLSearchParams({ status })
+  if (page) qs.set('page', page)
+  if (limit) qs.set('limit', limit)
+  return request(`/api/admin/archive/candidates?${qs.toString()}`)
+}
+
+export async function setContentSubtitle(contentId, payload) {
+  return request(`/api/admin/content/${contentId}/subtitle`, { method: 'PATCH', body: JSON.stringify(payload) })
 }
 
 export async function dismissArchiveCandidate(id) {
