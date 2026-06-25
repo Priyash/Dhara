@@ -789,7 +789,7 @@ export default function Admin() {
   const [archivePage, setArchivePage]           = useState(1)
   const [archiveTotal, setArchiveTotal]         = useState(0)
   const ARCHIVE_PAGE_SIZE = 40
-  const [allowUnlicensed, setAllowUnlicensed]   = useState(false)
+  const [allowUnlicensed, setAllowUnlicensed]   = useState(true)
   const [archiveCandidates, setArchiveCandidates] = useState([])
   const [candidateSelected, setCandidateSelected] = useState({})   // candidate _id -> true
   const [archiveImportTasks, setArchiveImportTasks] = useState([])   // recent ArchiveImportTask rows
@@ -2368,6 +2368,14 @@ export default function Admin() {
                   />
                   Select all · {selectedCandidateCount} selected
                 </label>
+                <label className={styles.archiveUnlicensedToggle}>
+                  <input
+                    type="checkbox"
+                    checked={!allowUnlicensed}
+                    onChange={(e) => setAllowUnlicensed(!e.target.checked)}
+                  />
+                  Verified PD / CC only
+                </label>
                 <button
                   className={styles.primaryBtn}
                   onClick={handleImportSelectedCandidates}
@@ -2469,10 +2477,10 @@ export default function Admin() {
                 <label className={styles.archiveUnlicensedToggle}>
                   <input
                     type="checkbox"
-                    checked={allowUnlicensed}
-                    onChange={(e) => setAllowUnlicensed(e.target.checked)}
+                    checked={!allowUnlicensed}
+                    onChange={(e) => setAllowUnlicensed(!e.target.checked)}
                   />
-                  Allow items with no detected licence
+                  Verified PD / CC only
                 </label>
                 <button
                   className={styles.primaryBtn}
