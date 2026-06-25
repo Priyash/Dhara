@@ -546,6 +546,21 @@ router.post('/archive/import', async (req, res, next) => {
   }
 })
 
+// Per-item status for a batch queued above — lets the UI tell the admin which
+// titles actually landed vs. were skipped/failed, instead of a single opaque
+// "queued" toast that hides dedup skips and license/duration rejections.
+router.get('/archive/import/:batchId', async (req, res, next) => {
+  try {
+    const tasks = await ArchiveImportTask.find({ batchId: req.params.batchId })
+      .select('title status reason error')
+      .lean()
+    if (tasks.length === 0) return res.status(404).json({ error: 'Batch not found' })
+    res.json({ tasks })
+  } catch (err) {
+    next(err)
+  }
+})
+
 // List discovered candidates surfaced by the scheduled discovery job.
 router.get('/archive/candidates', async (req, res, next) => {
   try {
@@ -594,7 +609,7 @@ router.post('/content', async (req, res, next) => {
       title, subtitle = '', type = 'Film', genre = [], cast = [], director = '',
       releaseYear, rating = 0, desc = '', posterUrl = '', backdropUrl = '',
       contentLanguage = 'Bengali', certification = null,
-      contentWarnings = '', moodTags = [], badge = null,
+      contentWarnings = '', moodTags = [], badge = null, subtitleUrl = '',
       isPremium = false, isFeatured = false, seasons = [],
     } = req.body
 
@@ -615,6 +630,7 @@ router.post('/content', async (req, res, next) => {
       desc:            desc?.trim() || '',
       posterUrl:       posterUrl?.trim() || '',
       backdropUrl:     backdropUrl?.trim() || '',
+      subtitleUrl:     subtitleUrl?.trim() || '',
       contentLanguage: contentLanguage || 'Bengali',
       certification:   certification || null,
       contentWarnings: contentWarnings?.trim() || '',
@@ -639,6 +655,7 @@ router.post('/content', async (req, res, next) => {
                       desc:         String(ep.desc  || '').trim(),
                       duration:     String(ep.duration || '').trim(),
                       bunnyVideoId: '',
+                      subtitleUrl:  String(ep.subtitleUrl || '').trim(),
                     }))
                 : [],
             }))
@@ -664,7 +681,7 @@ router.get('/content/:id', async (req, res, next) => {
 const ALLOWED_METADATA_FIELDS = [
   'title', 'subtitle', 'desc', 'type', 'duration', 'genre', 'cast', 'director',
   'releaseYear', 'rating', 'isPremium', 'isFeatured', 'badge',
-  'posterUrl', 'backdropUrl', 'palette',
+  'posterUrl', 'backdropUrl', 'palette', 'subtitleUrl',
   'contentLanguage', 'certification', 'contentWarnings', 'moodTags', 'reviewCount',
   'seasons',
 ]

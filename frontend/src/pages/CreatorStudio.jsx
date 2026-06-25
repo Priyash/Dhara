@@ -896,12 +896,17 @@ export default function CreatorStudio() {
         releaseYear: form.releaseYear ? Number(form.releaseYear) : null,
         certification: form.certification || null,
         duration:    (form.type !== 'Series' && form.type !== 'Serial Drama') ? (form.duration?.trim() || '') : '',
-        episodes:    (form.type === 'Series' || form.type === 'Serial Drama')
-          ? form.episodes
-              .filter((ep) => ep.number && ep.title.trim())
-              .map((ep) => ({ number: Number(ep.number), title: ep.title.trim(), duration: ep.duration.trim() }))
+        seasons:     (form.type === 'Series' || form.type === 'Serial Drama')
+          ? [{
+              number: 1,
+              title: '',
+              episodes: form.episodes
+                .filter((ep) => ep.number && ep.title.trim())
+                .map((ep) => ({ number: Number(ep.number), title: ep.title.trim(), duration: ep.duration.trim() })),
+            }]
           : [],
       }
+      delete payload.episodes
       await createCreatorContent(payload)
       showToast({ type: 'success', message: 'Submitted for review — we\'ll notify you once approved.' })
       closeModal()

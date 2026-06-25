@@ -461,7 +461,7 @@ router.patch('/content/:id', requireAuth, requireCreator, async (req, res, next)
     //   submissionStatus / revisionCount — state machine managed by server
     const ALLOWED = [
       'title', 'subtitle', 'desc', 'type', 'genre', 'cast', 'director',
-      'releaseYear', 'posterUrl', 'backdropUrl', 'palette',
+      'releaseYear', 'posterUrl', 'backdropUrl', 'palette', 'subtitleUrl',
       'contentLanguage', 'certification', 'contentWarnings', 'moodTags', 'duration',
       'isPremium', 'seasons',
     ]
@@ -497,6 +497,7 @@ router.patch('/content/:id', requireAuth, requireCreator, async (req, res, next)
                       desc:         String(ep.desc  || '').trim(),
                       duration:     String(ep.duration || '').trim(),
                       bunnyVideoId: prev?.bunnyVideoId || '',
+                      subtitleUrl:  String(ep.subtitleUrl || '').trim(),
                       viewCount:    prev?.viewCount    || 0,
                     }
                   })

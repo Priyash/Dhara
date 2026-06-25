@@ -271,7 +271,11 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
   if (!license.ok && !allowUnlicensed) {
     return { skipped: true, reason: `no PD/CC license (${license.label})`, title }
   }
-  if (await ContentModel.findOne({ title }).lean()) return { skipped: true, reason: 'already exists', title }
+  // Title collision with a *live* doc only — a same-titled doc that was soft-deleted
+  // (e.g. freed by cdnReconcile, or manually removed) must not block reimport.
+  if (await ContentModel.findOne({ title, isDeleted: { $ne: true } }).lean()) {
+    return { skipped: true, reason: 'already exists', title }
+  }
 
   const videoFile = pickVideoFile(archive.files || [])
   if (!videoFile) throw new Error('no MP4 / H.264 file found in this archive.org item')
@@ -325,7 +329,10 @@ async function queueEpisodic(item, { ContentModel, UploadJobModel, collection, a
   if (item.archiveId && await ContentModel.findOne({ archiveId: item.archiveId, isDeleted: { $ne: true } }).lean()) {
     return { skipped: true, reason: 'already imported', title }
   }
-  if (await ContentModel.findOne({ title }).lean()) return { skipped: true, reason: 'already exists', title }
+  // Title collision with a *live* doc only — see comment in queueFilm above.
+  if (await ContentModel.findOne({ title, isDeleted: { $ne: true } }).lean()) {
+    return { skipped: true, reason: 'already exists', title }
+  }
 
   // Resolve + license-gate every episode before creating anything.
   const resolved = []
