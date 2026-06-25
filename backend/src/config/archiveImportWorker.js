@@ -10,6 +10,7 @@
  * item is processed exactly once.
  */
 import { ArchiveImportTask } from '../models/ArchiveImportTask.js'
+import { ArchiveCandidate } from '../models/ArchiveCandidate.js'
 import { Content } from '../models/Content.js'
 import { UploadJob } from '../models/UploadJob.js'
 import { StreamCollection } from '../models/StreamCollection.js'
@@ -58,7 +59,15 @@ async function recordFailedJob(collection, title, message) {
   } catch { /* best-effort */ }
 }
 
+/** Reflect the real CDN-push outcome on the discovered candidate, if this task came from one. */
+function markCandidate(archiveId, status) {
+  if (!archiveId) return
+  // Never resurrect a candidate the admin explicitly dismissed.
+  ArchiveCandidate.updateOne({ archiveId, status: { $ne: 'dismissed' } }, { $set: { status } }).catch(() => {})
+}
+
 async function processTask(task, collection) {
+  const archiveId = task.item?.archiveId
   try {
     const result = await queueArchiveImport(task.item, {
       ContentModel: Content,
@@ -69,8 +78,11 @@ async function processTask(task, collection) {
     })
     if (result.created) {
       await ArchiveImportTask.findByIdAndUpdate(task._id, { $set: { status: 'done', contentId: result.id, error: '' } })
+      markCandidate(archiveId, 'imported')
     } else if (result.skipped) {
       await ArchiveImportTask.findByIdAndUpdate(task._id, { $set: { status: 'skipped', reason: result.reason } })
+      // Nothing will change if retried (duplicate title / no licence) — stop offering it again.
+      markCandidate(archiveId, 'imported')
     }
   } catch (err) {
     const message = err?.message || 'Import failed'
@@ -79,7 +91,10 @@ async function processTask(task, collection) {
       await ArchiveImportTask.findByIdAndUpdate(task._id, { $set: { status: 'pending', claimedAt: null, error: message } })
     } else {
       await ArchiveImportTask.findByIdAndUpdate(task._id, { $set: { status: 'failed', error: message } })
-      await recordFailedJob(collection, task.title || task.item?.archiveId, message)
+      await recordFailedJob(collection, task.title || archiveId, message)
+      // The CDN push never succeeded — surface it as 'new' again so the next
+      // review pass (or a manual retry) gets another shot at it.
+      markCandidate(archiveId, 'new')
     }
   }
 }

@@ -506,7 +506,6 @@ router.post('/archive/import', async (req, res, next) => {
     }
 
     const createdByEmail = req.user?.email || ''
-    const archiveIds = items.map((i) => i.archiveId).filter(Boolean)
     const batchId = randomUUID()
 
     // Persist each item as a queue task so the import survives a backend restart.
@@ -519,10 +518,9 @@ router.post('/archive/import', async (req, res, next) => {
       status: 'pending',
     })))
 
-    // Mark any discovered candidates as imported up front (idempotent).
-    if (archiveIds.length) {
-      ArchiveCandidate.updateMany({ archiveId: { $in: archiveIds } }, { $set: { status: 'imported' } }).catch(() => {})
-    }
+    // Candidate status is updated by the worker once the CDN push actually
+    // succeeds or fails (see archiveImportWorker.js) — not here, since at this
+    // point nothing has been pushed to Bunny/Cloudinary yet.
     logAdminAction(req, 'archive_import', 'content', null, `${items.length} title(s) queued`, { batchId, queued: items.length })
 
     res.status(202).json({ queued: items.length, batchId })
