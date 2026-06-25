@@ -2374,7 +2374,7 @@
 
 .episodeRow {
   display: grid;
-  grid-template-columns: 20px 28px 1fr 80px 1fr 32px;
+  grid-template-columns: 20px 28px 1fr 80px 1fr 1fr 32px;
   align-items: center;
   gap: 8px;
   cursor: default;

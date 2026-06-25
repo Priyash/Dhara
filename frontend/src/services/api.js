@@ -391,6 +391,10 @@ export async function importFromArchive(items, allowUnlicensed = false) {
   })
 }
 
+export async function getArchiveImportBatch(batchId) {
+  return request(`/api/admin/archive/import/${batchId}`)
+}
+
 export async function cancelUploadJob(id) {
   return request(`/api/admin/upload-jobs/${id}/cancel`, { method: 'PATCH' })
 }

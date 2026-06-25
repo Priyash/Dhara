@@ -24,7 +24,7 @@ import {
   listAdminCreatorEarnings, calculateCreatorEarnings, processCreatorPayout, listAdminCreatorPayouts,
   getAdminRevenue, getAdminMonitor,
   listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
-  searchArchive, importFromArchive, listArchiveCandidates, listArchiveTasks, dismissArchiveCandidate,
+  searchArchive, importFromArchive, getArchiveImportBatch, listArchiveCandidates, listArchiveTasks, dismissArchiveCandidate,
   cancelUploadJob, retryUploadJob,
 } from '../services/api'
 import styles from './Admin.module.css'
@@ -514,7 +514,49 @@ const EMPTY_EDIT_FORM = {
   isPremium: false, isFeatured: false, badge: '',
   posterUrl: '', backdropUrl: '', palette: '', reviewCount: '',
   contentLanguage: 'Bengali', certification: '', contentWarnings: '',
-  moodTags: '', bunnyVideoId: '', episodes: [],
+  moodTags: '', bunnyVideoId: '', subtitleUrl: '', episodes: [], seasonMeta: [],
+}
+
+// seasons (nested) <-> episodes (flat, with seasonNumber) — the edit modal's
+// episode list has no season selector, so we flatten for display and regroup
+// on save, preserving each season's title via seasonMeta.
+function flattenSeasons(seasons = []) {
+  return seasons.flatMap((s) =>
+    (s.episodes || []).map((ep) => ({
+      seasonNumber: s.number,
+      number:       ep.number,
+      title:        ep.title || '',
+      desc:         ep.desc || '',
+      duration:     ep.duration || '',
+      bunnyVideoId: ep.bunnyVideoId || '',
+      subtitleUrl:  ep.subtitleUrl || '',
+      viewCount:    ep.viewCount || 0,
+    }))
+  )
+}
+
+function regroupEpisodes(episodes, seasonMeta = []) {
+  const bySeason = new Map()
+  for (const ep of episodes) {
+    const sn = ep.seasonNumber || 1
+    if (!bySeason.has(sn)) bySeason.set(sn, [])
+    bySeason.get(sn).push(ep)
+  }
+  return [...bySeason.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([number, eps]) => ({
+      number,
+      title: seasonMeta.find((s) => s.number === number)?.title || '',
+      episodes: eps.map((ep) => ({
+        number:       Number(ep.number),
+        title:        ep.title.trim(),
+        desc:         ep.desc || '',
+        duration:     ep.duration.trim(),
+        bunnyVideoId: ep.bunnyVideoId?.trim() || '',
+        subtitleUrl:  ep.subtitleUrl?.trim() || '',
+        viewCount:    ep.viewCount || 0,
+      })),
+    }))
 }
 
 const SHELF_ACCENT_COLORS = [
@@ -859,7 +901,7 @@ export default function Admin() {
     if (items.length === 0) return
     setArchiveImporting(true)
     try {
-      const { queued = 0 } = await importFromArchive(items, allowUnlicensed)
+      const { queued = 0, batchId } = await importFromArchive(items, allowUnlicensed)
       showToast({
         type: 'success',
         message: `Queued ${queued} title${queued === 1 ? '' : 's'} — they'll appear in the library as they transcode.`,
@@ -878,15 +920,31 @@ export default function Admin() {
         })),
         ...prev,
       ])
-      // The background worker fetches archive.org metadata, uploads the poster to
-      // Cloudinary, and calls Bunny for each item sequentially — 5–30 s per title.
-      // The two original 2.5 s / 7 s polls fired before any UploadJob was created,
-      // so hasInProgressJobs stayed false and the 5 s auto-poll never started.
-      // Poll at increasing intervals (using the stable ref to avoid stale closures)
-      // so at least one poll catches the first created job; the existing 5 s
-      // auto-poll then takes over and covers any remaining items indefinitely.
+      // Poll at increasing intervals so at least one poll catches the first
+      // created job; the 5 s auto-poll takes over once hasInProgressJobs is true.
       for (const delay of [3_000, 8_000, 15_000, 30_000, 60_000, 90_000, 120_000]) {
         setTimeout(() => loadDataRef.current().catch(() => {}), delay)
+      }
+      // After the worker has had time to settle, surface any titles that were
+      // silently skipped/failed (dedup, missing licence, no usable video file)
+      // since those never produce an UploadJob and look like "no progress" otherwise.
+      if (batchId) {
+        setTimeout(async () => {
+          try {
+            const { tasks = [] } = await getArchiveImportBatch(batchId)
+            const problems = tasks.filter((t) => t.status === 'skipped' || t.status === 'failed')
+            if (problems.length === 0) return
+            const detail = problems
+              .slice(0, 3)
+              .map((t) => `"${t.title}" (${t.reason || t.error || t.status})`)
+              .join(', ')
+            const more = problems.length > 3 ? ` and ${problems.length - 3} more` : ''
+            showToast({
+              type: 'error',
+              message: `${problems.length} of ${tasks.length} title${tasks.length === 1 ? '' : 's'} did not import: ${detail}${more}.`,
+            })
+          } catch { /* best-effort — non-fatal if the check fails */ }
+        }, 8_000)
       }
     } catch (err) {
       showToast({ type: 'error', message: err?.message || 'Import failed.' })
@@ -1228,12 +1286,9 @@ export default function Admin() {
         certification:   full.certification    || '',
         contentWarnings: full.contentWarnings  || '',
         moodTags:        (full.moodTags        || []).join(', '),
-        episodes:        (full.episodes        || []).map((ep) => ({
-          number:      ep.number,
-          title:       ep.title       || '',
-          duration:    ep.duration    || '',
-          bunnyVideoId: ep.bunnyVideoId || '',
-        })),
+        subtitleUrl:     full.subtitleUrl       || '',
+        episodes:        flattenSeasons(full.seasons),
+        seasonMeta:      (full.seasons || []).map((s) => ({ number: s.number, title: s.title || '' })),
       })
     } catch (err) {
       setEditError(err?.message || 'Could not load content.')
@@ -1280,12 +1335,10 @@ export default function Admin() {
         certification:   editForm.certification || null,
         contentWarnings: editForm.contentWarnings.trim(),
         moodTags:        editForm.moodTags.split(',').map((s) => s.trim()).filter(Boolean),
-        episodes:        (editForm.episodes || []).map((ep) => ({
-          number:      Number(ep.number),
-          title:       ep.title.trim(),
-          duration:    ep.duration.trim(),
-          bunnyVideoId: ep.bunnyVideoId?.trim() || '',
-        })),
+        subtitleUrl:     editForm.subtitleUrl.trim(),
+        seasons:         (editForm.type === 'Series' || editForm.type === 'Serial Drama')
+          ? regroupEpisodes(editForm.episodes, editForm.seasonMeta)
+          : [],
       }
 
       if (editingId === NEW_CONTENT_ID) {
@@ -4083,6 +4136,13 @@ export default function Admin() {
                     </div>
                   )}
 
+                  {editForm.type !== 'Series' && editForm.type !== 'Serial Drama' && (
+                    <label className={`${styles.label} ${styles.spanFull}`}>
+                      <span>Subtitle URL <span className={styles.labelHint}>(WebVTT .vtt — optional)</span></span>
+                      <input className={styles.input} value={editForm.subtitleUrl} onChange={ef('subtitleUrl')} placeholder="https://…/subtitles.vtt" />
+                    </label>
+                  )}
+
                   <label className={`${styles.label} ${styles.spanFull}`}>
                     Synopsis / Description
                     <textarea className={`${styles.input} ${styles.textarea}`} value={editForm.desc} onChange={ef('desc')} rows={4} placeholder="গল্পের সারসংক্ষেপ লিখুন…" />
@@ -4112,9 +4172,12 @@ export default function Admin() {
                             const next = editForm.episodes.length > 0
                               ? Math.max(...editForm.episodes.map((e) => e.number)) + 1
                               : 1
+                            const seasonNumber = editForm.episodes.length > 0
+                              ? editForm.episodes[editForm.episodes.length - 1].seasonNumber
+                              : 1
                             setEditForm((prev) => ({
                               ...prev,
-                              episodes: [...prev.episodes, { number: next, title: '', duration: '', bunnyVideoId: '' }],
+                              episodes: [...prev.episodes, { seasonNumber, number: next, title: '', desc: '', duration: '', bunnyVideoId: '', subtitleUrl: '', viewCount: 0 }],
                             }))
                           }}
                         >
@@ -4173,6 +4236,15 @@ export default function Admin() {
                               episodes: prev.episodes.map((x, i) => i === idx ? { ...x, bunnyVideoId: e.target.value } : x),
                             }))}
                             placeholder="Bunny video ID"
+                          />
+                          <input
+                            className={`${styles.input} ${styles.epInput}`}
+                            value={ep.subtitleUrl}
+                            onChange={(e) => setEditForm((prev) => ({
+                              ...prev,
+                              episodes: prev.episodes.map((x, i) => i === idx ? { ...x, subtitleUrl: e.target.value } : x),
+                            }))}
+                            placeholder="Subtitle .vtt URL (optional)"
                           />
                           <button
                             type="button"

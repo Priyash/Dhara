@@ -1,5 +1,4 @@
 import { Router } from 'express'
-import { Router } from 'express'
 import { pipeline } from 'stream/promises'
 import { createWriteStream, createReadStream, unlink } from 'fs'
 import { tmpdir } from 'os'
@@ -547,8 +546,22 @@ router.post('/archive/import', async (req, res, next) => {
   }
 })
 
-// Archive import task list — returns active tasks plus anything completed in the last 2 hours
-// so the UI can show per-title progress (pending → processing → done/skipped/failed).
+// Per-batch task status — lets the UI report which titles were skipped/failed
+// vs. actually queued, instead of an opaque single "queued N" toast.
+router.get('/archive/import/:batchId', async (req, res, next) => {
+  try {
+    const tasks = await ArchiveImportTask.find({ batchId: req.params.batchId })
+      .select('title status reason error')
+      .lean()
+    if (tasks.length === 0) return res.status(404).json({ error: 'Batch not found' })
+    res.json({ tasks })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// Archive import task list — returns active tasks plus anything completed in the
+// last 2 hours so the per-title progress panel stays current automatically.
 router.get('/archive/tasks', async (req, res, next) => {
   try {
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
@@ -562,10 +575,8 @@ router.get('/archive/tasks', async (req, res, next) => {
       .limit(40)
       .select('title status error reason attempts createdAt updatedAt')
       .lean()
-
     const counts = { pending: 0, processing: 0, failed: 0, done: 0, skipped: 0 }
     for (const t of tasks) if (counts[t.status] !== undefined) counts[t.status]++
-
     res.json({ counts, tasks })
   } catch (err) {
     next(err)
@@ -620,7 +631,7 @@ router.post('/content', async (req, res, next) => {
       title, subtitle = '', type = 'Film', genre = [], cast = [], director = '',
       releaseYear, rating = 0, desc = '', posterUrl = '', backdropUrl = '',
       contentLanguage = 'Bengali', certification = null,
-      contentWarnings = '', moodTags = [], badge = null,
+      contentWarnings = '', moodTags = [], badge = null, subtitleUrl = '',
       isPremium = false, isFeatured = false, seasons = [],
     } = req.body
 
@@ -641,6 +652,7 @@ router.post('/content', async (req, res, next) => {
       desc:            desc?.trim() || '',
       posterUrl:       posterUrl?.trim() || '',
       backdropUrl:     backdropUrl?.trim() || '',
+      subtitleUrl:     subtitleUrl?.trim() || '',
       contentLanguage: contentLanguage || 'Bengali',
       certification:   certification || null,
       contentWarnings: contentWarnings?.trim() || '',
@@ -665,6 +677,7 @@ router.post('/content', async (req, res, next) => {
                       desc:         String(ep.desc  || '').trim(),
                       duration:     String(ep.duration || '').trim(),
                       bunnyVideoId: '',
+                      subtitleUrl:  String(ep.subtitleUrl || '').trim(),
                     }))
                 : [],
             }))
@@ -690,7 +703,7 @@ router.get('/content/:id', async (req, res, next) => {
 const ALLOWED_METADATA_FIELDS = [
   'title', 'subtitle', 'desc', 'type', 'duration', 'genre', 'cast', 'director',
   'releaseYear', 'rating', 'isPremium', 'isFeatured', 'badge',
-  'posterUrl', 'backdropUrl', 'palette',
+  'posterUrl', 'backdropUrl', 'palette', 'subtitleUrl',
   'contentLanguage', 'certification', 'contentWarnings', 'moodTags', 'reviewCount',
   'seasons',
 ]

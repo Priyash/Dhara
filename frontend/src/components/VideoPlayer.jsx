@@ -616,18 +616,31 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
   // Auto-enter fullscreen when phone rotates to landscape while playing
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.screen?.orientation) return
-    const onOrientationChange = () => {
-      const angle = window.screen.orientation?.angle ?? 0
-      const isLandscape = angle === 90 || angle === 270
+    if (typeof window === 'undefined') return
+    const enterFsIfLandscape = (isLandscape) => {
       const el = containerRef.current
       if (!el) return
       if (isLandscape && !document.fullscreenElement && !fullscreen) {
         el.requestFullscreen?.().catch(() => {})
       }
     }
-    window.screen.orientation.addEventListener('change', onOrientationChange)
-    return () => window.screen.orientation.removeEventListener('change', onOrientationChange)
+
+    if (window.screen?.orientation) {
+      const onOrientationChange = () => {
+        const angle = window.screen.orientation?.angle ?? 0
+        enterFsIfLandscape(angle === 90 || angle === 270)
+      }
+      window.screen.orientation.addEventListener('change', onOrientationChange)
+      return () => window.screen.orientation.removeEventListener('change', onOrientationChange)
+    }
+
+    // iOS Safari doesn't implement the Screen Orientation API at all, so the
+    // branch above silently never fires there — fall back to matchMedia,
+    // which Safari does support, so rotate-to-fullscreen still works on iPhone/iPad.
+    const mq = window.matchMedia('(orientation: landscape)')
+    const onMqChange = (e) => enterFsIfLandscape(e.matches)
+    mq.addEventListener('change', onMqChange)
+    return () => mq.removeEventListener('change', onMqChange)
   }, [fullscreen])
 
   // Sample dominant color from video frame every 2s while playing; drives ambient glow
