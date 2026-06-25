@@ -154,6 +154,9 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const [hoverTime,        setHoverTime]        = useState(null)
   const [hoverPct,         setHoverPct]         = useState(0)
   const [isDragging,       setIsDragging]       = useState(false)
+  // First hover/drag on the progress bar — gates the background thumbnail
+  // harvest below so it doesn't burn bandwidth for viewers who never scrub.
+  const [progressTouched,  setProgressTouched]  = useState(false)
   const [videoHovered,     setVideoHovered]     = useState(false)
   const [showControls,     setShowControls]     = useState(true)
   const [videoNaturalSize, setVideoNaturalSize] = useState({ w: 0, h: 0 })
@@ -247,6 +250,9 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const [videoBrightness, setVideoBrightness] = useState(1)
   const videoBrightnessRef = useRef(1)
   const longPressTimerRef  = useRef(null)
+  // Touch started on an interactive control (button/input/link) — let it handle
+  // its own click/touch instead of hijacking the gesture for player taps/swipes.
+  const touchOnControlRef  = useRef(false)
 
   // ── Watermark position cycling ───────────────────────────────────────────────
   const [watermarkIdx, setWatermarkIdx] = useState(0)
@@ -573,9 +579,12 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   }, [duration, thumbUrlFor, preloadImg])
 
   // Fallback harvest: seek the thumb video through the timeline when no Bunny
-  // thumbnail API is available (non-Bunny hosts or localhost dev).
+  // thumbnail API is available (non-Bunny hosts or localhost dev). Deferred
+  // until the viewer actually touches the progress bar — most viewers never
+  // scrub, so starting this unconditionally on mount wasted a full extra
+  // lowest-quality stream's worth of background bandwidth per session.
   useEffect(() => {
-    if (duration <= 0 || thumbUrlFor) return   // skip when JPEG approach is active
+    if (!progressTouched || duration <= 0 || thumbUrlFor) return   // skip when JPEG approach is active
     const tv = thumbVideoRef.current
     if (!tv) return
 
@@ -617,7 +626,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
     harvest()
     return () => { cancelled = true }
-  }, [duration])
+  }, [duration, progressTouched])
 
   // Build a per-second frame cache using requestVideoFrameCallback.
   // Playback frame cache via rVFC — fallback only when no Bunny thumbnail API.
@@ -846,6 +855,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
   const handleProgressHover = (e) => {
     if (isDragging) return
+    if (!progressTouched) setProgressTouched(true)
     const rect = progressRef.current?.getBoundingClientRect()
     if (!rect) return
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
@@ -889,6 +899,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const handleDragStart = (e) => {
     e.preventDefault()
     setIsDragging(true)
+    if (!progressTouched) setProgressTouched(true)
 
     const startX = 'clientX' in e ? e.clientX : e.touches[0].clientX
     seekFromClientX(startX)
@@ -985,11 +996,11 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     // which doesn't set document.fullscreenElement.
     if (!isFs && !fullscreen) {
       // Standard → webkit prefixed → iOS video-level fallback
-      if      (el.requestFullscreen)            el.requestFullscreen()
+      if      (el.requestFullscreen)            el.requestFullscreen().catch(() => {})
       else if (el.webkitRequestFullscreen)      el.webkitRequestFullscreen()
       else if (v?.webkitEnterFullscreen)        v.webkitEnterFullscreen()
     } else {
-      if      (document.exitFullscreen)         document.exitFullscreen()
+      if      (document.exitFullscreen)         document.exitFullscreen().catch(() => {})
       else if (document.webkitExitFullscreen)   document.webkitExitFullscreen()
       else if (v?.webkitExitFullscreen)         v.webkitExitFullscreen()
     }
@@ -1443,8 +1454,8 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current)
       clickTimerRef.current = null
-      if (!document.fullscreenElement && !fullscreen) containerRef.current?.requestFullscreen?.()
-      else if (document.fullscreenElement) document.exitFullscreen?.()
+      if (!document.fullscreenElement && !fullscreen) containerRef.current?.requestFullscreen?.()?.catch(() => {})
+      else if (document.fullscreenElement) document.exitFullscreen?.()?.catch(() => {})
       else if (fullscreen) videoRef.current?.webkitExitFullscreen?.()
     } else {
       clickTimerRef.current = setTimeout(() => {
@@ -1456,7 +1467,20 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
   // Mobile swipe gestures: vertical on left half = brightness, right half = volume, horizontal = seek
   const handleTouchStartPlayer = (e) => {
+    // Tap landed on a button/input/link — let it run its own click/touch
+    // handling untouched, instead of also feeding the gesture/tap pipeline
+    // below (which previously double-fired togglePlay() via the trailing
+    // synthetic click and could even trigger an unwanted fullscreen toggle).
+    if (e.target.closest('button, input, a, [role="slider"]')) {
+      touchOnControlRef.current = true
+      return
+    }
+    touchOnControlRef.current = false
+
     resetIdleTimer()
+    // Suppress the synthetic click the browser fires after touchend — our
+    // own tap/double-tap/swipe logic already handles the interaction.
+    e.preventDefault()
     const touch = e.touches[0]
     gestureStartRef.current = { x: touch.clientX, y: touch.clientY }
     gestureTypeRef.current  = null
@@ -1471,6 +1495,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   }
 
   const handleTouchMovePlayer = (e) => {
+    if (touchOnControlRef.current) return
     const start = gestureStartRef.current
     if (!start) return
     const touch = e.touches[0]
@@ -1519,6 +1544,10 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   }
 
   const handleTouchEndPlayer = (e) => {
+    if (touchOnControlRef.current) {
+      touchOnControlRef.current = false
+      return
+    }
     clearTimeout(longPressTimerRef.current)
     const type = gestureTypeRef.current
     gestureTypeRef.current  = null
@@ -2034,6 +2063,24 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
                 ))}
               </div>
             </div>
+            {qualityOptions.length > 0 && (
+              <div className={styles.settingsGroup}>
+                <p className={styles.settingsLabel}>Quality</p>
+                <div className={styles.settingsChips}>
+                  <button
+                    className={`${styles.chipBtn} ${qualityValue === 'auto' ? styles.chipBtnActive : ''}`}
+                    onClick={() => handleQualityChange('auto')}
+                  >Auto</button>
+                  {qualityOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={`${styles.chipBtn} ${qualityValue === opt.value ? styles.chipBtnActive : ''}`}
+                      onClick={() => handleQualityChange(opt.value)}
+                    >{opt.label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
             {(onTheaterToggle || document.pictureInPictureEnabled || castAvailable) && (
               <div className={styles.settingsGroup}>
                 <p className={styles.settingsLabel}>View</p>
