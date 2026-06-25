@@ -90,6 +90,17 @@ function qualityLabel(level) {
   return kbps ? `${h} · ${kbps}kbps` : h
 }
 
+const MAX_NETWORK_RETRIES = 5   // fatal NETWORK_ERROR retries before giving up (with backoff)
+const MAX_MEDIA_RETRIES   = 5   // fatal MEDIA_ERROR recovery attempts before giving up
+
+// NetworkInformation API — Chrome/Android only, feature-detected; null elsewhere.
+function getConnectionInfo() {
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection
+  if (!conn) return { slow: false }
+  const slow = Boolean(conn.saveData) || ['slow-2g', '2g', '3g'].includes(conn.effectiveType)
+  return { slow }
+}
+
 const WATERMARK_POSITIONS = [
   { top: '10%',  left: '6%'  },
   { top: '10%',  right: '6%' },
@@ -216,6 +227,16 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const stallTimerRef   = useRef(null)
   const lastTimeRef     = useRef(null)
 
+  // ── Fatal-error retry hardening (backoff + cap so a dead connection can't
+  //    retry-storm forever and drain battery/data) ─────────────────────────────
+  const networkRetryCountRef = useRef(0)
+  const networkRetryTimerRef = useRef(null)
+  const mediaRetryCountRef   = useRef(0)
+
+  // ── Page Visibility: remember the quality level active before backgrounding
+  //    so it can be restored when the tab/app becomes visible again ───────────
+  const hiddenPrevLevelRef = useRef(null)
+
   // ── Mobile swipe gestures ────────────────────────────────────────────────────
   const gestureStartRef  = useRef(null)
   const gestureTypeRef   = useRef(null)   // 'seek' | 'volume' | 'brightness' | null
@@ -331,6 +352,10 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
   const cleanupHls = useCallback(() => {
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
+    clearTimeout(networkRetryTimerRef.current)
+    networkRetryCountRef.current = 0
+    mediaRetryCountRef.current   = 0
+    hiddenPrevLevelRef.current   = null
   }, [])
 
   const autoPlayAndResume = useCallback(() => {
@@ -357,13 +382,20 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   }, [autoPlayAndResume])
 
   const attachHlsSource = useCallback((v, nextSrc) => {
+    // Start lower and buffer less aggressively on cellular/save-data connections —
+    // faster first frame, less wasted data if the user abandons the video early.
+    const { slow: slowConn } = getConnectionInfo()
     const hls = new Hls({
       enableWorker: true,
       lowLatencyMode: true,
       backBufferLength: 90,
-      maxBufferLength: 60,
-      maxMaxBufferLength: 120,
+      maxBufferLength: slowConn ? 30 : 60,
+      maxMaxBufferLength: slowConn ? 60 : 120,
+      startLevel: slowConn ? 0 : -1,
     })
+
+    networkRetryCountRef.current = 0
+    mediaRetryCountRef.current   = 0
 
     setStreamMode('hls')
     setActiveQualityLabel('Auto')
@@ -416,18 +448,43 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
       }
     })
 
+    // A successful fragment load means the connection has recovered — reset both
+    // retry counters so a later, unrelated failure starts its backoff from zero.
+    hls.on(Hls.Events.FRAG_LOADED, () => {
+      networkRetryCountRef.current = 0
+      mediaRetryCountRef.current   = 0
+    })
+
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (!data.fatal) return
+
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        clearTimeout(networkRetryTimerRef.current)
+        if (networkRetryCountRef.current >= MAX_NETWORK_RETRIES) {
+          setPlayerError('Lost connection to the stream. Please retry.')
+          return
+        }
+        // Exponential backoff (1s, 2s, 4s, 8s, 16s) instead of hammering the CDN
+        // in a tight retry loop on a dead/flaky connection.
+        const delay = 1000 * 2 ** networkRetryCountRef.current
+        networkRetryCountRef.current += 1
         setPlayerError('')
-        hls.startLoad()
+        showHintRef.current?.('Reconnecting…')
+        networkRetryTimerRef.current = setTimeout(() => hls.startLoad(), delay)
         return
       }
+
       if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        if (mediaRetryCountRef.current >= MAX_MEDIA_RETRIES) {
+          setPlayerError('Playback failed. Please retry.')
+          return
+        }
+        mediaRetryCountRef.current += 1
         setPlayerError('')
         hls.recoverMediaError()
         return
       }
+
       setPlayerError('Playback failed. Please retry.')
     })
 
@@ -1172,6 +1229,72 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     return () => clearInterval(stallTimerRef.current)
   }, [])
 
+  // Page Visibility: drop to the lowest HLS level while backgrounded (tab switch,
+  // app minimized, screen off) to save battery/data, then restore whatever level
+  // (auto or a manual pick) was active before backgrounding once visible again.
+  useEffect(() => {
+    const onVisibility = () => {
+      const hls = hlsRef.current
+      if (!hls || !hls.levels?.length) return
+      if (document.hidden) {
+        hiddenPrevLevelRef.current = hls.currentLevel
+        hls.currentLevel = 0
+      } else if (hiddenPrevLevelRef.current !== null) {
+        hls.currentLevel = hiddenPrevLevelRef.current
+        hiddenPrevLevelRef.current = null
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [])
+
+  // MediaSession: lock-screen / Now Playing metadata + hardware controls (mobile
+  // OS notification, Bluetooth headset buttons, smart-TV remotes). No-ops where
+  // the API doesn't exist (Safari < 15, older Firefox).
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: title || 'Dhara',
+      artwork: poster ? [{ src: poster, sizes: '512x512', type: 'image/jpeg' }] : [],
+    })
+  }, [title, poster])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    navigator.mediaSession.playbackState = playing ? 'playing' : 'paused'
+  }, [playing])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    const ms = navigator.mediaSession
+    const setHandler = (action, handler) => {
+      try { ms.setActionHandler(action, handler) } catch { /* action unsupported in this browser */ }
+    }
+    setHandler('play',  () => { videoRef.current?.play().catch(() => {}) })
+    setHandler('pause', () => { videoRef.current?.pause() })
+    setHandler('seekbackward', (details) => {
+      const v = videoRef.current
+      if (v) v.currentTime = Math.max(0, v.currentTime - (details.seekOffset || 10))
+    })
+    setHandler('seekforward', (details) => {
+      const v = videoRef.current
+      if (v) v.currentTime = Math.min(v.duration || Infinity, v.currentTime + (details.seekOffset || 10))
+    })
+    setHandler('seekto', (details) => {
+      const v = videoRef.current
+      if (v && details.seekTime != null) v.currentTime = details.seekTime
+    })
+    setHandler('nexttrack', nextEp && onNextEp ? () => onNextEp() : null)
+    return () => {
+      setHandler('play', null)
+      setHandler('pause', null)
+      setHandler('seekbackward', null)
+      setHandler('seekforward', null)
+      setHandler('seekto', null)
+      setHandler('nexttrack', null)
+    }
+  }, [nextEp, onNextEp])
+
   // Skip intro: show button when currentTime is inside intro window
   useEffect(() => {
     if (introStart == null || introEnd == null) { setShowSkipIntro(false); return }
@@ -1552,6 +1675,15 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
             clearBuffering()
             setCurrentTime(e.target.currentTime)
             if (e.target.buffered.length) setBuffered(e.target.buffered.end(e.target.buffered.length - 1))
+            if ('mediaSession' in navigator && !isLive && isFinite(e.target.duration) && e.target.duration > 0) {
+              try {
+                navigator.mediaSession.setPositionState({
+                  duration:     e.target.duration,
+                  playbackRate: e.target.playbackRate,
+                  position:     Math.min(e.target.currentTime, e.target.duration),
+                })
+              } catch { /* state stale mid-seek — ignore */ }
+            }
           }}
           onPlay={() => {
             setPlaying(true)
