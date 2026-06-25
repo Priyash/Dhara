@@ -1510,8 +1510,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
                 onClick={(e) => { e.stopPropagation(); onBack() }}
                 aria-label="Go back"
               >
-                <ArrowLeft size={16} />
-                <span className={styles.backOverlayText}>Back</span>
+                <ArrowLeft size={20} />
               </button>
             )}
             {title && <p className={styles.titleOverlayText}>{title}</p>}
