@@ -1273,6 +1273,160 @@
   margin-top: 2px;
 }
 
+/* ── Content library: title row with inline status badge ─────────────────── */
+.libraryTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.libraryTitleRow .libraryTitle { flex: 1; min-width: 0; }
+
+/* Status badges */
+.contentStatusBadge {
+  display: inline-block;
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.contentStatusPublished   { background: rgba(74,222,128,0.12);  color: #4ade80; }
+.contentStatusUnpublished { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.35); }
+.contentStatusProcessing  { background: rgba(251,191,36,0.12);  color: #fbbf24; }
+.contentStatusNoVideo     { background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.25); }
+.contentStatusDeleted     { background: rgba(225,29,72,0.12);   color: #f87171; }
+
+/* Thin progress bar under the title row during transcoding */
+.contentProgressBar {
+  height: 2px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 1px;
+  margin-top: 5px;
+  overflow: hidden;
+}
+.contentProgressFill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 1px;
+  transition: width 0.6s ease;
+}
+
+/* ── Content filter row ───────────────────────────────────────────────────── */
+.contentFilterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 14px;
+}
+.contentFilterIcon {
+  color: rgba(255,255,255,0.3);
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+.contentFilterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-family: var(--font-body);
+  font-weight: 500;
+  cursor: pointer;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.45);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.contentFilterChip:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.75);
+}
+.contentFilterChipActive {
+  background: rgba(219,39,119,0.12);
+  border-color: rgba(219,39,119,0.35);
+  color: var(--color-accent);
+}
+.contentFilterDivider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255,255,255,0.09);
+  align-self: center;
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+.showDeletedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-family: var(--font-body);
+  color: rgba(255,255,255,0.35);
+  cursor: pointer;
+  user-select: none;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.showDeletedToggle:hover { color: rgba(255,255,255,0.6); }
+.showDeletedToggle input { cursor: pointer; accent-color: var(--color-accent); }
+
+/* ── Deleted content section ─────────────────────────────────────────────── */
+.deletedSection {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.deletedSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.28);
+  font-family: var(--font-body);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.libraryRowDeleted {
+  opacity: 0.55;
+  border-color: rgba(225,29,72,0.1) !important;
+  background: rgba(225,29,72,0.025) !important;
+}
+.libraryRowDeleted:hover { opacity: 0.75; }
+
+/* Restore button */
+.restoreBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(74,222,128,0.2);
+  border-radius: var(--radius-md);
+  background: rgba(74,222,128,0.04);
+  color: rgba(74,222,128,0.65);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.restoreBtn:hover:not(:disabled) {
+  background: rgba(74,222,128,0.1);
+  border-color: rgba(74,222,128,0.45);
+  color: #4ade80;
+}
+.restoreBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
 /* Engagement stats row on content list items */
 .contentEngRow {
   display: flex;
@@ -2090,6 +2244,10 @@
     width: 100%;
   }
 
+  /* Filter row wraps on tablet */
+  .contentFilterRow { flex-wrap: wrap; }
+  .showDeletedToggle { margin-left: 0; }
+
   .librarySearch {
     width: auto;
     flex: 1;
@@ -2151,10 +2309,26 @@
   /* Give action buttons a bit more padding so they're easier to tap */
   .proToggleBtn,
   .editBtn,
-  .deleteBtn {
+  .deleteBtn,
+  .restoreBtn {
     padding: 7px 12px;
     font-size: 12px;
   }
+
+  /* Filter row: wrap and tighten on small screens */
+  .contentFilterRow {
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+  .contentFilterChip {
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+  .contentFilterDivider { display: none; }
+  .showDeletedToggle { margin-left: 0; }
+
+  /* Title row: badge stacks under title on very narrow */
+  .libraryTitleRow { flex-wrap: wrap; gap: 4px; }
 
   /* Creator app rows: switch from 4-col grid to flex column so name is never crushed */
   .creatorAppRow {

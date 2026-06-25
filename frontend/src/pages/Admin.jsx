@@ -7,7 +7,7 @@ import {
   GripVertical, Layers, Plus, UploadIcon, IndianRupee,
   Calculator, Wallet, Clock, ChevronDown, ChevronLeft, ChevronRight, TrendingUp, Users, BarChart2,
   Activity, Server, AlertCircle, Database, Heart, MessageCircle, Play,
-  Archive, Search, Info,
+  Archive, Search, Info, RotateCcw, SlidersHorizontal,
 } from 'lucide-react'
 import { uploadToCloudinary, cloudinaryTransform } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
@@ -16,7 +16,7 @@ import {
   createAdminCollection, createBunnyCollection, createUploadJob, fetchAdminContentById,
   getAdminSession, importFromCdn, syncCdnDeletions, listBunnyCollections, listBunnyVideos,
   listAdminCollections, listAdminContent, listUploadJobs, getUploadJob,
-  mapExistingBunnyVideo, createAdminContent, updateAdminContent, togglePublishContent, deleteAdminContent,
+  mapExistingBunnyVideo, createAdminContent, updateAdminContent, togglePublishContent, deleteAdminContent, restoreAdminContent,
   uploadJobFile, getPaymentConfig, updatePaymentConfig,
   listCreatorApplications, approveCreatorApplication, rejectCreatorApplication,
   listAdminSubmissions, approveSubmission, rejectSubmission,
@@ -775,8 +775,13 @@ export default function Admin() {
   const [editBusy, setEditBusy]       = useState(false)
   const [editNotice, setEditNotice]   = useState('')
   const [editError, setEditError]     = useState('')
-  const [contentSearch, setContentSearch] = useState('')
-  const [imgUploading, setImgUploading]   = useState({ poster: false, backdrop: false })
+  const [contentSearch, setContentSearch]           = useState('')
+  const [contentTypeFilter, setContentTypeFilter]   = useState('all')
+  const [contentStatusFilter, setContentStatusFilter] = useState('all')
+  const [showDeleted, setShowDeleted]               = useState(false)
+  const [deletedItems, setDeletedItems]             = useState([])
+  const [restoringId, setRestoringId]               = useState(null)
+  const [imgUploading, setImgUploading]             = useState({ poster: false, backdrop: false })
   const [imgProgress,  setImgProgress]    = useState({ poster: 0,     backdrop: 0     })
   const modalFormRef = useRef(null)
 
@@ -1103,6 +1108,13 @@ export default function Admin() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminAllowed, archiveTasksActive])
 
+  // Load deleted items whenever the "Show deleted" toggle is switched on.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!showDeleted || !adminAllowed) return
+    loadDeletedContent()
+  }, [showDeleted, adminAllowed])
+
   const loadBunnyVideos = async (collectionId) => {
     setMapVideoError('')
     if (!collectionId) { setBunnyVideos([]); return }
@@ -1276,6 +1288,26 @@ export default function Admin() {
     }
   }
 
+  const loadDeletedContent = useCallback(async () => {
+    try {
+      const items = await listAdminContent({ showDeleted: true })
+      setDeletedItems(items)
+    } catch { /* non-fatal */ }
+  }, [])
+
+  const handleRestoreContent = async (item) => {
+    setRestoringId(item._id)
+    try {
+      await restoreAdminContent(item._id)
+      setDeletedItems((prev) => prev.filter((c) => c._id !== item._id))
+      showToast({ type: 'success', message: `"${item.title}" restored — upload a new video to publish it.` })
+    } catch (err) {
+      showToast({ type: 'error', message: err?.message || 'Could not restore content' })
+    } finally {
+      setRestoringId(null)
+    }
+  }
+
   // ── Content editor handlers ───────────────────────────────────────────────
   const openEditModal = async (item) => {
     setEditNotice('')
@@ -1387,15 +1419,7 @@ export default function Admin() {
     setEditForm((prev) => ({ ...prev, [field]: val }))
   }
 
-  const filteredContent = useMemo(() => {
-    if (!contentSearch.trim()) return contentItems
-    const q = contentSearch.toLowerCase()
-    return contentItems.filter((c) =>
-      c.title?.toLowerCase().includes(q) || c.type?.toLowerCase().includes(q)
-    )
-  }, [contentItems, contentSearch])
-
-  // Set of contentIds that still have an active transcoding job
+  // Set of contentIds that still have an active transcoding job (must come before filteredContent)
   const processingContentIds = useMemo(() => {
     const active = new Set()
     for (const job of jobs) {
@@ -1405,6 +1429,30 @@ export default function Admin() {
     }
     return active
   }, [jobs])
+
+  // Map contentId → job progress so content rows can show a progress bar
+  const contentJobProgress = useMemo(() => {
+    const map = new Map()
+    for (const job of jobs) {
+      if (job.contentId && ['queued', 'uploading', 'processing'].includes(job.status)) {
+        const id = typeof job.contentId === 'object' ? job.contentId._id ?? job.contentId : job.contentId
+        if (!map.has(id) || (job.progress || 0) > (map.get(id) || 0)) map.set(id, job.progress || 0)
+      }
+    }
+    return map
+  }, [jobs])
+
+  const filteredContent = useMemo(() => {
+    let items = contentItems
+    const q = contentSearch.toLowerCase().trim()
+    if (q) items = items.filter((c) => c.title?.toLowerCase().includes(q) || c.type?.toLowerCase().includes(q))
+    if (contentTypeFilter !== 'all') items = items.filter((c) => c.type === contentTypeFilter)
+    if (contentStatusFilter === 'published')   items = items.filter((c) => c.isPublished)
+    if (contentStatusFilter === 'unpublished') items = items.filter((c) => !c.isPublished && Boolean(c.bunnyVideoId) && !processingContentIds.has(c._id))
+    if (contentStatusFilter === 'processing')  items = items.filter((c) => processingContentIds.has(c._id))
+    if (contentStatusFilter === 'no-video')    items = items.filter((c) => !c.bunnyVideoId && !processingContentIds.has(c._id))
+    return items
+  }, [contentItems, contentSearch, contentTypeFilter, contentStatusFilter, processingContentIds])
 
   const handleImageUpload = async (field, file) => {
     if (!file) return
@@ -2254,92 +2302,171 @@ export default function Admin() {
               </button>
             </div>
           </div>
-          <div className={styles.libraryList}>
-            {filteredContent.length === 0 && <p className={styles.empty}>No content found.</p>}
-            {filteredContent.map((item) => (
-              <div key={item._id} className={styles.libraryRow}>
-                <div className={styles.libraryLeft}>
-                  <p className={styles.libraryTitle}>{item.title}</p>
-                  <p className={styles.libraryMeta}>
-                    {item.type}
-                    {item.releaseYear ? ` · ${item.releaseYear}` : ''}
-                    {item.genre?.length ? ` · ${item.genre.join(', ')}` : ''}
-                    {processingContentIds.has(item._id) ? ' · Transcoding…' : !item.bunnyVideoId ? ' · No video' : ''}
-                  </p>
-                  {/* Engagement stats — only shown for published content with activity */}
-                  {item.isPublished && (item.viewCount > 0 || item.likeCount > 0 || item.communityRatingCount > 0) && (
-                    <div className={styles.contentEngRow}>
-                      {item.viewCount > 0 && (
-                        <span className={styles.contentEngStat}>
-                          <Eye size={10} />
-                          {item.viewCount >= 1000 ? `${(item.viewCount/1000).toFixed(1)}k` : item.viewCount} views
-                        </span>
-                      )}
-                      {item.likeCount > 0 && (
-                        <span className={styles.contentEngStat}>
-                          <TrendingUp size={10} />
-                          {item.likeCount} likes
-                        </span>
-                      )}
-                      {item.communityRatingCount > 0 && (
-                        <span className={styles.contentEngStat} style={{ color: '#f472b6' }}>
-                          ★ {item.communityRating?.toFixed(1)} <span style={{ opacity: 0.6 }}>({item.communityRatingCount})</span>
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className={styles.libraryActions}>
-                  {(() => {
-                    const isProcessing = processingContentIds.has(item._id)
-                    const hasVideo = Boolean(item.bunnyVideoId)
-                    const canPublish = hasVideo && !isProcessing
-                    return (
-                      <button
-                        className={`${styles.proToggleBtn} ${item.isPublished ? styles.proToggleBtnOn : ''}`}
-                        onClick={() => handleTogglePublish(item)}
-                        disabled={togglingPublish === item._id || (!item.isPublished && !canPublish)}
-                        title={
-                          isProcessing ? 'Video is still transcoding — wait for it to finish'
-                          : !hasVideo ? 'No video uploaded yet'
-                          : item.isPublished ? 'Click to unpublish'
-                          : 'Click to publish'
-                        }
-                      >
-                        {isProcessing ? <RefreshCw size={11} className={styles.refreshIconSpinning} /> : <Eye size={11} />}
-                        {isProcessing ? 'Processing…' : item.isPublished ? 'Unpublish' : 'Publish'}
-                      </button>
-                    )
-                  })()}
-                  <button
-                    className={`${styles.proToggleBtn} ${item.isPremium ? styles.proToggleBtnOn : ''}`}
-                    onClick={() => handleTogglePremium(item)}
-                    disabled={togglingPremium === item._id}
-                    title={item.isPremium ? 'Click to make Free' : 'Click to make Premium'}
-                    aria-label={item.isPremium ? 'Mark as free' : 'Mark as premium'}
-                  >
-                    <Crown size={11} />
-                    {item.isPremium ? 'Free' : 'Premium'}
-                  </button>
-                  <button
-                    className={styles.editBtn}
-                    onClick={(e) => { e.currentTarget.blur(); openEditModal(item) }}
-                    disabled={editBusy && editingId === item._id}
-                  >
-                    <Pencil size={12} /> Edit
-                  </button>
-                  <button
-                    className={`${styles.deleteBtn} ${confirmDeleteId === item._id ? styles.deleteBtnConfirm : ''}`}
-                    onClick={() => handleDeleteContent(item)}
-                    onBlur={() => { if (confirmDeleteId === item._id) setConfirmDeleteId(null) }}
-                    title="Delete content"
-                  >
-                    <Trash2 size={12} />
-                    {confirmDeleteId === item._id ? 'Confirm?' : 'Delete'}
-                  </button>
-                </div>
-              </div>
+
+          {/* Filter row */}
+          <div className={styles.contentFilterRow}>
+            <SlidersHorizontal size={12} className={styles.contentFilterIcon} />
+            {['all', 'Film', 'Series', 'Documentary', 'Serial Drama'].map((t) => (
+              <button
+                key={t}
+                className={`${styles.contentFilterChip} ${contentTypeFilter === t ? styles.contentFilterChipActive : ''}`}
+                onClick={() => setContentTypeFilter(t)}
+              >
+                {t === 'all' ? 'All types' : t}
+              </button>
             ))}
+            <div className={styles.contentFilterDivider} />
+            {[
+              { value: 'all',         label: 'All status' },
+              { value: 'published',   label: 'Published' },
+              { value: 'unpublished', label: 'Unpublished' },
+              { value: 'processing',  label: 'Transcoding' },
+              { value: 'no-video',    label: 'No video' },
+            ].map(({ value, label }) => (
+              <button
+                key={value}
+                className={`${styles.contentFilterChip} ${contentStatusFilter === value ? styles.contentFilterChipActive : ''}`}
+                onClick={() => setContentStatusFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
+            <label className={styles.showDeletedToggle}>
+              <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
+              Deleted{deletedItems.length > 0 ? ` · ${deletedItems.length}` : ''}
+            </label>
+          </div>
+
+          <div className={styles.libraryList}>
+            {filteredContent.length === 0 && !showDeleted && <p className={styles.empty}>No content found.</p>}
+            {filteredContent.map((item) => {
+              const isProcessing = processingContentIds.has(item._id)
+              const hasVideo     = Boolean(item.bunnyVideoId)
+              const canPublish   = hasVideo && !isProcessing
+              const jobPct       = contentJobProgress.get(item._id)
+              return (
+                <div key={item._id} className={styles.libraryRow}>
+                  <div className={styles.libraryLeft}>
+                    <div className={styles.libraryTitleRow}>
+                      <p className={styles.libraryTitle}>{item.title}</p>
+                      {item.isPublished
+                        ? <span className={`${styles.contentStatusBadge} ${styles.contentStatusPublished}`}>Live</span>
+                        : isProcessing
+                          ? <span className={`${styles.contentStatusBadge} ${styles.contentStatusProcessing}`}>Transcoding{jobPct ? ` ${jobPct}%` : ''}</span>
+                          : !hasVideo
+                            ? <span className={`${styles.contentStatusBadge} ${styles.contentStatusNoVideo}`}>No video</span>
+                            : <span className={`${styles.contentStatusBadge} ${styles.contentStatusUnpublished}`}>Draft</span>
+                      }
+                    </div>
+                    <p className={styles.libraryMeta}>
+                      {item.type}
+                      {item.releaseYear ? ` · ${item.releaseYear}` : ''}
+                      {item.genre?.length ? ` · ${item.genre.slice(0, 2).join(', ')}` : ''}
+                    </p>
+                    {isProcessing && jobPct > 0 && (
+                      <div className={styles.contentProgressBar}>
+                        <div className={styles.contentProgressFill} style={{ width: `${jobPct}%` }} />
+                      </div>
+                    )}
+                    {item.isPublished && (item.viewCount > 0 || item.likeCount > 0 || item.communityRatingCount > 0) && (
+                      <div className={styles.contentEngRow}>
+                        {item.viewCount > 0 && (
+                          <span className={styles.contentEngStat}>
+                            <Eye size={10} />
+                            {item.viewCount >= 1000 ? `${(item.viewCount/1000).toFixed(1)}k` : item.viewCount} views
+                          </span>
+                        )}
+                        {item.likeCount > 0 && (
+                          <span className={styles.contentEngStat}>
+                            <TrendingUp size={10} />
+                            {item.likeCount} likes
+                          </span>
+                        )}
+                        {item.communityRatingCount > 0 && (
+                          <span className={styles.contentEngStat} style={{ color: '#f472b6' }}>
+                            ★ {item.communityRating?.toFixed(1)} <span style={{ opacity: 0.6 }}>({item.communityRatingCount})</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className={styles.libraryActions}>
+                    <button
+                      className={`${styles.proToggleBtn} ${item.isPublished ? styles.proToggleBtnOn : ''}`}
+                      onClick={() => handleTogglePublish(item)}
+                      disabled={togglingPublish === item._id || (!item.isPublished && !canPublish)}
+                      title={
+                        isProcessing ? 'Video is still transcoding — wait for it to finish'
+                        : !hasVideo   ? 'No video uploaded yet'
+                        : item.isPublished ? 'Click to unpublish'
+                        : 'Click to publish'
+                      }
+                    >
+                      {isProcessing ? <RefreshCw size={11} className={styles.refreshIconSpinning} /> : <Eye size={11} />}
+                      {isProcessing ? 'Processing…' : item.isPublished ? 'Unpublish' : 'Publish'}
+                    </button>
+                    <button
+                      className={`${styles.proToggleBtn} ${item.isPremium ? styles.proToggleBtnOn : ''}`}
+                      onClick={() => handleTogglePremium(item)}
+                      disabled={togglingPremium === item._id}
+                      title={item.isPremium ? 'Click to make Free' : 'Click to make Premium'}
+                    >
+                      <Crown size={11} />
+                      {item.isPremium ? 'Free' : 'Premium'}
+                    </button>
+                    <button
+                      className={styles.editBtn}
+                      onClick={(e) => { e.currentTarget.blur(); openEditModal(item) }}
+                      disabled={editBusy && editingId === item._id}
+                    >
+                      <Pencil size={12} /> Edit
+                    </button>
+                    <button
+                      className={`${styles.deleteBtn} ${confirmDeleteId === item._id ? styles.deleteBtnConfirm : ''}`}
+                      onClick={() => handleDeleteContent(item)}
+                      onBlur={() => { if (confirmDeleteId === item._id) setConfirmDeleteId(null) }}
+                      title="Delete content"
+                    >
+                      <Trash2 size={12} />
+                      {confirmDeleteId === item._id ? 'Confirm?' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+
+            {/* Deleted content section */}
+            {showDeleted && (
+              <div className={styles.deletedSection}>
+                <p className={styles.deletedSectionTitle}>
+                  <Trash2 size={11} /> Deleted · {deletedItems.length}
+                </p>
+                {deletedItems.length === 0 && <p className={styles.empty}>No deleted content.</p>}
+                {deletedItems.map((item) => (
+                  <div key={item._id} className={`${styles.libraryRow} ${styles.libraryRowDeleted}`}>
+                    <div className={styles.libraryLeft}>
+                      <div className={styles.libraryTitleRow}>
+                        <p className={styles.libraryTitle}>{item.title}</p>
+                        <span className={`${styles.contentStatusBadge} ${styles.contentStatusDeleted}`}>Deleted</span>
+                      </div>
+                      <p className={styles.libraryMeta}>
+                        {item.type}{item.releaseYear ? ` · ${item.releaseYear}` : ''}
+                      </p>
+                    </div>
+                    <div className={styles.libraryActions}>
+                      <button
+                        className={styles.restoreBtn}
+                        onClick={() => handleRestoreContent(item)}
+                        disabled={restoringId === item._id}
+                      >
+                        <RotateCcw size={12} />
+                        {restoringId === item._id ? 'Restoring…' : 'Restore'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}

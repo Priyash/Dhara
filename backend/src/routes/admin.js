@@ -633,10 +633,12 @@ router.patch('/archive/candidates/:id/dismiss', async (req, res, next) => {
 
 router.get('/content', async (req, res, next) => {
   try {
-    const items = await Content.find({ isDeleted: { $ne: true } })
+    const showDeleted = req.query.showDeleted === 'true'
+    const filter = showDeleted ? { isDeleted: true } : { isDeleted: { $ne: true } }
+    const items = await Content.find(filter)
       .sort({ updatedAt: -1 })
       .limit(100)
-      .select('title type bunnyVideoId isPremium isFeatured isPublished releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount posterUrl')
+      .select('title type bunnyVideoId isPremium isFeatured isPublished isDeleted releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount posterUrl')
       .lean()
     res.json(items)
   } catch (err) {
@@ -792,7 +794,7 @@ router.post('/map-existing-video', async (req, res, next) => {
       return res.status(400).json({ error: 'contentId and bunnyVideoId are required' })
     }
 
-    const content = await Content.findById(contentId).select('title type').lean()
+    const content = await Content.findById(contentId).select('title type bunnyVideoId seasons').lean()
     if (!content) return res.status(404).json({ error: 'Content not found' })
 
     const vid = String(bunnyVideoId).trim()
@@ -801,6 +803,16 @@ router.post('/map-existing-video', async (req, res, next) => {
     if (isEpisodic && episodeNumber) {
       const sNum = Number(seasonNumber  || 1)
       const eNum = Number(episodeNumber)
+
+      // Delete the old episode video from Bunny before replacing it.
+      const oldEpVid = content.seasons
+        ?.find((s) => s.number === sNum)
+        ?.episodes?.find((e) => e.number === eNum)
+        ?.bunnyVideoId
+      if (oldEpVid && oldEpVid !== vid) {
+        bunnyRequest(`/library/${libraryId}/videos/${oldEpVid}`, { method: 'DELETE' })
+          .catch((err) => console.warn('[map-video] old episode Bunny delete failed (non-fatal):', err.message))
+      }
 
       const linked = await Content.findOneAndUpdate(
         { _id: contentId, 'seasons.number': sNum, 'seasons.episodes.number': eNum },
@@ -826,7 +838,13 @@ router.post('/map-existing-video', async (req, res, next) => {
       return res.json({ success: true, message: `Mapped video to S${sNum}E${eNum} of "${content.title}".` })
     }
 
-    // Film / Documentary — or series mapped to root (legacy / trailer use-case)
+    // Film / Documentary — or series mapped to root (legacy / trailer use-case).
+    // Delete the old Bunny video before replacing it so orphaned videos don't accumulate.
+    if (content.bunnyVideoId && content.bunnyVideoId !== vid) {
+      bunnyRequest(`/library/${libraryId}/videos/${content.bunnyVideoId}`, { method: 'DELETE' })
+        .catch((err) => console.warn('[map-video] old Bunny delete failed (non-fatal):', err.message))
+    }
+
     const updated = await Content.findByIdAndUpdate(
       contentId,
       { $set: { bunnyVideoId: vid } },
@@ -1902,6 +1920,13 @@ router.delete('/content/:id', async (req, res, next) => {
   try {
     const existing = await Content.findById(req.params.id).select('title bunnyVideoId seasons').lean()
     if (!existing) return res.status(404).json({ error: 'Content not found' })
+
+    // Cancel any in-flight upload jobs so they don't try to write bunnyVideoId
+    // back to a document that is about to be soft-deleted.
+    await UploadJob.updateMany(
+      { contentId: req.params.id, status: { $in: ['awaiting_file', 'queued', 'uploading', 'processing'] } },
+      { $set: { status: 'cancelled', note: 'Content was deleted.', error: '' } }
+    )
 
     const videoIds = [
       existing.bunnyVideoId,
