@@ -149,6 +149,80 @@ router.patch('/profile', requireAuth, requireCreator, async (req, res, next) => 
   }
 })
 
+// Masks a sensitive identifier down to its last 4 characters, e.g. "••••1234".
+function maskTail(value) {
+  if (!value) return ''
+  const tail = String(value).slice(-4)
+  return tail.length < String(value).length ? `••••${tail}` : value
+}
+
+/**
+ * GET /api/creator/payout-details
+ * Approved creators — returns their saved bank/UPI details with sensitive
+ * fields masked. `hasDetails` tells the UI whether to show "Edit" vs "Add".
+ */
+router.get('/payout-details', requireAuth, requireCreator, async (req, res) => {
+  const d = req.user.creatorPayoutDetails || {}
+  res.json({
+    hasDetails:        Boolean(d.method),
+    method:            d.method || null,
+    accountHolderName: d.accountHolderName || '',
+    accountNumber:     maskTail(d.accountNumber),
+    ifsc:              d.ifsc || '',
+    upiId:             d.upiId ? `${maskTail(d.upiId.split('@')[0])}@${d.upiId.split('@')[1] || ''}` : '',
+    updatedAt:         d.updatedAt || null,
+  })
+})
+
+/**
+ * PUT /api/creator/payout-details
+ * Approved creators — add or replace their bank/UPI payout details.
+ * Clears any previously-linked RazorpayX fund account so the auto-payout
+ * job re-creates one against the new details on the next run.
+ */
+router.put('/payout-details', requireAuth, requireCreator, async (req, res, next) => {
+  try {
+    const { method, accountHolderName, accountNumber, ifsc, upiId } = req.body
+
+    if (!['bank', 'upi'].includes(method)) {
+      return res.status(400).json({ error: 'method must be "bank" or "upi"' })
+    }
+
+    const updates = {
+      'creatorPayoutDetails.method':                method,
+      'creatorPayoutDetails.razorpayFundAccountId':  '',
+      'creatorPayoutDetails.updatedAt':              new Date(),
+    }
+
+    if (method === 'bank') {
+      if (!accountHolderName?.trim()) return res.status(400).json({ error: 'Account holder name is required' })
+      if (!/^[0-9]{6,20}$/.test(String(accountNumber || '').trim())) {
+        return res.status(400).json({ error: 'Account number must be 6–20 digits' })
+      }
+      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(String(ifsc || '').trim().toUpperCase())) {
+        return res.status(400).json({ error: 'Enter a valid IFSC code' })
+      }
+      updates['creatorPayoutDetails.accountHolderName'] = String(accountHolderName).trim().slice(0, 120)
+      updates['creatorPayoutDetails.accountNumber']     = String(accountNumber).trim()
+      updates['creatorPayoutDetails.ifsc']              = String(ifsc).trim().toUpperCase()
+      updates['creatorPayoutDetails.upiId']              = ''
+    } else {
+      if (!/^[\w.+-]{2,256}@[a-zA-Z]{2,64}$/.test(String(upiId || '').trim())) {
+        return res.status(400).json({ error: 'Enter a valid UPI ID (e.g. name@bank)' })
+      }
+      updates['creatorPayoutDetails.upiId']              = String(upiId).trim()
+      updates['creatorPayoutDetails.accountHolderName']  = ''
+      updates['creatorPayoutDetails.accountNumber']      = ''
+      updates['creatorPayoutDetails.ifsc']               = ''
+    }
+
+    await User.findByIdAndUpdate(req.user._id, { $set: updates })
+    res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
 /**
  * GET /api/creator/me
  * Approved creators — dashboard stats + profile.

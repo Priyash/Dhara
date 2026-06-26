@@ -15,6 +15,7 @@ import { connectMongoDB, dbStatus } from './src/config/mongodb.js'
 import { syncAdminClaims } from './src/config/adminSync.js'
 import { startSubscriptionExpiryJob } from './src/config/subscriptionExpiry.js'
 import { startEarningsJob } from './src/config/earningsJob.js'
+import { startPayoutJob } from './src/config/payoutJob.js'
 import { startArchiveDiscoveryJob, startArchiveReelDiscoveryJob } from './src/config/archiveDiscovery.js'
 import { startArchiveImportWorker } from './src/config/archiveImportWorker.js'
 import { startCdnReconcileJob } from './src/config/cdnReconcile.js'
@@ -183,6 +184,7 @@ mongoose.connection.on('connected', async () => {
   }
   startSubscriptionExpiryJob()
   startEarningsJob()
+  startPayoutJob()
   startArchiveDiscoveryJob()
   startArchiveReelDiscoveryJob()
   startArchiveImportWorker()

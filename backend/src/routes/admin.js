@@ -23,10 +23,12 @@ import { User } from '../models/User.js'
 import { CreatorEarning } from '../models/CreatorEarning.js'
 import { CreatorPayout } from '../models/CreatorPayout.js'
 import { ViewRateConfig } from '../models/ViewRateConfig.js'
+import { CurrencyConfig } from '../models/CurrencyConfig.js'
 import { ViewEvent } from '../models/ViewEvent.js'
 import { SearchLog } from '../models/SearchLog.js'
 import { Reel, REEL_MAX_DURATION_SECS } from '../models/Reel.js'
-import { SUPPORTED_PROVIDERS, getProviderStatus } from '../providers/index.js'
+import { SUPPORTED_PROVIDERS, getProviderStatus, getPayoutProviderStatus } from '../providers/index.js'
+import { runPayoutBatch } from '../config/payoutJob.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { calculateMonthlyEarnings } from '../config/earningsJob.js'
 
@@ -1433,6 +1435,64 @@ router.put('/view-rates', requireAuth, requireAdmin, async (req, res, next) => {
 })
 
 /**
+ * GET /api/admin/currency-rates
+ * Returns the admin-configured INR → foreign-currency display rates
+ * (used to show an approximate local-currency hint to subscribers; billing
+ * itself always stays in INR).
+ */
+router.get('/currency-rates', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await CurrencyConfig.getConfig()
+    res.json({ rates: config.rates })
+  } catch (err) {
+    next(err)
+  }
+})
+
+const MAX_FX_RATE = 1000
+const MAX_CURRENCY_ROWS = 50
+
+/**
+ * PUT /api/admin/currency-rates
+ * Full-replaces the currency-rate config.
+ * Body: { rates: [{ currencyCode, symbol?, rateFromInr }] }
+ */
+router.put('/currency-rates', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const rawRates = Array.isArray(req.body.rates) ? req.body.rates : []
+    if (rawRates.length > MAX_CURRENCY_ROWS) {
+      return res.status(400).json({ error: `Too many currency rows (max ${MAX_CURRENCY_ROWS})` })
+    }
+
+    const seen = new Set()
+    const rates = []
+    for (const entry of rawRates) {
+      const currencyCode = String(entry?.currencyCode ?? '').trim().toUpperCase()
+      const rateFromInr   = Number(entry?.rateFromInr)
+      if (!/^[A-Z]{3}$/.test(currencyCode)) {
+        return res.status(400).json({ error: `Invalid currency code: "${entry?.currencyCode}"` })
+      }
+      if (!Number.isFinite(rateFromInr) || rateFromInr <= 0 || rateFromInr > MAX_FX_RATE) {
+        return res.status(400).json({ error: `Invalid rate for ${currencyCode}: must be a positive number up to ${MAX_FX_RATE}` })
+      }
+      if (seen.has(currencyCode)) {
+        return res.status(400).json({ error: `Duplicate currency code: ${currencyCode}` })
+      }
+      seen.add(currencyCode)
+      rates.push({ currencyCode, symbol: String(entry?.symbol ?? '').trim().slice(0, 10), rateFromInr })
+    }
+
+    const config = await CurrencyConfig.getConfig()
+    config.rates = rates
+    await config.save()
+
+    res.json({ rates: config.rates })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
  * POST /api/admin/revenue/calculate
  * Calculates creator earnings for a given month/year.
  * Body: { month, year }
@@ -1499,6 +1559,7 @@ router.get('/creator-earnings', requireAuth, requireAdmin, async (req, res, next
         totalViews:    1,
         recordCount:   1,
         latestMonth:   1,
+        autoPayoutEligible: { $cond: [{ $ifNull: ['$creator.creatorPayoutDetails.method', false] }, true, false] },
       }},
       { $sort: { pendingPaise: -1 } },
     ])
@@ -1513,6 +1574,7 @@ router.get('/creator-earnings', requireAuth, requireAdmin, async (req, res, next
       totalViews:  r.totalViews,
       recordCount: r.recordCount,
       tier:        tierFor(r.totalViews).name,
+      autoPayoutEligible: r.autoPayoutEligible,
     })))
   } catch (err) {
     next(err)
@@ -1536,17 +1598,36 @@ router.post('/creator-payouts', requireAuth, requireAdmin, async (req, res, next
 
     const totalPaise = pendingEarnings.reduce((s, e) => s + e.netAmountPaise, 0)
 
-    const payout = await CreatorPayout.create({
+    // Reuse an in-flight request (creator-filed or auto-job-filed) instead of
+    // creating a second, disconnected payout record for the same earnings.
+    const inFlight = await CreatorPayout.findOne({
       creatorId,
-      amountPaise:  totalPaise,
-      earningIds:   pendingEarnings.map((e) => e._id),
-      method,
-      referenceId,
-      notes,
-      status:       'paid',
-      paidAt:       new Date(),
-      initiatedBy:  req.user._id,
+      status: { $in: ['requested', 'processing'] },
     })
+
+    const payout = inFlight
+      ? Object.assign(inFlight, {
+          amountPaise: totalPaise,
+          earningIds:  pendingEarnings.map((e) => e._id),
+          method,
+          referenceId,
+          notes:       notes || inFlight.notes,
+          status:      'paid',
+          paidAt:      new Date(),
+          initiatedBy: req.user._id,
+        })
+      : new CreatorPayout({
+          creatorId,
+          amountPaise:  totalPaise,
+          earningIds:   pendingEarnings.map((e) => e._id),
+          method,
+          referenceId,
+          notes,
+          status:       'paid',
+          paidAt:       new Date(),
+          initiatedBy:  req.user._id,
+        })
+    await payout.save()
 
     // Mark all earnings as paid
     await CreatorEarning.updateMany(
@@ -1596,6 +1677,36 @@ router.get('/creator-payouts', requireAuth, requireAdmin, async (req, res, next)
       earningsCount: p.earningIds?.length ?? 0,
       createdAt:    p.createdAt,
     })))
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/admin/creator-payouts/auto-status
+ * Whether the RazorpayX auto-payout rail is configured, for the Revenue UI.
+ */
+router.get('/creator-payouts/auto-status', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    res.json(getPayoutProviderStatus())
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/admin/creator-payouts/auto-run
+ * Manually triggers one RazorpayX auto-payout batch immediately, instead of
+ * waiting for the monthly scheduled run. No-ops (configured: false) if
+ * RAZORPAY_X_ACCOUNT_NUMBER isn't set.
+ */
+router.post('/creator-payouts/auto-run', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const result = await runPayoutBatch()
+    if (result.configured) {
+      logAdminAction(req, 'run_auto_payouts', 'config', null, '', result)
+    }
+    res.json(result)
   } catch (err) {
     next(err)
   }

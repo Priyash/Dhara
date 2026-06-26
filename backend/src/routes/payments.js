@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import { User } from '../models/User.js'
 import { Transaction } from '../models/Transaction.js'
+import { CreatorPayout } from '../models/CreatorPayout.js'
+import { CreatorEarning } from '../models/CreatorEarning.js'
 import { requireAuth } from '../middleware/auth.js'
 import { getActiveProvider } from '../providers/index.js'
 import {
@@ -531,6 +533,40 @@ router.post('/webhook', async (req, res, next) => {
             razorpaySubscriptionId: null,
           },
         })
+        break
+      }
+
+      // RazorpayX payout events — referenced via reference_id, which the
+      // payout job (config/payoutJob.js) sets to our CreatorPayout._id.
+      case 'payout.processed': {
+        const entity = event.payload?.payout?.entity
+        const payout = entity?.reference_id && await CreatorPayout.findById(entity.reference_id)
+        if (!payout || payout.status === 'paid') break
+        payout.status      = 'paid'
+        payout.paidAt       = payout.paidAt || new Date()
+        payout.referenceId = entity.utr || entity.id
+        await payout.save()
+        break
+      }
+
+      case 'payout.failed':
+      case 'payout.reversed': {
+        // 'failed' happens before settlement (skip if somehow already paid);
+        // 'reversed' happens AFTER settlement, so it's expected to flip a
+        // 'paid' record back — don't guard it away.
+        const entity = event.payload?.payout?.entity
+        const payout = entity?.reference_id && await CreatorPayout.findById(entity.reference_id)
+        if (!payout) break
+        if (event.event === 'payout.failed' && payout.status === 'paid') break
+        payout.status = 'failed'
+        payout.notes   = `${payout.notes ? payout.notes + ' | ' : ''}RazorpayX ${event.event}: ${entity.failure_reason || entity.status || 'unknown reason'}`
+        await payout.save()
+        if (payout.earningIds?.length) {
+          await CreatorEarning.updateMany(
+            { _id: { $in: payout.earningIds }, status: 'paid', payoutId: payout._id },
+            { $set: { status: 'pending' }, $unset: { payoutId: '' } }
+          )
+        }
         break
       }
 

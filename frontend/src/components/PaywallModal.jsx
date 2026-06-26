@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { X, Crown, Check, Loader, Clock, AlertCircle } from 'lucide-react'
 import { useStore } from '../store/useStore'
+import { useLocale } from '../hooks/useLocale'
 import { PLANS } from '../data/content'
 import { createOrder, verifyPayment, createSubscription, verifySubscription } from '../services/api'
 import styles from './PaywallModal.module.css'
@@ -31,6 +32,7 @@ const RECURRING_PLANS = new Set(['monthly'])
 
 export default function PaywallModal() {
   const { setShowPaywall, refreshProfile, subscriptionStatus, subscriptionPlan, subscriptionExpiresAt, trialEndsAt, graceEndsAt, user } = useStore()
+  const { currency: fxCurrency } = useLocale()
 
   const currentPlan   = subscriptionPlan ?? user?.subscriptionPlan ?? null
   const isSubscribed  = subscriptionStatus === 'active'
@@ -287,7 +289,14 @@ export default function PaywallModal() {
                       ? <span className={styles.planCurrent}>Current</span>
                       : plan.badge && <span className={styles.planBadge}>{plan.badge}</span>
                     }
-                    <span className={styles.planPrice}>{plan.price}</span>
+                    <div className={styles.planPriceCol}>
+                      <span className={styles.planPrice}>{plan.price}</span>
+                      {fxCurrency && (
+                        <span className={styles.planFx}>
+                          ~ {fxCurrency.symbol}{(plan.amountInr * fxCurrency.rateFromInr).toFixed(2)} {fxCurrency.currencyCode}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </button>
               ))}
