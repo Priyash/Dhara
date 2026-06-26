@@ -337,6 +337,14 @@ real footage. The Phase 1 scene-detection investment is what makes this cheap.
 >   by ownership-scoped `/api/creator/.../thumbnail-variants` routes. The modal
 >   is now backend-agnostic (takes an `api` prop), and the read-time stats
 >   aggregation is shared by both surfaces via `utils/variantStats.js`.
+> - ✅ **Increment 5 (frame extraction — gated/dormant)** — `services/frameExtraction.js`
+>   grabs evenly-spaced frames from a title's Bunny MP4 (input-seek, no full
+>   download), uploads them to Cloudinary, and writes them as `candidate`
+>   variants. Admin "Generate from video" button → `POST /api/admin/thumbnail-variants/extract`.
+>   **Hard-gated and off by default** (see §7 config) — returns
+>   `{ configured: false }` and spawns nothing unless explicitly enabled with
+>   ffmpeg present. NOT wired into the upload pipeline. v1 is deliberately dumb:
+>   even spacing, no scene detection, no ML scoring (the human is the scorer).
 
 
 1. **Attribution slice (lowest risk, highest leverage).** `ThumbnailVariant`
@@ -360,6 +368,15 @@ volume, not on a calendar.
 
 ## 7. Open questions / risks
 
+- **Enabling frame extraction (increment 5).** It is dormant until **both**:
+  - `ARTWORK_EXTRACTION_ENABLED=true` is set, and
+  - an `ffmpeg` binary is present on the host (probed once, lazily, and only if
+    the flag is on — with the flag off, ffmpeg is never invoked).
+
+  Optional: `BUNNY_STREAM_MP4_RESOLUTION` (default `720p`) selects which Bunny
+  MP4-fallback rendition to seek frames from. None of these are secrets, so they
+  are not added to the secret `.env` templates — set them on the host when you
+  want to switch the feature on.
 - **Bunny MP4 fallback** must be enabled on the library, and egress cost of
   re-pulling encoded video per title should be sized.
 - **ffmpeg in the runtime** — confirm the host image (Render) ships ffmpeg or

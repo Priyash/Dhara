@@ -30,7 +30,7 @@ import {
   listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
   searchArchive, importFromArchive, getArchiveImportBatch, listArchiveCandidates, listArchiveTasks, dismissArchiveCandidate,
   cancelUploadJob, retryUploadJob, setContentSubtitle,
-  listAdminThumbnailVariants, createAdminThumbnailVariant, updateAdminThumbnailVariant, deleteAdminThumbnailVariant,
+  listAdminThumbnailVariants, createAdminThumbnailVariant, updateAdminThumbnailVariant, deleteAdminThumbnailVariant, extractAdminThumbnailFrames,
 } from '../services/api'
 import ThumbnailVariantModal from '../components/ThumbnailVariantModal'
 import styles from './Admin.module.css'
@@ -5465,10 +5465,11 @@ export default function Admin() {
         <ThumbnailVariantModal
           item={artworkItem}
           api={{
-            list:   () => listAdminThumbnailVariants('content', artworkItem._id),
-            create: (p) => createAdminThumbnailVariant({ itemType: 'content', itemId: artworkItem._id, ...p }),
-            update: updateAdminThumbnailVariant,
-            remove: deleteAdminThumbnailVariant,
+            list:    () => listAdminThumbnailVariants('content', artworkItem._id),
+            create:  (p) => createAdminThumbnailVariant({ itemType: 'content', itemId: artworkItem._id, ...p }),
+            update:  updateAdminThumbnailVariant,
+            remove:  deleteAdminThumbnailVariant,
+            extract: () => extractAdminThumbnailFrames(artworkItem._id),
           }}
           onClose={() => setArtworkItem(null)}
         />

@@ -508,6 +508,13 @@ export async function deleteAdminThumbnailVariant(id) {
   return request(`/api/admin/thumbnail-variants/${id}`, { method: 'DELETE' })
 }
 
+export async function extractAdminThumbnailFrames(contentId, count) {
+  return request('/api/admin/thumbnail-variants/extract', {
+    method: 'POST',
+    body: JSON.stringify({ contentId, ...(count ? { count } : {}) }),
+  })
+}
+
 // ── Creator: thumbnail variants for own content (artwork A/B) ────────────────
 export async function listCreatorThumbnailVariants(contentId) {
   return request(`/api/creator/content/${contentId}/thumbnail-variants`)

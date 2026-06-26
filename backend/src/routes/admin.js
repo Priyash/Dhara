@@ -37,6 +37,7 @@ import { calculateMonthlyEarnings } from '../config/earningsJob.js'
 import mongoose from 'mongoose'
 import { ThumbnailVariant } from '../models/ThumbnailVariant.js'
 import { withVariantStats } from '../utils/variantStats.js'
+import { isExtractionConfigured, buildBunnyMp4Url, generateFrameVariants } from '../services/frameExtraction.js'
 
 // Hard cap for unpaginated admin list endpoints — prevents an unbounded
 // collection scan/response as data grows, without changing the response
@@ -2429,6 +2430,62 @@ router.post('/thumbnail-variants', async (req, res, next) => {
 
     logAdminAction(req, 'create_thumbnail_variant', 'content', mongoose.Types.ObjectId.isValid(itemId) ? itemId : null, variant.label || variant.imageUrl)
     res.status(201).json(variant)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/admin/thumbnail-variants/extract   Body: { contentId, count? }
+ * Auto-generates candidate variants by grabbing evenly-spaced frames from the
+ * title's source video (frame-first; see docs/thumbnail-trailer-pipeline.md).
+ *
+ * DORMANT unless ARTWORK_EXTRACTION_ENABLED=true and ffmpeg is installed — in
+ * which case it returns { configured: false } and does nothing. Never touches
+ * the upload pipeline.
+ */
+router.post('/thumbnail-variants/extract', async (req, res, next) => {
+  try {
+    if (!isExtractionConfigured()) {
+      return res.json({ configured: false, created: [] })
+    }
+
+    const { contentId, count } = req.body || {}
+    if (!mongoose.Types.ObjectId.isValid(contentId)) {
+      return res.status(400).json({ error: 'A valid contentId is required' })
+    }
+
+    const content = await Content.findById(contentId).select('bunnyVideoId').lean()
+    if (!content?.bunnyVideoId) {
+      return res.status(400).json({ error: 'This title has no source video to extract frames from.' })
+    }
+
+    const videoUrl = buildBunnyMp4Url(content.bunnyVideoId)
+    if (!videoUrl) {
+      return res.status(400).json({ error: 'Bunny CDN pull zone is not configured (BUNNY_CDN_PULL_ZONE).' })
+    }
+
+    // Bunny reports the encoded length (seconds); we need it to space samples.
+    let durationSecs = 0
+    try {
+      const meta = await bunnyRequest(`/library/${process.env.BUNNY_STREAM_LIBRARY_ID}/videos/${content.bunnyVideoId}`)
+      durationSecs = Number(meta?.length || 0)
+    } catch { /* fall through to the guard below */ }
+    if (!durationSecs) {
+      return res.status(400).json({ error: 'Could not determine the video length from Bunny Stream.' })
+    }
+
+    const created = await generateFrameVariants({
+      itemType:    'content',
+      itemId:      contentId,
+      videoUrl,
+      durationSecs,
+      count:       Number(count) || 8,
+      createdBy:   req.user._id,
+    })
+
+    logAdminAction(req, 'extract_thumbnail_frames', 'content', contentId, `${created.length} frame(s)`)
+    res.json({ configured: true, created })
   } catch (err) {
     next(err)
   }

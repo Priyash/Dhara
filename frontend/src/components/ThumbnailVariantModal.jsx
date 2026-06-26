@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { X, Plus, Check, Ban, Trash2, ImageIcon } from 'lucide-react'
+import { X, Plus, Check, Ban, Trash2, ImageIcon, Sparkles } from 'lucide-react'
 
 /**
  * Grid for managing a title's artwork A/B variants (the thumbnail pipeline's
@@ -30,6 +30,8 @@ export default function ThumbnailVariantModal({ item, api, onClose }) {
   const [newLabel, setNewLabel] = useState('')
   const [busyId,   setBusyId]   = useState(null)
   const [adding,   setAdding]   = useState(false)
+  const [extracting, setExtracting] = useState(false)
+  const [notice,     setNotice]     = useState('')
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -63,6 +65,24 @@ export default function ThumbnailVariantModal({ item, api, onClose }) {
       setError(err?.message || 'Failed to add variant.')
     } finally {
       setAdding(false)
+    }
+  }
+
+  const handleExtract = async () => {
+    setExtracting(true); setError(''); setNotice('')
+    try {
+      const res = await api.extract()
+      if (res?.configured === false) {
+        setNotice('Auto-extraction isn’t enabled on the server yet — add variants by URL for now.')
+      } else {
+        const n = res?.created?.length || 0
+        setNotice(n ? `Generated ${n} candidate frame${n > 1 ? 's' : ''} from the video.` : 'No frames could be grabbed from the video.')
+        await load()
+      }
+    } catch (err) {
+      setError(err?.message || 'Frame extraction failed.')
+    } finally {
+      setExtracting(false)
     }
   }
 
@@ -148,9 +168,20 @@ export default function ThumbnailVariantModal({ item, api, onClose }) {
           >
             <Plus size={13} /> {adding ? 'Adding…' : 'Add'}
           </button>
+          {typeof api.extract === 'function' && (
+            <button
+              onClick={handleExtract}
+              disabled={extracting}
+              title="Grab candidate frames from the source video"
+              style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+            >
+              <Sparkles size={13} /> {extracting ? 'Generating…' : 'Generate from video'}
+            </button>
+          )}
         </div>
 
         {error && <p style={{ color: '#f87171', fontSize: 12, marginBottom: 10 }}>{error}</p>}
+        {notice && <p style={{ color: '#4ade80', fontSize: 12, marginBottom: 10 }}>{notice}</p>}
         {loading && <p style={{ color: 'var(--color-text-muted)', fontSize: 13 }}>Loading…</p>}
         {!loading && variants.length === 0 && (
           <p style={{ color: 'var(--color-text-muted)', fontSize: 13 }}>No variants yet. Add one above to start an A/B test.</p>
