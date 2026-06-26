@@ -22,6 +22,7 @@ import { Transaction } from '../models/Transaction.js'
 import { User } from '../models/User.js'
 import { CreatorEarning } from '../models/CreatorEarning.js'
 import { CreatorPayout } from '../models/CreatorPayout.js'
+import { ViewRateConfig } from '../models/ViewRateConfig.js'
 import { ViewEvent } from '../models/ViewEvent.js'
 import { SearchLog } from '../models/SearchLog.js'
 import { Reel, REEL_MAX_DURATION_SECS } from '../models/Reel.js'
@@ -1367,37 +1368,96 @@ function tierFor(totalViews) {
 }
 
 /**
+ * GET /api/admin/view-rates
+ * Returns the current country-tiered view-rate config used by earnings calculation.
+ */
+router.get('/view-rates', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await ViewRateConfig.getConfig()
+    res.json({
+      defaultRatePaise: config.defaultRatePaise,
+      countryRates: config.countryRates,
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PUT /api/admin/view-rates
+ * Full-replaces the view-rate config.
+ * Body: { defaultRatePaise, countryRates: [{ countryCode, countryName?, ratePaise }] }
+ */
+const MAX_RATE_PAISE = 100_000   // ₹1,000/view — sanity ceiling against fat-finger entry
+const MAX_COUNTRY_ROWS = 300     // more than the ~250 ISO country codes that exist
+
+router.put('/view-rates', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const defaultRatePaise = Number(req.body.defaultRatePaise)
+    if (!Number.isInteger(defaultRatePaise) || defaultRatePaise < 0 || defaultRatePaise > MAX_RATE_PAISE) {
+      return res.status(400).json({ error: `defaultRatePaise must be a whole number of paise between 0 and ${MAX_RATE_PAISE}` })
+    }
+
+    const rawRates = Array.isArray(req.body.countryRates) ? req.body.countryRates : []
+    if (rawRates.length > MAX_COUNTRY_ROWS) {
+      return res.status(400).json({ error: `Too many country rows (max ${MAX_COUNTRY_ROWS})` })
+    }
+
+    const seen = new Set()
+    const countryRates = []
+    for (const entry of rawRates) {
+      const countryCode = String(entry?.countryCode ?? '').trim().toUpperCase()
+      const ratePaise    = Number(entry?.ratePaise)
+      if (!/^[A-Z]{2}$/.test(countryCode)) {
+        return res.status(400).json({ error: `Invalid country code: "${entry?.countryCode}"` })
+      }
+      if (!Number.isInteger(ratePaise) || ratePaise < 0 || ratePaise > MAX_RATE_PAISE) {
+        return res.status(400).json({ error: `Invalid rate for ${countryCode}: must be a whole number of paise between 0 and ${MAX_RATE_PAISE}` })
+      }
+      if (seen.has(countryCode)) {
+        return res.status(400).json({ error: `Duplicate country code: ${countryCode}` })
+      }
+      seen.add(countryCode)
+      countryRates.push({ countryCode, countryName: String(entry?.countryName ?? '').trim().slice(0, 60), ratePaise })
+    }
+
+    const config = await ViewRateConfig.getConfig()
+    config.defaultRatePaise = defaultRatePaise
+    config.countryRates = countryRates
+    await config.save()
+
+    res.json({ defaultRatePaise: config.defaultRatePaise, countryRates: config.countryRates })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
  * POST /api/admin/revenue/calculate
  * Calculates creator earnings for a given month/year.
- * Body: { month, year, ratePerViewPaise? }
- * ratePerViewPaise defaults to 50 (₹0.50 per view).
+ * Body: { month, year }
  *
- * For each approved creator content piece:
- *   monthlyViews = viewCount - viewCountSnapshot
- *   grossPaise   = monthlyViews × ratePerViewPaise
- *   netPaise     = grossPaise × (creatorShare / 100)
- * Creates a CreatorEarning record and advances the snapshot.
- * Skips content with no new views or already calculated for that period.
+ * For each approved creator content piece, views are broken down by country
+ * (from ViewEvent) and rated per-country via the admin-configured ViewRateConfig:
+ *   grossPaise = Σ countryViews × ratePaise(country)
+ *   netPaise   = grossPaise × (creatorShare / 100)
+ * Creates a CreatorEarning record per content piece.
+ * Skips content with no views this period or already calculated for it.
  */
 router.post('/revenue/calculate', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const now   = new Date()
     const month = Number(req.body.month ?? now.getMonth() + 1)
     const year  = Number(req.body.year  ?? now.getFullYear())
-    const rate  = Number(req.body.ratePerViewPaise ?? 50)
 
     if (month < 1 || month > 12) return res.status(400).json({ error: 'month must be 1–12' })
-    if (!Number.isFinite(rate) || rate <= 0) {
-      return res.status(400).json({ error: 'ratePerViewPaise must be a positive number' })
-    }
 
     // Shared with the scheduled job (earningsJob.js) — batches the idempotency
     // check into one query and safely ignores concurrent-run duplicate-key errors.
-    const { created, skipped } = await calculateMonthlyEarnings(month, year, rate)
+    const { created, skipped } = await calculateMonthlyEarnings(month, year)
 
     res.json({
       month, year,
-      ratePerViewPaise: rate,
       earningsCreated: created,
       skipped,
     })

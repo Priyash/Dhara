@@ -7,7 +7,7 @@ import {
   GripVertical, Layers, Plus, UploadIcon, IndianRupee,
   Calculator, Wallet, Clock, ChevronDown, ChevronLeft, ChevronRight, TrendingUp, Users, BarChart2,
   Activity, Server, AlertCircle, Database, Heart, MessageCircle, Play,
-  Archive, Search, Info, RotateCcw, SlidersHorizontal,
+  Archive, Search, Info, RotateCcw, SlidersHorizontal, Globe,
 } from 'lucide-react'
 import { uploadToCloudinary, cloudinaryTransform } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
@@ -22,6 +22,7 @@ import {
   listAdminSubmissions, approveSubmission, rejectSubmission,
   listAdminShelves, createAdminShelf, updateAdminShelf, deleteAdminShelf, reorderAdminShelves,
   listAdminCreatorEarnings, calculateCreatorEarnings, processCreatorPayout, listAdminCreatorPayouts,
+  getAdminViewRates, updateAdminViewRates,
   getAdminRevenue, getAdminMonitor,
   listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
   searchArchive, importFromArchive, getArchiveImportBatch, listArchiveCandidates, listArchiveTasks, dismissArchiveCandidate,
@@ -740,7 +741,7 @@ export default function Admin() {
   const [creatorPayouts,     setCreatorPayouts]     = useState([])
   const [revenueLoading,     setRevenueLoading]     = useState(false)
   const [showCalcModal,      setShowCalcModal]      = useState(false)
-  const [calcForm,           setCalcForm]           = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), ratePerViewPaise: 50 })
+  const [calcForm,           setCalcForm]           = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear() })
   const [calcBusy,           setCalcBusy]           = useState(false)
   const [calcResult,         setCalcResult]         = useState(null)
   const [showPayoutModal,    setShowPayoutModal]     = useState(null)  // { creatorId, studioName, pending }
@@ -749,6 +750,11 @@ export default function Admin() {
   const [revenueNotice,      setRevenueNotice]      = useState('')
   const [revenueError,       setRevenueError]       = useState('')
   const [platformRevenue,    setPlatformRevenue]    = useState(null)
+  const [showRatesModal,     setShowRatesModal]     = useState(false)
+  const [ratesForm,          setRatesForm]          = useState({ defaultRatePaise: 50, countryRates: [] })
+  const [ratesBusy,          setRatesBusy]          = useState(false)
+  const [ratesError,         setRatesError]         = useState('')
+  const [ratesSaved,         setRatesSaved]         = useState(false)
 
   // ── Monitor ───────────────────────────────────────────────────────────────
   const [monitorData,        setMonitorData]        = useState(null)
@@ -1810,6 +1816,31 @@ export default function Admin() {
       setRevenueError(err?.message || 'Calculation failed.')
     } finally {
       setCalcBusy(false) }
+  }
+
+  const loadViewRates = async () => {
+    setRatesBusy(true); setRatesError('')
+    try {
+      const res = await getAdminViewRates()
+      setRatesForm({ defaultRatePaise: res.defaultRatePaise, countryRates: res.countryRates || [] })
+    } catch (err) {
+      setRatesError(err?.message || 'Could not load view rates.')
+    } finally {
+      setRatesBusy(false)
+    }
+  }
+
+  const handleSaveViewRates = async () => {
+    setRatesBusy(true); setRatesError(''); setRatesSaved(false)
+    try {
+      const res = await updateAdminViewRates(ratesForm)
+      setRatesForm({ defaultRatePaise: res.defaultRatePaise, countryRates: res.countryRates || [] })
+      setRatesSaved(true)
+    } catch (err) {
+      setRatesError(err?.message || 'Could not save view rates.')
+    } finally {
+      setRatesBusy(false)
+    }
   }
 
   const handleProcessPayout = async () => {
@@ -4658,10 +4689,9 @@ export default function Admin() {
                       <input className={styles.input} type="number" min="2024" max="2099" value={calcForm.year} onChange={(e) => setCalcForm((p) => ({ ...p, year: Number(e.target.value) }))} />
                     </label>
                   </div>
-                  <label className={styles.label}>
-                    Rate per view (paise) <span style={{ fontSize: 10, color: '#888', fontWeight: 400 }}>50 paise = ₹0.50 per view</span>
-                    <input className={styles.input} type="number" min="1" value={calcForm.ratePerViewPaise} onChange={(e) => setCalcForm((p) => ({ ...p, ratePerViewPaise: Number(e.target.value) }))} />
-                  </label>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
+                    Rates are applied per country of viewer — set them under <strong>Manage View Rates</strong>.
+                  </p>
                   {calcResult && (
                     <div style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 8, padding: '12px 16px', fontSize: 13, color: '#4ade80' }}>
                       ✓ Created <strong>{calcResult.earningsCreated}</strong> earning records · skipped {calcResult.skipped}
@@ -4714,6 +4744,84 @@ export default function Admin() {
                     <button className={styles.ghostBtn} onClick={() => setShowPayoutModal(null)}>Cancel</button>
                     <button className={styles.primaryBtn} onClick={handleProcessPayout} disabled={payoutBusy || !payoutForm.referenceId.trim()}>
                       {payoutBusy ? 'Processing…' : 'Confirm Payout'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* View Rates modal */}
+          {showRatesModal && (
+            <div className={styles.modalBackdrop} onClick={(e) => e.target === e.currentTarget && setShowRatesModal(false)}>
+              <div className={styles.modalPanel} style={{ maxWidth: 520 }} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+                <div className={styles.modalHeader}>
+                  <h2 className={styles.modalTitle}><Globe size={15} /> Manage View Rates</h2>
+                  <button className={styles.modalClose} onClick={() => setShowRatesModal(false)}><X size={16} /></button>
+                </div>
+                <div style={{ padding: '20px 24px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
+                    Pay creators a different amount per view depending on the viewer's country. All rates are in INR paise — no currency conversion needed.
+                  </p>
+
+                  <label className={styles.label}>
+                    Default rate (paise) <span style={{ fontSize: 10, color: '#888', fontWeight: 400 }}>used for any country with no row below</span>
+                    <input className={styles.input} type="number" min="0" value={ratesForm.defaultRatePaise}
+                      onChange={(e) => setRatesForm((p) => ({ ...p, defaultRatePaise: Number(e.target.value) }))} />
+                  </label>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)' }}>Country-specific rates</span>
+                      <button className={styles.ghostBtn} style={{ padding: '4px 10px', fontSize: 12 }}
+                        onClick={() => setRatesForm((p) => ({ ...p, countryRates: [...p.countryRates, { countryCode: '', countryName: '', ratePaise: 50 }] }))}>
+                        <Plus size={12} /> Add country
+                      </button>
+                    </div>
+
+                    {ratesForm.countryRates.length === 0 ? (
+                      <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>No country-specific rates yet — every view uses the default rate above.</p>
+                    ) : (
+                      ratesForm.countryRates.map((row, idx) => (
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 110px 32px', gap: 8, alignItems: 'center' }}>
+                          <input className={styles.input} value={row.countryCode} maxLength={2} placeholder="US"
+                            onChange={(e) => setRatesForm((p) => ({
+                              ...p,
+                              countryRates: p.countryRates.map((r, i) => i === idx ? { ...r, countryCode: e.target.value.toUpperCase() } : r),
+                            }))} />
+                          <input className={styles.input} value={row.countryName} placeholder="Country name"
+                            onChange={(e) => setRatesForm((p) => ({
+                              ...p,
+                              countryRates: p.countryRates.map((r, i) => i === idx ? { ...r, countryName: e.target.value } : r),
+                            }))} />
+                          <input className={styles.input} type="number" min="0" value={row.ratePaise} placeholder="paise"
+                            onChange={(e) => setRatesForm((p) => ({
+                              ...p,
+                              countryRates: p.countryRates.map((r, i) => i === idx ? { ...r, ratePaise: Number(e.target.value) } : r),
+                            }))} />
+                          <button type="button" className={styles.epDeleteBtn} aria-label="Remove country rate"
+                            onClick={() => setRatesForm((p) => ({
+                              ...p,
+                              countryRates: p.countryRates.filter((_, i) => i !== idx),
+                            }))}>
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {ratesSaved && (
+                    <div style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#4ade80' }}>
+                      ✓ View rates saved
+                    </div>
+                  )}
+                  {ratesError && <p style={{ fontSize: 13, color: '#f87171' }}>{ratesError}</p>}
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                    <button className={styles.ghostBtn} onClick={() => setShowRatesModal(false)}>Close</button>
+                    <button className={styles.primaryBtn} onClick={handleSaveViewRates} disabled={ratesBusy}>
+                      {ratesBusy ? 'Saving…' : 'Save Rates'}
                     </button>
                   </div>
                 </div>
@@ -4795,6 +4903,10 @@ export default function Admin() {
               <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
                 <button className={styles.refreshBtn} onClick={loadCreatorRevenue} disabled={revenueLoading}>
                   <RefreshCw size={13} /> Refresh
+                </button>
+                <button className={styles.ghostBtn} style={{ padding:'7px 14px', fontSize:12 }}
+                  onClick={() => { setRatesError(''); setRatesSaved(false); setShowRatesModal(true); loadViewRates() }}>
+                  <Globe size={13} /> Manage View Rates
                 </button>
                 <button className={styles.primaryBtn} style={{ padding:'7px 14px', fontSize:12 }}
                   onClick={() => { setCalcResult(null); setRevenueError(''); setShowCalcModal(true) }}>

@@ -46,9 +46,6 @@ const contentSchema = new mongoose.Schema(
     contentWarnings:   { type: String, default: '' },   // e.g. "violence, language"
     moodTags:          { type: [String], default: [] },  // e.g. ["Quirky", "Romantic"]
     viewCount:         { type: Number, default: 0, min: 0 },
-    // Snapshot of viewCount at the time of the last earnings calculation.
-    // Monthly delta = viewCount - viewCountSnapshot.
-    viewCountSnapshot: { type: Number, default: 0, min: 0 },
     reviewCount:       { type: Number, default: 0 },
     likeCount:         { type: Number, default: 0, min: 0 },
     dislikeCount:      { type: Number, default: 0, min: 0 },

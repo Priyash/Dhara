@@ -497,6 +497,14 @@ export async function listAdminCreatorPayouts() {
   return request('/api/admin/creator-payouts')
 }
 
+export async function getAdminViewRates() {
+  return request('/api/admin/view-rates')
+}
+
+export async function updateAdminViewRates(payload) {
+  return request('/api/admin/view-rates', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
 // ── Creator Studio ────────────────────────────────────────────────────────────
 
 export async function applyAsCreator(payload) {
