@@ -131,7 +131,7 @@ router.get('/', withCache(60), async (req, res, next) => {
     }
 
     // ── Legacy flat-array mode (Home.jsx) ─────────────────────────────────────
-    const items = await Content.find(query).sort(sortObj).select(PUBLIC_FIELDS).lean()
+    const items = await Content.find(query).sort(sortObj).limit(200).select(PUBLIC_FIELDS).lean()
     res.json(items)
   } catch (err) {
     next(err)

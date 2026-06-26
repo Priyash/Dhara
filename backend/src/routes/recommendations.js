@@ -1,11 +1,21 @@
 import { Router } from 'express'
 import { Types } from 'mongoose'
+import rateLimit from 'express-rate-limit'
 import { admin } from '../config/firebase.js'
 import { User } from '../models/User.js'
 import { Content } from '../models/Content.js'
 import { InteractionEvent, INTERACTION_EVENT_TYPES } from '../models/InteractionEvent.js'
 
 const router = Router()
+
+const eventsRateLimit = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             300,
+  keyGenerator:    (req) => req.user?._id?.toString() || req.ip,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Too many tracking events. Please slow down.', code: 'RATE_LIMITED' },
+})
 
 const PUBLIC_FIELDS = '-bunnyVideoId -trailerVideoId -seasons.episodes.bunnyVideoId'
 
@@ -102,7 +112,7 @@ function normalizeEventPayload(body = {}) {
   }
 }
 
-router.post('/events', optionalAuth, async (req, res, next) => {
+router.post('/events', eventsRateLimit, optionalAuth, async (req, res, next) => {
   try {
     const payload = normalizeEventPayload(req.body)
     if (!payload.itemId) return res.status(400).json({ error: 'Valid itemId is required' })
@@ -488,12 +498,14 @@ router.get('/shelves', optionalAuth, async (req, res, next) => {
     if (identity) {
       const cw = await buildContinueWatching(identity)
       if (cw.items.length) { track(cw.items); shelves.push(cw) }
-
-      const because = await buildBecauseYouWatched(identity, usedIds)
-      for (const row of because) { track(row.items); shelves.push(row) }
     }
 
-    const top10 = await buildTop10ThisWeek(usedIds)
+    // BYW and Top10 don't mutate usedIds — safe to run in parallel after CW populates it.
+    const [because, top10] = await Promise.all([
+      identity ? buildBecauseYouWatched(identity, usedIds) : Promise.resolve([]),
+      buildTop10ThisWeek(usedIds),
+    ])
+    for (const row of because) { track(row.items); shelves.push(row) }
     if (top10.items.length >= 5) { track(top10.items); shelves.push(top10) }
 
     const genreRows = await buildGenreRows(identity, usedIds)

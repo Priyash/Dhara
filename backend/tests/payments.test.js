@@ -51,7 +51,7 @@ function isSubscriptionActive(user) {
   const now = new Date()
   switch (user.subscriptionStatus) {
     case 'trial':  return Boolean(user.trialEndsAt  && user.trialEndsAt  > now)
-    case 'active': return !user.subscriptionExpiresAt || user.subscriptionExpiresAt > now
+    case 'active': return Boolean(user.subscriptionExpiresAt) && user.subscriptionExpiresAt > now
     case 'grace':  return Boolean(user.graceEndsAt  && user.graceEndsAt  > now)
     default:       return false
   }
@@ -168,8 +168,8 @@ describe('isSubscriptionActive', () => {
     assert.equal(isSubscriptionActive({ subscriptionStatus: 'active', subscriptionExpiresAt: past }), false)
   })
 
-  it('active with no expiry date → true (annual/family perpetual-style)', () => {
-    assert.equal(isSubscriptionActive({ subscriptionStatus: 'active', subscriptionExpiresAt: null }), true)
+  it('active with no expiry date → false (null expiry must not grant access)', () => {
+    assert.equal(isSubscriptionActive({ subscriptionStatus: 'active', subscriptionExpiresAt: null }), false)
   })
 
   it('trial within window → true', () => {

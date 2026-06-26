@@ -12,6 +12,7 @@ import {
   planEnvKey,
   validateRazorpaySubscriptionPayment,
 } from './payments.helpers.js'
+import { emailPaymentSuccess } from '../config/email.js'
 
 const router = Router()
 
@@ -159,6 +160,8 @@ router.post('/verify', requireAuth, async (req, res, next) => {
       { new: true }
     )
 
+    emailPaymentSuccess(req.user.displayName || req.user.email, req.user.email, plan, expiresAt).catch(() => {})
+
     res.json({
       success:               true,
       isSubscribed:          user.isSubscriptionActive,
@@ -283,6 +286,8 @@ router.post('/verify-subscription', requireAuth, async (req, res, next) => {
       },
       { new: true }
     )
+
+    emailPaymentSuccess(req.user.displayName || req.user.email, req.user.email, tx.plan, expiresAt).catch(() => {})
 
     res.json({
       success:               true,

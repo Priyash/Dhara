@@ -314,41 +314,36 @@ router.post('/import-from-cdn', async (req, res, next) => {
       'linear-gradient(135deg,#2d0a1a 0%,#8b004a 100%)',
     ]
 
-    let imported = 0
-    const created = []
-
-    for (const col of allCollections) {
-      const videos = await bunnyRequest(
-        `/library/${libraryId}/videos?page=1&itemsPerPage=100&collection=${col.guid}`
+    const videoLists = await Promise.all(
+      allCollections.map(col =>
+        bunnyRequest(`/library/${libraryId}/videos?page=1&itemsPerPage=100&collection=${col.guid}`)
+          .then(r => r?.items || [])
+          .catch(() => [])
       )
-      for (const video of videos?.items || []) {
-        if (existingIds.has(video.guid)) continue
+    )
 
-        const durationMins = Math.round((video.length || 0) / 60)
-        const palette = PALETTES[imported % PALETTES.length]
-
-        const rawTitle = video.title || 'Untitled'
-        const cleanTitle = rawTitle.replace(/\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|ts|mxf)$/i, '').trim() || 'Untitled'
-        const content = await Content.create({
-          title:        cleanTitle,
-          type:         'Film',
-          genre:        [],
-          rating:       0,
-          isPremium:    false,
-          isFeatured:   false,
-          bunnyVideoId: video.guid,
-          palette,
-          desc:         '',
-          releaseYear:  new Date().getFullYear(),
-        })
-
-        existingIds.add(video.guid)
-        created.push({ id: content._id, title: content.title })
-        imported++
+    const newVideos = videoLists.flat().filter(v => !existingIds.has(v.guid))
+    const releaseYear = new Date().getFullYear()
+    const docs = newVideos.map((video, i) => {
+      const rawTitle = video.title || 'Untitled'
+      return {
+        title:        rawTitle.replace(/\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|ts|mxf)$/i, '').trim() || 'Untitled',
+        type:         'Film',
+        genre:        [],
+        rating:       0,
+        isPremium:    false,
+        isFeatured:   false,
+        bunnyVideoId: video.guid,
+        palette:      PALETTES[i % PALETTES.length],
+        desc:         '',
+        releaseYear,
       }
-    }
+    })
 
-    res.json({ imported, created })
+    const inserted = docs.length ? await Content.insertMany(docs, { ordered: false }) : []
+    const created = inserted.map(c => ({ id: c._id, title: c.title }))
+
+    res.json({ imported: created.length, created })
   } catch (err) {
     next(err)
   }
@@ -512,12 +507,23 @@ router.get('/content', async (req, res, next) => {
   try {
     const showDeleted = req.query.showDeleted === 'true'
     const filter = showDeleted ? { isDeleted: true } : { isDeleted: { $ne: true } }
-    const items = await Content.find(filter)
-      .sort({ updatedAt: -1 })
-      .limit(100)
-      .select('title type bunnyVideoId isPremium isFeatured isPublished isDeleted releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount posterUrl')
-      .lean()
-    res.json(items)
+    const SELECT = 'title type bunnyVideoId isPremium isFeatured isPublished isDeleted releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount posterUrl'
+
+    const pageNum  = Math.max(1, parseInt(req.query.page,  10) || 1)
+    const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50))
+    const skip     = (pageNum - 1) * limitNum
+
+    const [items, total] = await Promise.all([
+      Content.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(limitNum).select(SELECT).lean(),
+      Content.countDocuments(filter),
+    ])
+
+    // Backward-compatible: no ?page → flat array (existing frontend expects this).
+    // With ?page → paginated envelope so new UI pages can show "1–50 of 312".
+    if (req.query.page == null) {
+      return res.json(items)
+    }
+    res.json({ items, total, page: pageNum, pages: Math.ceil(total / limitNum), limit: limitNum })
   } catch (err) {
     next(err)
   }
@@ -782,7 +788,13 @@ router.get('/upload-jobs', async (req, res, next) => {
       .populate('collectionId', 'name bunnyCollectionId')
       .lean()
 
-    const synced = await Promise.all(jobs.map((job) => syncProcessingJob(job)))
+    const synced = await Promise.all(
+      jobs.map(job =>
+        job.bunnyVideoId && ['processing', 'uploading', 'queued'].includes(job.status)
+          ? syncProcessingJob(job)
+          : Promise.resolve(job)
+      )
+    )
     res.json(synced)
   } catch (err) {
     next(err)
