@@ -2403,20 +2403,24 @@ router.get('/thumbnail-variants', async (req, res, next) => {
     const byVariant = new Map()
     for (const row of counts) {
       const key = String(row._id.variantId)
-      const entry = byVariant.get(key) || { impression: 0, play: 0, completion: 0 }
+      const entry = byVariant.get(key) || { impression: 0, click: 0, play: 0, completion: 0 }
       if (row._id.eventType in entry) entry[row._id.eventType] = row.n
       byVariant.set(key, entry)
     }
 
     const items = variants.map((v) => {
-      const c = byVariant.get(String(v._id)) || { impression: 0, play: 0, completion: 0 }
+      const c = byVariant.get(String(v._id)) || { impression: 0, click: 0, play: 0, completion: 0 }
       return {
         ...v,
         stats: {
           impressions: c.impression,
+          clicks:      c.click,
           plays:       c.play,
           completions: c.completion,
-          ctr: c.impression ? c.play / c.impression : 0,
+          // CTR is the core thumbnail metric: did the artwork earn the click?
+          ctr: c.impression ? c.click / c.impression : 0,
+          // Downstream play/completion attribution is wired in a later increment
+          // (needs the variant threaded across navigation), so cvr stays 0 for now.
           cvr: c.impression ? c.completion / c.impression : 0,
         },
       }

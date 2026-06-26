@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef, memo } from 'react'
+import { useEffect, useState, useRef, useMemo, memo } from 'react'
 import Hls from 'hls.js'
 import { Crown, Star } from 'lucide-react'
 import { cloudinaryTransform } from '../services/cloudinary'
-import { fetchTrailerUrl, recordInteractionEvent } from '../services/api'
+import { fetchTrailerUrl, recordInteractionEvent, chooseThumbnailVariant } from '../services/api'
 import styles from './PosterCard.module.css'
 
 function stripExtension(name = '') {
@@ -18,6 +18,9 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false, sour
   const cardRef    = useRef(null)
   const impressionSentRef = useRef(false)
 
+  // Stable per-session artwork-variant pick (null = no live variant → default poster).
+  const variant = useMemo(() => chooseThumbnailVariant(item), [item])
+
   useEffect(() => {
     const id = item?._id || item?.id
     const el = cardRef.current
@@ -26,13 +29,23 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false, sour
     const observer = new IntersectionObserver(([entry]) => {
       if (!entry.isIntersecting || entry.intersectionRatio < 0.5 || impressionSentRef.current) return
       impressionSentRef.current = true
-      recordInteractionEvent({ itemId: id, eventType: 'impression', source }).catch(() => {})
+      recordInteractionEvent({ itemId: id, eventType: 'impression', source, variantId: variant?.variantId }).catch(() => {})
       observer.disconnect()
     }, { threshold: [0.5] })
 
     observer.observe(el)
     return () => observer.disconnect()
-  }, [item, source])
+  }, [item, source, variant])
+
+  // Fire the conversion half of thumbnail CTR. Only when a variant was shown —
+  // keeps event volume unchanged for the dormant (no-variant) common case.
+  const handleClick = () => {
+    const id = item?._id || item?.id
+    if (id && variant?.variantId) {
+      recordInteractionEvent({ itemId: id, eventType: 'click', source, variantId: variant.variantId }).catch(() => {})
+    }
+    onClick?.(item)
+  }
 
   // Release the trailer's HLS instance and any pending hover timer if the
   // card unmounts mid-hover (scroll, re-render, navigation) — mouseleave
@@ -77,8 +90,10 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false, sour
     }
   }
 
-  const posterSrc = item.posterUrl && !imgError
-    ? cloudinaryTransform(item.posterUrl, 'w_400,h_600,c_fill,g_auto,f_auto,q_auto')
+  // A live A/B variant's artwork overrides the default poster when present.
+  const posterUrl = variant?.imageUrl || item.posterUrl
+  const posterSrc = posterUrl && !imgError
+    ? cloudinaryTransform(posterUrl, 'w_400,h_600,c_fill,g_auto,f_auto,q_auto')
     : null
 
   const cleanTitle  = stripExtension(item.title)
@@ -96,11 +111,11 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false, sour
     <article
       ref={cardRef}
       className={`${styles.card} ${styles[size]} ${item.isPremium && !isSubscribed ? styles.premiumCard : ''}`}
-      onClick={() => onClick?.(item)}
+      onClick={handleClick}
       role="button"
       tabIndex={0}
       aria-label={`${cleanTitle}, ${item.type}`}
-      onKeyDown={(e) => e.key === 'Enter' && onClick?.(item)}
+      onKeyDown={(e) => e.key === 'Enter' && handleClick()}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >

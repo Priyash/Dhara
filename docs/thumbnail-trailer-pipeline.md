@@ -317,6 +317,19 @@ real footage. The Phase 1 scene-detection investment is what makes this cheap.
 
 ## 6. Suggested rollout order
 
+> **Implementation status.**
+> - ✅ **Increment 1 (foundation, dormant)** — `ThumbnailVariant` model,
+>   `variantId` on `InteractionEvent` (+ ingest whitelist), admin CRUD +
+>   read-time stats, backup/restore registration.
+> - ✅ **Increment 2 (activation, CTR loop)** — `live` variants attached to the
+>   `GET /api/content` rails (one cached batch query, dormant when none);
+>   `PosterCard` picks one stably per session (`chooseThumbnailVariant`),
+>   overrides the poster, and attributes the **impression** and a new **`click`**
+>   event by `variantId`. Admin stats now report CTR = clicks / impressions.
+>   Downstream `play`/`completion` attribution (needs the variant threaded
+>   across navigation) is intentionally deferred.
+
+
 1. **Attribution slice (lowest risk, highest leverage).** `ThumbnailVariant`
    model + `variantId` on `InteractionEvent`/ingest/`PosterCard` + round-robin
    serving among manually-seeded variants. Proves the measurement loop end-to-end

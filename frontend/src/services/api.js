@@ -14,6 +14,25 @@ function getRecommendationSessionId() {
   return id
 }
 
+/**
+ * Picks one `live` artwork variant for a content item, deterministically and
+ * stably per browser session, for the thumbnail A/B pipeline
+ * (docs/thumbnail-trailer-pipeline.md). Returns `{ imageUrl, variantId }` or
+ * null when the item has no variants (the dormant default). The session-seeded
+ * hash means the same user keeps seeing the same variant — so impression and
+ * click attribute to one variant — while different sessions spread evenly.
+ */
+export function chooseThumbnailVariant(item) {
+  const variants = item?.variants
+  if (!Array.isArray(variants) || variants.length === 0) return null
+
+  const seed = `${getRecommendationSessionId()}:${item._id ?? item.id ?? ''}`
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (Math.imul(h, 31) + seed.charCodeAt(i)) >>> 0
+  const v = variants[h % variants.length]
+  return v?.imageUrl ? { imageUrl: v.imageUrl, variantId: v._id } : null
+}
+
 async function authHeaders() {
   const token = await auth.currentUser?.getIdToken()
   return token ? { Authorization: `Bearer ${token}` } : {}

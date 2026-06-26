@@ -605,3 +605,32 @@ describe('recordView', () => {
     expect(JSON.parse(opts.body)).toEqual({ positionSecs: 45, episodeNumber: 2, seasonNumber: 1 })
   })
 })
+
+// ── chooseThumbnailVariant (artwork A/B pick) ────────────────────────────────
+
+describe('chooseThumbnailVariant', () => {
+  it('returns null when the item has no variants (dormant default)', () => {
+    expect(api.chooseThumbnailVariant({ id: '1' })).toBeNull()
+    expect(api.chooseThumbnailVariant({ id: '1', variants: [] })).toBeNull()
+    expect(api.chooseThumbnailVariant(null)).toBeNull()
+  })
+
+  it('picks a variant and returns its imageUrl + variantId', () => {
+    const item = { id: '1', variants: [{ _id: 'v1', imageUrl: 'https://cdn/x.jpg' }] }
+    expect(api.chooseThumbnailVariant(item)).toEqual({ imageUrl: 'https://cdn/x.jpg', variantId: 'v1' })
+  })
+
+  it('is stable across calls within a session (same pick for same item)', () => {
+    const item = {
+      id: '42',
+      variants: [
+        { _id: 'a', imageUrl: 'https://cdn/a.jpg' },
+        { _id: 'b', imageUrl: 'https://cdn/b.jpg' },
+        { _id: 'c', imageUrl: 'https://cdn/c.jpg' },
+      ],
+    }
+    const first = api.chooseThumbnailVariant(item)
+    expect(api.chooseThumbnailVariant(item)).toEqual(first)
+    expect(api.chooseThumbnailVariant(item)).toEqual(first)
+  })
+})

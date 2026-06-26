@@ -2,6 +2,7 @@ import mongoose from 'mongoose'
 
 export const INTERACTION_EVENT_TYPES = [
   'impression',
+  'click',        // poster clicked — the conversion half of thumbnail CTR (impression → click)
   'play',
   'view_3s',
   'view_50',
