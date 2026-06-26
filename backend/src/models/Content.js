@@ -74,5 +74,9 @@ contentSchema.index({ creatorId: 1, submissionStatus: 1 })
 contentSchema.index({ isPublished: 1, isFeatured: 1, featuredOrder: 1 })
 contentSchema.index({ isDeleted: 1, isPublished: 1, submissionStatus: 1 })
 contentSchema.index({ isPublished: 1, badge: 1 })
+// Popular-sort path: browse by viewCount (hot path, no existing index covers this sort)
+contentSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, viewCount: -1 })
+// Enforce uniqueness of Bunny video GUID — sparse so null/missing GUIDs don't conflict
+contentSchema.index({ bunnyVideoId: 1 }, { unique: true, sparse: true })
 
 export const Content = mongoose.model('Content', contentSchema)

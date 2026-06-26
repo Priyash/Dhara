@@ -13,4 +13,6 @@ const curatedShelfSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+curatedShelfSchema.index({ isActive: 1, displayOrder: 1 })
+
 export const CuratedShelf = mongoose.model('CuratedShelf', curatedShelfSchema)

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   UploadCloud, FolderPlus, ShieldAlert, RefreshCw, Link2, Film,
   CheckCircle2, XCircle, Pencil, X, Library, ImagePlus,
@@ -653,6 +654,9 @@ function ActiveUploadsPanel({ onCancel, onRetry, onDismiss }) {
 
 export default function Admin() {
   const authLoading       = useStore((s) => s.authLoading)
+  const isLoggedIn        = useStore((s) => s.isLoggedIn)
+  const isAdmin           = useStore((s) => s.isAdmin)
+  const navigate          = useNavigate()
   const addActiveUpload   = useStore((s) => s.addActiveUpload)
   const patchActiveUpload = useStore((s) => s.patchActiveUpload)
   const removeActiveUpload = useStore((s) => s.removeActiveUpload)
@@ -1143,6 +1147,14 @@ export default function Admin() {
       setMapVideoError(err?.message || 'Could not load videos.')
     }
   }
+
+  // Fast client-side gate: redirect immediately if store knows the user isn't admin.
+  // This avoids the round-trip to getAdminSession() for non-admin users.
+  useEffect(() => {
+    if (authLoading) return
+    if (!isLoggedIn) { navigate('/', { replace: true }); return }
+    if (!isAdmin)    { navigate('/', { replace: true }); return }
+  }, [authLoading, isLoggedIn, isAdmin, navigate])
 
   useEffect(() => {
     if (authLoading) return

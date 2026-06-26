@@ -5,6 +5,7 @@ import { admin } from '../config/firebase.js'
 import { User } from '../models/User.js'
 import { Content } from '../models/Content.js'
 import { InteractionEvent, INTERACTION_EVENT_TYPES } from '../models/InteractionEvent.js'
+import { withCache } from '../config/cache.js'
 
 const router = Router()
 
@@ -482,7 +483,7 @@ async function buildGenreRows(identity, usedIds) {
 }
 
 // ── GET /api/recommendations/shelves ─────────────────────────────────────────
-router.get('/shelves', optionalAuth, async (req, res, next) => {
+router.get('/shelves', withCache(60), optionalAuth, async (req, res, next) => {
   try {
     const rawSession = req.headers['x-rec-session'] || req.query.sessionId || ''
     const sessionId  = String(rawSession).slice(0, 120)

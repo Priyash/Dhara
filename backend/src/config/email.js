@@ -175,7 +175,7 @@ export function emailSubscriptionRenewalReminder(displayName, email, expiresAt, 
   const expiryStr = new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
   return sendEmail({
     to:      email,
-    subject: 'Your ধারা subscription expires in 3 days',
+    subject: `Your ধারা ${plan} subscription expires on ${new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`,
     html: `
       <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
         <h2 style="color:#7c3aed">ধারা</h2>

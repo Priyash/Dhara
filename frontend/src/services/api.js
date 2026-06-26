@@ -277,6 +277,10 @@ export async function cancelSubscription() {
   return request('/api/payments/cancel', { method: 'POST' })
 }
 
+export async function startTrial() {
+  return request('/api/user/start-trial', { method: 'POST' })
+}
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export async function getAdminSession() {

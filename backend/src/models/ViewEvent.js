@@ -19,6 +19,8 @@ viewEventSchema.index({ creatorId: 1, viewedAt: -1 })
 viewEventSchema.index({ contentId: 1, viewedAt: -1 })
 // Deduplication index: one counted view per user per content per season/episode per day
 viewEventSchema.index({ userId: 1, contentId: 1, seasonNumber: 1, episodeNumber: 1, viewedAt: -1 })
+// Analytics range queries: creatorId/contentId filters with date range
+viewEventSchema.index({ viewedAt: 1, contentId: 1 })
 // 1-year TTL — auto-purges old events so the collection stays bounded
 viewEventSchema.index({ viewedAt: 1 }, { expireAfterSeconds: 31_536_000 })
 

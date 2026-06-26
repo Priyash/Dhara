@@ -19,15 +19,22 @@ export default function Home() {
   const [continueWatching,      setContinueWatching]      = useState([])
   const [recommendationShelves, setRecommendationShelves] = useState([])
   const [contentLoading,        setContentLoading]        = useState(true)
+  const [contentError,          setContentError]          = useState(false)
+
+  const loadContent = (signal) => {
+    setContentLoading(true)
+    setContentError(false)
+    fetchContent({ sort: 'popular', page: 1, limit: 48 }, { signal })
+      .then((res) => { setContent(Array.isArray(res) ? res : (res.items ?? [])); setContentError(false) })
+      .catch((err) => { if (err?.name !== 'AbortError') setContentError(true) })
+      .finally(() => setContentLoading(false))
+  }
 
   useEffect(() => {
     const controller = new AbortController()
     const { signal } = controller
 
-    fetchContent({ sort: 'popular', page: 1, limit: 48 }, { signal })
-      .then((res) => setContent(Array.isArray(res) ? res : (res.items ?? [])))
-      .catch(() => {})
-      .finally(() => setContentLoading(false))
+    loadContent(signal)
     fetchShelves({ signal }).then(setShelves).catch(() => {})
     fetchRecommendationShelves({ signal }).then(setRecommendationShelves).catch(() => {})
 
@@ -115,6 +122,14 @@ export default function Home() {
             />
           ))
         }
+
+        {/* ── Content load error ── */}
+        {contentError && !contentLoading && (
+          <div className={styles.contentError}>
+            <p>Could not load content. Check your connection.</p>
+            <button onClick={() => loadContent()}>Retry</button>
+          </div>
+        )}
 
         {/* ── Trending ── */}
         {contentLoading ? (

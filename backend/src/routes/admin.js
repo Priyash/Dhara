@@ -15,7 +15,7 @@ import {
 } from '../config/email.js'
 
 // Bust the Browse/Home content cache whenever admin mutates the catalog
-function bustContentCache() { cache.deleteByPrefix('/api/content') }
+function bustContentCache() { cache.deleteByPrefix('/api/content').catch(() => {}) }
 import { UploadJob } from '../models/UploadJob.js'
 import { PaymentConfig } from '../models/PaymentConfig.js'
 import { Transaction } from '../models/Transaction.js'
@@ -747,6 +747,17 @@ router.patch('/content/:id/subtitle', async (req, res, next) => {
   try {
     const { subtitleUrl = '', seasonNumber, episodeNumber } = req.body
     const url = String(subtitleUrl).trim()
+
+    if (url) {
+      let parsed
+      try { parsed = new URL(url) } catch { return res.status(400).json({ error: 'Invalid subtitle URL' }) }
+      if (!['https:', 'http:'].includes(parsed.protocol)) {
+        return res.status(400).json({ error: 'Subtitle URL must use HTTP(S)' })
+      }
+      if (!parsed.pathname.endsWith('.vtt')) {
+        return res.status(400).json({ error: 'Subtitle URL must point to a .vtt file' })
+      }
+    }
 
     if (episodeNumber) {
       const sNum = Number(seasonNumber || 1)

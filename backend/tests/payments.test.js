@@ -16,7 +16,7 @@ const PLANS = {
   family:  { label: 'Family',   amount: 99900, days: 365 },
 }
 
-const GRACE_DAYS = 3
+const GRACE_DAYS = 7  // must match GRACE_DAYS in payments.helpers.js
 
 function planExpiresAt(plan) {
   const days = PLANS[plan]?.days
@@ -409,12 +409,12 @@ describe('Webhook event state transitions', () => {
     razorpaySubscriptionId: 'sub_existing',
   }
 
-  it('subscription.halted → grace status with 3-day grace window', () => {
+  it('subscription.halted → grace status with 7-day grace window', () => {
     const updated = applyWebhookEvent('subscription.halted', activeUser)
     assert.equal(updated.subscriptionStatus, 'grace')
     assert.ok(updated.graceEndsAt instanceof Date)
     const graceDays = (updated.graceEndsAt.getTime() - Date.now()) / 86_400_000
-    assert.ok(graceDays >= 2.9 && graceDays <= 3.1, `expected ~3 grace days, got ${graceDays.toFixed(2)}`)
+    assert.ok(graceDays >= 6.9 && graceDays <= 7.1, `expected ~7 grace days, got ${graceDays.toFixed(2)}`)
   })
 
   it('subscription.cancelled → lapsed, clears expiry and subscriptionId', () => {

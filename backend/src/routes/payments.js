@@ -6,6 +6,7 @@ import { CreatorEarning } from '../models/CreatorEarning.js'
 import { requireAuth } from '../middleware/auth.js'
 import { getActiveProvider } from '../providers/index.js'
 import {
+  GRACE_DAYS,
   PLANS,
   extendPlanFrom,
   getExpectedProviderPlanId,
@@ -15,8 +16,6 @@ import {
 import { emailPaymentSuccess } from '../config/email.js'
 
 const router = Router()
-
-const GRACE_DAYS = 7
 
 function planExpiresAt(plan) {
   return new Date(Date.now() + PLANS[plan].days * 86_400_000)
@@ -518,8 +517,9 @@ router.post('/webhook', async (req, res, next) => {
         if (!userId) break
         await User.findByIdAndUpdate(userId, {
           $set: {
-            subscriptionStatus: 'grace',
-            graceEndsAt:        new Date(Date.now() + GRACE_DAYS * 86_400_000),
+            subscriptionStatus:    'grace',
+            graceEndsAt:           new Date(Date.now() + GRACE_DAYS * 86_400_000),
+            subscriptionExpiresAt: null,  // clear stale expiry so renewal stacks from now
           },
         })
         break

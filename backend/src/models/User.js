@@ -68,6 +68,7 @@ const userSchema = new mongoose.Schema(
 
 userSchema.index({ email: 1 })
 userSchema.index({ subscriptionStatus: 1, subscriptionExpiresAt: 1 })
+userSchema.index({ lastLoginAt: 1 })
 
 userSchema.virtual('isSubscriptionActive').get(function () {
   const now = new Date()

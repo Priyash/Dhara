@@ -28,6 +28,7 @@ export async function requireAuth(req, res, next) {
 
     // Safety net: if auth succeeds but profile does not exist yet, create it.
     if (!user) {
+      const trialEndsAt = new Date(Date.now() + 7 * 86_400_000)
       user = await User.findOneAndUpdate(
         { firebaseUid: decoded.uid },
         {
@@ -38,7 +39,11 @@ export async function requireAuth(req, res, next) {
             photoURL:     decoded.picture || '',
             lastLoginAt:  new Date(),
           },
-          $setOnInsert: { firebaseUid: decoded.uid },
+          $setOnInsert: {
+            firebaseUid:        decoded.uid,
+            subscriptionStatus: 'trial',
+            trialEndsAt,
+          },
         },
         { upsert: true, new: true, select: AUTH_SELECT }
       )
