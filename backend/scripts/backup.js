@@ -32,6 +32,7 @@ import { CreatorEarning } from '../src/models/CreatorEarning.js'
 import { CreatorPayout }  from '../src/models/CreatorPayout.js'
 import { ViewRateConfig } from '../src/models/ViewRateConfig.js'
 import { CurrencyConfig } from '../src/models/CurrencyConfig.js'
+import { ThumbnailVariant } from '../src/models/ThumbnailVariant.js'
 
 const COLLECTIONS = {
   content:         Content,
@@ -45,6 +46,7 @@ const COLLECTIONS = {
   creatorPayouts:  CreatorPayout,
   viewRateConfig:  ViewRateConfig,
   currencyConfig:  CurrencyConfig,
+  thumbnailVariants: ThumbnailVariant,
 }
 
 // Parse CLI args

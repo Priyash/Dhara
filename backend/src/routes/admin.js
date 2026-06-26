@@ -34,6 +34,9 @@ import { SUPPORTED_PROVIDERS, getProviderStatus, getPayoutProviderStatus } from 
 import { runPayoutBatch } from '../config/payoutJob.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { calculateMonthlyEarnings } from '../config/earningsJob.js'
+import mongoose from 'mongoose'
+import { ThumbnailVariant } from '../models/ThumbnailVariant.js'
+import { InteractionEvent } from '../models/InteractionEvent.js'
 
 // Hard cap for unpaginated admin list endpoints — prevents an unbounded
 // collection scan/response as data grows, without changing the response
@@ -2354,6 +2357,158 @@ router.get('/audit-log', async (req, res, next) => {
     ])
 
     res.json({ actions, total, page: Number(page), pages: Math.ceil(total / limit) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ── Thumbnail variants (artwork A/B foundation) ─────────────────────────────
+// See docs/thumbnail-trailer-pipeline.md. v1 is dormant: variants are seeded and
+// managed here, but nothing is served on browse rails until a later increment
+// wires selection in. Per-variant stats are computed on read from
+// InteractionEvent (no denormalized rollup).
+
+const VARIANT_ITEM_TYPES = ['content', 'reel']
+
+/**
+ * GET /api/admin/thumbnail-variants?itemType=content&itemId=...
+ * Lists every variant for one item, each enriched with read-time attribution
+ * stats (impressions / plays / completions, plus ctr and cvr) over the
+ * trailing window InteractionEvent retains.
+ */
+router.get('/thumbnail-variants', async (req, res, next) => {
+  try {
+    const itemType = String(req.query.itemType || 'content')
+    const itemId   = req.query.itemId
+    if (!VARIANT_ITEM_TYPES.includes(itemType)) {
+      return res.status(400).json({ error: 'itemType must be "content" or "reel"' })
+    }
+    if (!mongoose.Types.ObjectId.isValid(itemId)) {
+      return res.status(400).json({ error: 'A valid itemId is required' })
+    }
+
+    const variants = await ThumbnailVariant.find({ itemType, itemId })
+      .sort({ createdAt: -1 })
+      .lean()
+
+    // One aggregation for all this item's variants, grouped by variant+event.
+    const ids = variants.map((v) => v._id)
+    const counts = ids.length
+      ? await InteractionEvent.aggregate([
+          { $match: { variantId: { $in: ids } } },
+          { $group: { _id: { variantId: '$variantId', eventType: '$eventType' }, n: { $sum: 1 } } },
+        ])
+      : []
+
+    const byVariant = new Map()
+    for (const row of counts) {
+      const key = String(row._id.variantId)
+      const entry = byVariant.get(key) || { impression: 0, play: 0, completion: 0 }
+      if (row._id.eventType in entry) entry[row._id.eventType] = row.n
+      byVariant.set(key, entry)
+    }
+
+    const items = variants.map((v) => {
+      const c = byVariant.get(String(v._id)) || { impression: 0, play: 0, completion: 0 }
+      return {
+        ...v,
+        stats: {
+          impressions: c.impression,
+          plays:       c.play,
+          completions: c.completion,
+          ctr: c.impression ? c.play / c.impression : 0,
+          cvr: c.impression ? c.completion / c.impression : 0,
+        },
+      }
+    })
+
+    res.json(items)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/admin/thumbnail-variants
+ * Seeds a new candidate variant for an item. Body: { itemType, itemId,
+ * imageUrl, label?, seasonNumber?, episodeNumber? }.
+ */
+router.post('/thumbnail-variants', async (req, res, next) => {
+  try {
+    const { itemType = 'content', itemId, imageUrl, label, seasonNumber, episodeNumber } = req.body || {}
+    if (!VARIANT_ITEM_TYPES.includes(itemType)) {
+      return res.status(400).json({ error: 'itemType must be "content" or "reel"' })
+    }
+    if (!mongoose.Types.ObjectId.isValid(itemId)) {
+      return res.status(400).json({ error: 'A valid itemId is required' })
+    }
+    if (!imageUrl || !/^https?:\/\//i.test(String(imageUrl).trim())) {
+      return res.status(400).json({ error: 'A valid imageUrl (http/https) is required' })
+    }
+
+    const variant = await ThumbnailVariant.create({
+      itemType,
+      itemId,
+      imageUrl:      String(imageUrl).trim(),
+      label:         label ? String(label).trim().slice(0, 120) : '',
+      seasonNumber:  seasonNumber  != null ? Number(seasonNumber)  : null,
+      episodeNumber: episodeNumber != null ? Number(episodeNumber) : null,
+      source:        'manual',
+      status:        'candidate',
+      createdBy:     req.user._id,
+    })
+
+    logAdminAction(req, 'create_thumbnail_variant', 'content', mongoose.Types.ObjectId.isValid(itemId) ? itemId : null, variant.label || variant.imageUrl)
+    res.status(201).json(variant)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/admin/thumbnail-variants/:id
+ * Updates a variant's status (candidate | live | rejected) and/or label.
+ */
+router.patch('/thumbnail-variants/:id', async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid variant id' })
+    }
+    const patch = {}
+    if (req.body?.status != null) {
+      if (!['candidate', 'live', 'rejected'].includes(req.body.status)) {
+        return res.status(400).json({ error: 'status must be candidate, live, or rejected' })
+      }
+      patch.status = req.body.status
+    }
+    if (req.body?.label != null) patch.label = String(req.body.label).trim().slice(0, 120)
+    if (!Object.keys(patch).length) {
+      return res.status(400).json({ error: 'Nothing to update' })
+    }
+
+    const variant = await ThumbnailVariant.findByIdAndUpdate(req.params.id, { $set: patch }, { new: true })
+    if (!variant) return res.status(404).json({ error: 'Variant not found' })
+
+    logAdminAction(req, 'update_thumbnail_variant', 'content', variant.itemId, `${variant.status}`)
+    res.json(variant)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * DELETE /api/admin/thumbnail-variants/:id
+ */
+router.delete('/thumbnail-variants/:id', async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid variant id' })
+    }
+    const variant = await ThumbnailVariant.findByIdAndDelete(req.params.id)
+    if (!variant) return res.status(404).json({ error: 'Variant not found' })
+
+    logAdminAction(req, 'delete_thumbnail_variant', 'content', variant.itemId, variant.label || variant.imageUrl)
+    res.json({ ok: true })
   } catch (err) {
     next(err)
   }

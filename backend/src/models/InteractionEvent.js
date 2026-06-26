@@ -23,6 +23,14 @@ const interactionEventSchema = new mongoose.Schema(
     seasonNumber:  { type: Number, default: null },
     episodeNumber: { type: Number, default: null },
     source:       { type: String, default: '' },
+
+    // Which ThumbnailVariant was on screen when this event fired, for artwork
+    // A/B attribution. null for the vast majority of events (no variant served),
+    // so the index below is sparse. Note: events carry the collection's 30-day
+    // TTL, so per-variant stats are a trailing-30-day window. See
+    // docs/thumbnail-trailer-pipeline.md.
+    variantId:    { type: mongoose.Schema.Types.ObjectId, ref: 'ThumbnailVariant', default: null },
+
     positionSecs: { type: Number, min: 0, default: 0 },
     durationSecs: { type: Number, min: 0, default: 0 },
     percent:      { type: Number, min: 0, max: 1, default: 0 },
@@ -40,6 +48,9 @@ const interactionEventSchema = new mongoose.Schema(
 interactionEventSchema.index({ userId: 1, createdAt: -1 })
 interactionEventSchema.index({ sessionId: 1, createdAt: -1 })
 interactionEventSchema.index({ itemType: 1, itemId: 1, eventType: 1, createdAt: -1 })
+// Per-variant attribution rollup (computed on read). Sparse — only the small
+// fraction of events that carried a served variant are indexed.
+interactionEventSchema.index({ variantId: 1, eventType: 1 }, { sparse: true })
 // 30-day TTL — at 500K users * 5 events/day = 2.5M events/day; 180-day retention
 // would accumulate 450M+ docs. 30 days gives enough signal for recommendations
 // while keeping the collection at ~75M docs max.

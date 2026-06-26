@@ -107,6 +107,7 @@ function normalizeEventPayload(body = {}) {
     seasonNumber:  body.seasonNumber  != null ? Number(body.seasonNumber)  : null,
     episodeNumber: body.episodeNumber != null ? Number(body.episodeNumber) : null,
     source: String(body.source || '').slice(0, 80),
+    variantId: parseObjectId(body.variantId),  // artwork A/B attribution; null when no variant was served
     positionSecs: Math.max(0, Number(body.positionSecs) || 0),
     durationSecs: Math.max(0, Number(body.durationSecs) || 0),
     percent: Math.min(1, Math.max(0, Number(body.percent) || 0)),
