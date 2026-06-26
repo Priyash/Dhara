@@ -1,6 +1,6 @@
 # Thumbnail & Trailer Pipeline — Build Design
 
-Status: **Proposed** · Owner: TBD · Last updated: 2026-06-26
+Status: **Proposed** · Owner: TBD · Last updated: 2026-06-26 (added v1 scope-discipline guardrails)
 
 This document specifies a two-phase system for generating, approving, serving,
 and A/B-attributing artwork for Dhara titles:
@@ -19,6 +19,27 @@ source is the creator's real footage (rights-clean, near-free, higher-converting
 for episodic content). AI image generation is a *secondary, swappable* path
 reserved for stylized key-art where no raw frame works. **We train nothing in
 Phase 1.**
+
+> ### ⚠️ v1 scope discipline — read this first
+>
+> The valuable, right-sized spine of this design is:
+> **extraction → human-approved grid → variant serving → `variantId`
+> attribution.** Build *that* and nothing more for v1.
+>
+> The over-engineering all lives in the **optional intelligence layers**. In v1
+> the **creator is the scorer** (they approve from the grid), so none of the ML
+> is load-bearing yet. Do **NOT** build these until real CTR data proves they're
+> needed:
+>
+> - ❌ Face detection / CLIP aesthetic scoring (§3.3) — sharpness + timeline
+>   spread is enough to avoid garbage.
+> - ❌ Epsilon-greedy bandit (§3.6) — with zero impressions it *is* random;
+>   round-robin is the whole v1.
+> - ❌ Subject cutout + color grade (§3.4) — frame + scrim + shaped text + logo
+>   is the v1 composite.
+>
+> Keep these as v2 notes, not v1 tasks. Each section below carries a **v1 scope**
+> line restating where the floor is.
 
 ---
 
@@ -150,6 +171,12 @@ ThumbnailVariant {
 
 Indexes: `{ itemType, itemId, status }`, `{ status, 'scores.composite': -1 }`.
 
+> **v1 scope.** Trim two things: start the status enum at **3 states**
+> (`candidate` / `live` / `rejected`) — add `approved`/`archived` only when a
+> workflow needs them; and compute `ctr`/`cvr` **on read** instead of
+> precomputing the `stats` rollup until volume makes that slow. The separate
+> `ArtworkJob` queue is optional — reuse the `UploadJob` pattern first.
+
 The **live** poster a title actually ships is still `Content.posterUrl` /
 `Reel.thumbnailUrl`; a `live` ThumbnailVariant overrides it at serve time. This
 keeps the existing fields authoritative for anything that doesn't go through the
@@ -180,6 +207,13 @@ Per candidate frame, cheap heuristics combined into one `composite` score:
 Keep the top 3–4. Tuning the weights is an iteration target once real CTR data
 exists.
 
+> **v1 scope — biggest over-engineering trap.** Build **only Laplacian sharpness
+> + spread picks across the timeline** (avoid near-black/near-duplicate frames).
+> That's ~20 lines and enough, because the **creator is the scorer** — they pick
+> from the grid in §3.5. **Do NOT** build face detection (ONNX/OpenCV) or the
+> CLIP aesthetic score for v1; they drag a model-serving dependency in for
+> marginal lift. Revisit only if CTR data shows the candidate frames are weak.
+
 ### 3.4 Compositing worker — and the Bengali text rule
 
 Build the thumbnail in layers:
@@ -208,6 +242,12 @@ libraqm) *and* avoids introducing a Python service purely for text rendering.
 Outputs (~8 = top frames × templates) are uploaded to Cloudinary and written as
 `candidate` ThumbnailVariant docs.
 
+> **v1 scope.** Keep **all** the Bengali text-shaping rigor — that's the moat,
+> not over-engineering. But the v1 composite is just **frame → bottom gradient
+> scrim → shaped title text → logo.** **Do NOT** build the subject cutout
+> ("push a face forward" = background removal, another ML/API dependency) or the
+> color-grade/vignette layer until the basic composite is proven to convert.
+
 ### 3.5 Creator approval UI
 
 Slots into `frontend/src/pages/CreatorStudio.jsx`: a grid of candidate variants
@@ -218,10 +258,16 @@ hang off `backend/src/routes/creator.js`.
 ### 3.6 Serving + attribution (the half that mostly already exists)
 
 - **Selection.** When a rail renders a card, pick among that title's `live`
-  variants. v1: random / round-robin. v2: epsilon-greedy bandit keyed on the
-  per-variant `stats.ctr`/`cvr`. Selection can be server-side (decided when the
-  rail payload is built in `content.js` / `recommendations.js`) so the same user
-  sees a stable variant within a session.
+  variants. **v1: random / round-robin only.** v2: epsilon-greedy bandit keyed on
+  the per-variant `stats.ctr`/`cvr`. Selection can be server-side (decided when
+  the rail payload is built in `content.js` / `recommendations.js`) so the same
+  user sees a stable variant within a session.
+
+> **v1 scope.** Round-robin is the *whole* selection story for v1 — **do NOT**
+> build the bandit. With zero impressions a bandit is just random with extra
+> code; it only earns its keep once variants have accumulated real per-variant
+> volume. The genuinely valuable, near-free part of this section is the
+> `variantId` wiring below — that's the spine, build that.
 - **Impression.** `PosterCard.jsx:29` already fires `impression`. Add the chosen
   `variantId` to that call.
 - **Play / completion.** Already logged as `InteractionEvent`. Add `variantId`
@@ -275,13 +321,18 @@ real footage. The Phase 1 scene-detection investment is what makes this cheap.
    model + `variantId` on `InteractionEvent`/ingest/`PosterCard` + round-robin
    serving among manually-seeded variants. Proves the measurement loop end-to-end
    before investing in production workers.
-2. **Extraction skeleton.** Bunny MP4 re-pull + ffmpeg scene cuts + scoring →
-   scored candidate stills (no compositing yet).
+2. **Extraction skeleton.** Bunny MP4 re-pull + ffmpeg scene cuts +
+   **sharpness-only** scoring → candidate stills (no ML scoring, no compositing).
 3. **Compositing.** node-canvas templates + the Bengali shaping gate-test +
-   Cloudinary upload → `candidate` variants.
+   Cloudinary upload → `candidate` variants. **Basic composite only** (frame +
+   scrim + text + logo).
 4. **Creator approval UI.**
-5. **Bandit selection + per-variant dashboard.**
-6. **Phase 2 trailer assembly.**
+5. **Phase 2 trailer assembly.**
+
+Everything explicitly deferred to "v2 / once data justifies it" — ML scoring
+(face/CLIP), the epsilon-greedy bandit, subject cutout + color grade, and a
+per-variant analytics dashboard — sits **after** step 5 and is gated on real CTR
+volume, not on a calendar.
 
 ---
 
@@ -333,6 +384,11 @@ script, Romanized Bengali, and English onto a single phonetic `searchKey` per
 before matching, with fuzzy tolerance for spelling drift. **No new infra, no
 model training.**
 
+> **v1 scope.** Don't build a *perfect* bidirectional transliterator — that's the
+> trap here. A rule-based phonetic folding (lookup table + loose vowel/consonant
+> collapsing) captures most of the value; favour recall over precision and let
+> the unit tests pin the known pairs. A full Avro-grade engine is a v2 concern.
+
 - Gating test: a set of known Banglish ↔ Bengali ↔ English title pairs that must
   all resolve to the same result.
 - Risk: transliteration is many-to-many; keep the normalizer rule-based and
@@ -364,6 +420,11 @@ as a catch-up rail. Drives daily return.
 **Effort:** medium. **Dependency:** subtitle/synopsis coverage; gate generation
 on availability and always allow human edit before publish (same
 approve-before-publish discipline as artwork).
+
+> **Reality-check before committing a build slot.** Run a one-query audit of how
+> many titles actually have `subtitleUrl` populated. If coverage is sparse this
+> is low-value until subtitles exist — don't build the recap pipeline ahead of
+> the data it feeds on.
 
 ### 8.4 "Adda" (আড্ডা) social watch layer
 
