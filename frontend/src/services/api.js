@@ -277,6 +277,10 @@ export async function cancelSubscription() {
   return request('/api/payments/cancel', { method: 'POST' })
 }
 
+export async function startTrial() {
+  return request('/api/user/start-trial', { method: 'POST' })
+}
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export async function getAdminSession() {
@@ -497,6 +501,34 @@ export async function listAdminCreatorPayouts() {
   return request('/api/admin/creator-payouts')
 }
 
+export async function getAdminPayoutAutoStatus() {
+  return request('/api/admin/creator-payouts/auto-status')
+}
+
+export async function runAdminPayoutAutoRun() {
+  return request('/api/admin/creator-payouts/auto-run', { method: 'POST' })
+}
+
+export async function getAdminViewRates() {
+  return request('/api/admin/view-rates')
+}
+
+export async function updateAdminViewRates(payload) {
+  return request('/api/admin/view-rates', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export async function getAdminCurrencyRates() {
+  return request('/api/admin/currency-rates')
+}
+
+export async function updateAdminCurrencyRates(payload) {
+  return request('/api/admin/currency-rates', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export async function getLocale() {
+  return request('/api/auth/locale')
+}
+
 // ── Creator Studio ────────────────────────────────────────────────────────────
 
 export async function applyAsCreator(payload) {
@@ -550,6 +582,14 @@ export async function getCreatorRevenue() {
 
 export async function requestCreatorPayout(payload = {}) {
   return request('/api/creator/payouts/request', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function getCreatorPayoutDetails() {
+  return request('/api/creator/payout-details')
+}
+
+export async function updateCreatorPayoutDetails(payload) {
+  return request('/api/creator/payout-details', { method: 'PUT', body: JSON.stringify(payload) })
 }
 
 export async function recordView(id, episodeNumber = null, positionSecs = 30, seasonNumber = null) {

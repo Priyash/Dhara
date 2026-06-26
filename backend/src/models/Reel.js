@@ -46,5 +46,7 @@ const reelSchema = new mongoose.Schema(
 reelSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, createdAt: -1 })
 reelSchema.index({ hashtags: 1 })
 reelSchema.index({ creatorId: 1, submissionStatus: 1 })
+reelSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, viewCount: -1 })
+reelSchema.index({ bunnyVideoId: 1 }, { unique: true, sparse: true })
 
 export const Reel = mongoose.model('Reel', reelSchema)

@@ -192,7 +192,12 @@ router.patch('/profile', async (req, res, next) => {
     const ALLOWED = ['displayName', 'photoURL']
     const updates = {}
     for (const key of ALLOWED) {
-      if (key in req.body) updates[key] = String(req.body[key] || '').trim()
+      if (!(key in req.body)) continue
+      const val = String(req.body[key] || '').trim()
+      if (key === 'photoURL' && val && !val.startsWith('https://')) {
+        return res.status(400).json({ error: 'photoURL must use HTTPS' })
+      }
+      updates[key] = val
     }
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No valid fields provided' })
@@ -200,6 +205,35 @@ router.patch('/profile', async (req, res, next) => {
     const user = await User.findByIdAndUpdate(req.user._id, { $set: updates }, { new: true })
     if (!user) return res.status(404).json({ error: 'User not found' })
     res.json({ displayName: user.displayName, photoURL: user.photoURL })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/user/start-trial
+ * Activates a 7-day free trial. One trial per account, ever.
+ */
+router.post('/start-trial', async (req, res, next) => {
+  try {
+    if (['trial', 'active', 'grace'].includes(req.user.subscriptionStatus)) {
+      return res.status(409).json({ error: 'You already have an active subscription.' })
+    }
+
+    const TRIAL_DAYS = 7
+    const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 86_400_000)
+
+    // Atomic guard: trialUsedAt: null ensures concurrent requests can't both activate.
+    const user = await User.findOneAndUpdate(
+      { _id: req.user._id, trialUsedAt: null },
+      { $set: { subscriptionStatus: 'trial', trialEndsAt, trialUsedAt: new Date() } },
+      { new: true }
+    )
+    if (!user) {
+      return res.status(409).json({ error: 'Trial already used. Each account is eligible for one free trial.' })
+    }
+
+    res.json({ success: true, trialEndsAt: user.trialEndsAt })
   } catch (err) {
     next(err)
   }

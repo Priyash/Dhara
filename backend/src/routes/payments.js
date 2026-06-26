@@ -1,19 +1,22 @@
 import { Router } from 'express'
+import mongoose from 'mongoose'
 import { User } from '../models/User.js'
 import { Transaction } from '../models/Transaction.js'
+import { CreatorPayout } from '../models/CreatorPayout.js'
+import { CreatorEarning } from '../models/CreatorEarning.js'
 import { requireAuth } from '../middleware/auth.js'
 import { getActiveProvider } from '../providers/index.js'
 import {
+  GRACE_DAYS,
   PLANS,
   extendPlanFrom,
   getExpectedProviderPlanId,
   planEnvKey,
   validateRazorpaySubscriptionPayment,
 } from './payments.helpers.js'
+import { emailPaymentSuccess } from '../config/email.js'
 
 const router = Router()
-
-const GRACE_DAYS = 7
 
 function planExpiresAt(plan) {
   return new Date(Date.now() + PLANS[plan].days * 86_400_000)
@@ -139,23 +142,41 @@ router.post('/verify', requireAuth, async (req, res, next) => {
       })
     }
 
-    const currentUser = await User.findById(req.user._id).select('subscriptionExpiresAt').lean()
-    const expiresAt = extendPlanFrom(plan, currentUser?.subscriptionExpiresAt)
+    // Activate subscription inside a multi-document transaction so both the
+    // Transaction status update and the User subscription update are atomic.
+    // If the User write fails (network hiccup, timeout), the Transaction rolls back
+    // and the user is never left in a "charged but not subscribed" state.
+    let user, expiresAt
+    const session = await mongoose.startSession()
+    try {
+      await session.withTransaction(async () => {
+        const currentUser = await User.findById(req.user._id).select('subscriptionExpiresAt').session(session).lean()
+        expiresAt = extendPlanFrom(plan, currentUser?.subscriptionExpiresAt)
 
-    // Activate subscription
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      {
-        $set: {
-          subscriptionStatus:    'active',
-          subscriptionPlan:      plan,
-          subscriptionStartedAt: new Date(),
-          subscriptionExpiresAt: expiresAt,
-          graceEndsAt:           null,
-        },
-      },
-      { new: true }
-    )
+        await Transaction.findOneAndUpdate(
+          { orderId: razorpay_order_id },
+          { $set: { status: 'paid', paymentId: razorpay_payment_id } },
+          { session }
+        )
+        user = await User.findByIdAndUpdate(
+          req.user._id,
+          {
+            $set: {
+              subscriptionStatus:    'active',
+              subscriptionPlan:      plan,
+              subscriptionStartedAt: new Date(),
+              subscriptionExpiresAt: expiresAt,
+              graceEndsAt:           null,
+            },
+          },
+          { new: true, session }
+        )
+      })
+    } finally {
+      session.endSession()
+    }
+
+    emailPaymentSuccess(req.user.displayName || req.user.email, req.user.email, plan, expiresAt).catch(() => {})
 
     res.json({
       success:               true,
@@ -281,6 +302,8 @@ router.post('/verify-subscription', requireAuth, async (req, res, next) => {
       },
       { new: true }
     )
+
+    emailPaymentSuccess(req.user.displayName || req.user.email, req.user.email, tx.plan, expiresAt).catch(() => {})
 
     res.json({
       success:               true,
@@ -511,8 +534,9 @@ router.post('/webhook', async (req, res, next) => {
         if (!userId) break
         await User.findByIdAndUpdate(userId, {
           $set: {
-            subscriptionStatus: 'grace',
-            graceEndsAt:        new Date(Date.now() + GRACE_DAYS * 86_400_000),
+            subscriptionStatus:    'grace',
+            graceEndsAt:           new Date(Date.now() + GRACE_DAYS * 86_400_000),
+            subscriptionExpiresAt: null,  // clear stale expiry so renewal stacks from now
           },
         })
         break
@@ -531,6 +555,40 @@ router.post('/webhook', async (req, res, next) => {
             razorpaySubscriptionId: null,
           },
         })
+        break
+      }
+
+      // RazorpayX payout events — referenced via reference_id, which the
+      // payout job (config/payoutJob.js) sets to our CreatorPayout._id.
+      case 'payout.processed': {
+        const entity = event.payload?.payout?.entity
+        const payout = entity?.reference_id && await CreatorPayout.findById(entity.reference_id)
+        if (!payout || payout.status === 'paid') break
+        payout.status      = 'paid'
+        payout.paidAt       = payout.paidAt || new Date()
+        payout.referenceId = entity.utr || entity.id
+        await payout.save()
+        break
+      }
+
+      case 'payout.failed':
+      case 'payout.reversed': {
+        // 'failed' happens before settlement (skip if somehow already paid);
+        // 'reversed' happens AFTER settlement, so it's expected to flip a
+        // 'paid' record back — don't guard it away.
+        const entity = event.payload?.payout?.entity
+        const payout = entity?.reference_id && await CreatorPayout.findById(entity.reference_id)
+        if (!payout) break
+        if (event.event === 'payout.failed' && payout.status === 'paid') break
+        payout.status = 'failed'
+        payout.notes   = `${payout.notes ? payout.notes + ' | ' : ''}RazorpayX ${event.event}: ${entity.failure_reason || entity.status || 'unknown reason'}`
+        await payout.save()
+        if (payout.earningIds?.length) {
+          await CreatorEarning.updateMany(
+            { _id: { $in: payout.earningIds }, status: 'paid', payoutId: payout._id },
+            { $set: { status: 'pending' }, $unset: { payoutId: '' } }
+          )
+        }
         break
       }
 

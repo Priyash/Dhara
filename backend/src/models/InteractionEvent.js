@@ -40,7 +40,10 @@ const interactionEventSchema = new mongoose.Schema(
 interactionEventSchema.index({ userId: 1, createdAt: -1 })
 interactionEventSchema.index({ sessionId: 1, createdAt: -1 })
 interactionEventSchema.index({ itemType: 1, itemId: 1, eventType: 1, createdAt: -1 })
-interactionEventSchema.index({ createdAt: 1 }, { expireAfterSeconds: 180 * 24 * 60 * 60 })
+// 30-day TTL — at 500K users * 5 events/day = 2.5M events/day; 180-day retention
+// would accumulate 450M+ docs. 30 days gives enough signal for recommendations
+// while keeping the collection at ~75M docs max.
+interactionEventSchema.index({ createdAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 })
 // Partial unique index: only enforce uniqueness when dedupKey is a non-empty string.
 // sparse:true would still index null (field exists but is null), causing dup key errors.
 interactionEventSchema.index(

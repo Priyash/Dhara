@@ -22,6 +22,16 @@ const viewRateLimit = rateLimit({
   message:         { error: 'Too many view events. Please slow down.', code: 'RATE_LIMITED' },
 })
 
+// Prevent premium token farming: cap signed stream URL generation per user.
+const streamRateLimit = rateLimit({
+  windowMs:        60 * 1000,
+  max:             20,
+  keyGenerator:    (req) => req.user?._id?.toString() || req.ip,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Too many stream requests. Please wait a moment.', code: 'RATE_LIMITED' },
+})
+
 const _require = createRequire(import.meta.url)
 const geoip    = _require('geoip-lite')
 
@@ -131,7 +141,7 @@ router.get('/', withCache(60), async (req, res, next) => {
     }
 
     // ── Legacy flat-array mode (Home.jsx) ─────────────────────────────────────
-    const items = await Content.find(query).sort(sortObj).select(PUBLIC_FIELDS).lean()
+    const items = await Content.find(query).sort(sortObj).limit(200).select(PUBLIC_FIELDS).lean()
     res.json(items)
   } catch (err) {
     next(err)
@@ -305,7 +315,7 @@ router.get('/shelves', withCache(60), async (req, res, next) => {
  * GET /api/content/:id
  * Public. Full metadata, no video GUIDs.
  */
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', withCache(300), async (req, res, next) => {
   try {
     const item = await Content.findOne({ _id: req.params.id, isPublished: true, isDeleted: { $ne: true }, submissionStatus: { $nin: ['pending', 'rejected'] } }).select(PUBLIC_FIELDS).lean()
     if (!item) return res.status(404).json({ error: 'Content not found' })
@@ -322,7 +332,7 @@ router.get('/:id', async (req, res, next) => {
  * The client's HLS.js fetches the manifest directly from Bunny CDN — this server
  * is never in the video data path.
  */
-router.get('/:id/stream', requireAuth, async (req, res, next) => {
+router.get('/:id/stream', requireAuth, streamRateLimit, async (req, res, next) => {
   try {
     const item = await Content.findById(req.params.id)
       .select('isPremium bunnyVideoId submissionStatus isPublished isDeleted creatorId seasons')

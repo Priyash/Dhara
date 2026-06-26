@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   UploadCloud, FolderPlus, ShieldAlert, RefreshCw, Link2, Film,
   CheckCircle2, XCircle, Pencil, X, Library, ImagePlus,
@@ -7,7 +8,7 @@ import {
   GripVertical, Layers, Plus, UploadIcon, IndianRupee,
   Calculator, Wallet, Clock, ChevronDown, ChevronLeft, ChevronRight, TrendingUp, Users, BarChart2,
   Activity, Server, AlertCircle, Database, Heart, MessageCircle, Play,
-  Archive, Search, Info, RotateCcw, SlidersHorizontal,
+  Archive, Search, Info, RotateCcw, SlidersHorizontal, Globe, Banknote,
 } from 'lucide-react'
 import { uploadToCloudinary, cloudinaryTransform } from '../services/cloudinary'
 import { useStore } from '../store/useStore'
@@ -22,6 +23,9 @@ import {
   listAdminSubmissions, approveSubmission, rejectSubmission,
   listAdminShelves, createAdminShelf, updateAdminShelf, deleteAdminShelf, reorderAdminShelves,
   listAdminCreatorEarnings, calculateCreatorEarnings, processCreatorPayout, listAdminCreatorPayouts,
+  getAdminViewRates, updateAdminViewRates,
+  getAdminCurrencyRates, updateAdminCurrencyRates,
+  getAdminPayoutAutoStatus, runAdminPayoutAutoRun,
   getAdminRevenue, getAdminMonitor,
   listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
   searchArchive, importFromArchive, getArchiveImportBatch, listArchiveCandidates, listArchiveTasks, dismissArchiveCandidate,
@@ -650,6 +654,9 @@ function ActiveUploadsPanel({ onCancel, onRetry, onDismiss }) {
 
 export default function Admin() {
   const authLoading       = useStore((s) => s.authLoading)
+  const isLoggedIn        = useStore((s) => s.isLoggedIn)
+  const isAdmin           = useStore((s) => s.isAdmin)
+  const navigate          = useNavigate()
   const addActiveUpload   = useStore((s) => s.addActiveUpload)
   const patchActiveUpload = useStore((s) => s.patchActiveUpload)
   const removeActiveUpload = useStore((s) => s.removeActiveUpload)
@@ -740,7 +747,7 @@ export default function Admin() {
   const [creatorPayouts,     setCreatorPayouts]     = useState([])
   const [revenueLoading,     setRevenueLoading]     = useState(false)
   const [showCalcModal,      setShowCalcModal]      = useState(false)
-  const [calcForm,           setCalcForm]           = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), ratePerViewPaise: 50 })
+  const [calcForm,           setCalcForm]           = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear() })
   const [calcBusy,           setCalcBusy]           = useState(false)
   const [calcResult,         setCalcResult]         = useState(null)
   const [showPayoutModal,    setShowPayoutModal]     = useState(null)  // { creatorId, studioName, pending }
@@ -749,6 +756,20 @@ export default function Admin() {
   const [revenueNotice,      setRevenueNotice]      = useState('')
   const [revenueError,       setRevenueError]       = useState('')
   const [platformRevenue,    setPlatformRevenue]    = useState(null)
+  const [payoutAutoStatus,   setPayoutAutoStatus]   = useState(null)  // { configured, accountNumberHint }
+  const [payoutAutoBusy,     setPayoutAutoBusy]     = useState(false)
+  const [payoutAutoResult,   setPayoutAutoResult]   = useState(null)
+  const [showRatesModal,     setShowRatesModal]     = useState(false)
+  const [ratesForm,          setRatesForm]          = useState({ defaultRatePaise: 50, countryRates: [] })
+  const [ratesBusy,          setRatesBusy]          = useState(false)
+  const [ratesError,         setRatesError]         = useState('')
+  const [ratesSaved,         setRatesSaved]         = useState(false)
+
+  const [showCurrencyModal,  setShowCurrencyModal]  = useState(false)
+  const [currencyForm,       setCurrencyForm]       = useState({ rates: [] })
+  const [currencyBusy,       setCurrencyBusy]       = useState(false)
+  const [currencyError,      setCurrencyError]      = useState('')
+  const [currencySaved,      setCurrencySaved]      = useState(false)
 
   // ── Monitor ───────────────────────────────────────────────────────────────
   const [monitorData,        setMonitorData]        = useState(null)
@@ -1126,6 +1147,14 @@ export default function Admin() {
       setMapVideoError(err?.message || 'Could not load videos.')
     }
   }
+
+  // Fast client-side gate: redirect immediately if store knows the user isn't admin.
+  // This avoids the round-trip to getAdminSession() for non-admin users.
+  useEffect(() => {
+    if (authLoading) return
+    if (!isLoggedIn) { navigate('/', { replace: true }); return }
+    if (!isAdmin)    { navigate('/', { replace: true }); return }
+  }, [authLoading, isLoggedIn, isAdmin, navigate])
 
   useEffect(() => {
     if (authLoading) return
@@ -1785,18 +1814,33 @@ export default function Admin() {
     setRevenueLoading(true)
     setRevenueError('')
     try {
-      const [earnings, payouts, platform] = await Promise.all([
+      const [earnings, payouts, platform, autoStatus] = await Promise.all([
         listAdminCreatorEarnings(),
         listAdminCreatorPayouts(),
         getAdminRevenue(),
+        getAdminPayoutAutoStatus(),
       ])
       setCreatorEarnings(earnings)
       setCreatorPayouts(payouts)
       setPlatformRevenue(platform)
+      setPayoutAutoStatus(autoStatus)
     } catch (err) {
       setRevenueError(err?.message || 'Could not load revenue data.')
     } finally {
       setRevenueLoading(false)
+    }
+  }
+
+  const handleRunAutoPayout = async () => {
+    setPayoutAutoBusy(true); setRevenueError(''); setPayoutAutoResult(null)
+    try {
+      const res = await runAdminPayoutAutoRun()
+      setPayoutAutoResult(res)
+      await loadCreatorRevenue()
+    } catch (err) {
+      setRevenueError(err?.message || 'Auto-payout run failed.')
+    } finally {
+      setPayoutAutoBusy(false)
     }
   }
 
@@ -1810,6 +1854,56 @@ export default function Admin() {
       setRevenueError(err?.message || 'Calculation failed.')
     } finally {
       setCalcBusy(false) }
+  }
+
+  const loadViewRates = async () => {
+    setRatesBusy(true); setRatesError('')
+    try {
+      const res = await getAdminViewRates()
+      setRatesForm({ defaultRatePaise: res.defaultRatePaise, countryRates: res.countryRates || [] })
+    } catch (err) {
+      setRatesError(err?.message || 'Could not load view rates.')
+    } finally {
+      setRatesBusy(false)
+    }
+  }
+
+  const handleSaveViewRates = async () => {
+    setRatesBusy(true); setRatesError(''); setRatesSaved(false)
+    try {
+      const res = await updateAdminViewRates(ratesForm)
+      setRatesForm({ defaultRatePaise: res.defaultRatePaise, countryRates: res.countryRates || [] })
+      setRatesSaved(true)
+    } catch (err) {
+      setRatesError(err?.message || 'Could not save view rates.')
+    } finally {
+      setRatesBusy(false)
+    }
+  }
+
+  const loadCurrencyRates = async () => {
+    setCurrencyBusy(true); setCurrencyError('')
+    try {
+      const res = await getAdminCurrencyRates()
+      setCurrencyForm({ rates: res.rates || [] })
+    } catch (err) {
+      setCurrencyError(err?.message || 'Could not load currency rates.')
+    } finally {
+      setCurrencyBusy(false)
+    }
+  }
+
+  const handleSaveCurrencyRates = async () => {
+    setCurrencyBusy(true); setCurrencyError(''); setCurrencySaved(false)
+    try {
+      const res = await updateAdminCurrencyRates(currencyForm)
+      setCurrencyForm({ rates: res.rates || [] })
+      setCurrencySaved(true)
+    } catch (err) {
+      setCurrencyError(err?.message || 'Could not save currency rates.')
+    } finally {
+      setCurrencyBusy(false)
+    }
   }
 
   const handleProcessPayout = async () => {
@@ -4658,10 +4752,9 @@ export default function Admin() {
                       <input className={styles.input} type="number" min="2024" max="2099" value={calcForm.year} onChange={(e) => setCalcForm((p) => ({ ...p, year: Number(e.target.value) }))} />
                     </label>
                   </div>
-                  <label className={styles.label}>
-                    Rate per view (paise) <span style={{ fontSize: 10, color: '#888', fontWeight: 400 }}>50 paise = ₹0.50 per view</span>
-                    <input className={styles.input} type="number" min="1" value={calcForm.ratePerViewPaise} onChange={(e) => setCalcForm((p) => ({ ...p, ratePerViewPaise: Number(e.target.value) }))} />
-                  </label>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
+                    Rates are applied per country of viewer — set them under <strong>Manage View Rates</strong>.
+                  </p>
                   {calcResult && (
                     <div style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 8, padding: '12px 16px', fontSize: 13, color: '#4ade80' }}>
                       ✓ Created <strong>{calcResult.earningsCreated}</strong> earning records · skipped {calcResult.skipped}
@@ -4714,6 +4807,155 @@ export default function Admin() {
                     <button className={styles.ghostBtn} onClick={() => setShowPayoutModal(null)}>Cancel</button>
                     <button className={styles.primaryBtn} onClick={handleProcessPayout} disabled={payoutBusy || !payoutForm.referenceId.trim()}>
                       {payoutBusy ? 'Processing…' : 'Confirm Payout'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* View Rates modal */}
+          {showRatesModal && (
+            <div className={styles.modalBackdrop} onClick={(e) => e.target === e.currentTarget && setShowRatesModal(false)}>
+              <div className={styles.modalPanel} style={{ maxWidth: 520 }} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+                <div className={styles.modalHeader}>
+                  <h2 className={styles.modalTitle}><Globe size={15} /> Manage View Rates</h2>
+                  <button className={styles.modalClose} onClick={() => setShowRatesModal(false)}><X size={16} /></button>
+                </div>
+                <div style={{ padding: '20px 24px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
+                    Pay creators a different amount per view depending on the viewer's country. All rates are in INR paise — no currency conversion needed.
+                  </p>
+
+                  <label className={styles.label}>
+                    Default rate (paise) <span style={{ fontSize: 10, color: '#888', fontWeight: 400 }}>used for any country with no row below</span>
+                    <input className={styles.input} type="number" min="0" value={ratesForm.defaultRatePaise}
+                      onChange={(e) => setRatesForm((p) => ({ ...p, defaultRatePaise: Number(e.target.value) }))} />
+                  </label>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)' }}>Country-specific rates</span>
+                      <button className={styles.ghostBtn} style={{ padding: '4px 10px', fontSize: 12 }}
+                        onClick={() => setRatesForm((p) => ({ ...p, countryRates: [...p.countryRates, { countryCode: '', countryName: '', ratePaise: 50 }] }))}>
+                        <Plus size={12} /> Add country
+                      </button>
+                    </div>
+
+                    {ratesForm.countryRates.length === 0 ? (
+                      <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>No country-specific rates yet — every view uses the default rate above.</p>
+                    ) : (
+                      ratesForm.countryRates.map((row, idx) => (
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 110px 32px', gap: 8, alignItems: 'center' }}>
+                          <input className={styles.input} value={row.countryCode} maxLength={2} placeholder="US"
+                            onChange={(e) => setRatesForm((p) => ({
+                              ...p,
+                              countryRates: p.countryRates.map((r, i) => i === idx ? { ...r, countryCode: e.target.value.toUpperCase() } : r),
+                            }))} />
+                          <input className={styles.input} value={row.countryName} placeholder="Country name"
+                            onChange={(e) => setRatesForm((p) => ({
+                              ...p,
+                              countryRates: p.countryRates.map((r, i) => i === idx ? { ...r, countryName: e.target.value } : r),
+                            }))} />
+                          <input className={styles.input} type="number" min="0" value={row.ratePaise} placeholder="paise"
+                            onChange={(e) => setRatesForm((p) => ({
+                              ...p,
+                              countryRates: p.countryRates.map((r, i) => i === idx ? { ...r, ratePaise: Number(e.target.value) } : r),
+                            }))} />
+                          <button type="button" className={styles.epDeleteBtn} aria-label="Remove country rate"
+                            onClick={() => setRatesForm((p) => ({
+                              ...p,
+                              countryRates: p.countryRates.filter((_, i) => i !== idx),
+                            }))}>
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {ratesSaved && (
+                    <div style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#4ade80' }}>
+                      ✓ View rates saved
+                    </div>
+                  )}
+                  {ratesError && <p style={{ fontSize: 13, color: '#f87171' }}>{ratesError}</p>}
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                    <button className={styles.ghostBtn} onClick={() => setShowRatesModal(false)}>Close</button>
+                    <button className={styles.primaryBtn} onClick={handleSaveViewRates} disabled={ratesBusy}>
+                      {ratesBusy ? 'Saving…' : 'Save Rates'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showCurrencyModal && (
+            <div className={styles.modalBackdrop} onClick={(e) => e.target === e.currentTarget && setShowCurrencyModal(false)}>
+              <div className={styles.modalPanel} style={{ maxWidth: 520 }} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+                <div className={styles.modalHeader}>
+                  <h2 className={styles.modalTitle}><Globe size={15} /> Manage Currency Rates</h2>
+                  <button className={styles.modalClose} onClick={() => setShowCurrencyModal(false)}><X size={16} /></button>
+                </div>
+                <div style={{ padding: '20px 24px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
+                    Show subscribers an approximate local-currency price alongside the INR price, based on their detected country. Billing always stays in INR — these rates only control the display hint.
+                  </p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)' }}>Currency rates (units per ₹1)</span>
+                      <button className={styles.ghostBtn} style={{ padding: '4px 10px', fontSize: 12 }}
+                        onClick={() => setCurrencyForm((p) => ({ ...p, rates: [...p.rates, { currencyCode: '', symbol: '', rateFromInr: 0 }] }))}>
+                        <Plus size={12} /> Add currency
+                      </button>
+                    </div>
+
+                    {currencyForm.rates.length === 0 ? (
+                      <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>No currency rates yet — visitors will only see the INR price until rates are added.</p>
+                    ) : (
+                      currencyForm.rates.map((row, idx) => (
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '60px 70px 1fr 32px', gap: 8, alignItems: 'center' }}>
+                          <input className={styles.input} value={row.currencyCode} maxLength={3} placeholder="USD"
+                            onChange={(e) => setCurrencyForm((p) => ({
+                              ...p,
+                              rates: p.rates.map((r, i) => i === idx ? { ...r, currencyCode: e.target.value.toUpperCase() } : r),
+                            }))} />
+                          <input className={styles.input} value={row.symbol} maxLength={10} placeholder="$"
+                            onChange={(e) => setCurrencyForm((p) => ({
+                              ...p,
+                              rates: p.rates.map((r, i) => i === idx ? { ...r, symbol: e.target.value } : r),
+                            }))} />
+                          <input className={styles.input} type="number" min="0" step="0.0001" value={row.rateFromInr} placeholder="rate from INR"
+                            onChange={(e) => setCurrencyForm((p) => ({
+                              ...p,
+                              rates: p.rates.map((r, i) => i === idx ? { ...r, rateFromInr: Number(e.target.value) } : r),
+                            }))} />
+                          <button type="button" className={styles.epDeleteBtn} aria-label="Remove currency rate"
+                            onClick={() => setCurrencyForm((p) => ({
+                              ...p,
+                              rates: p.rates.filter((_, i) => i !== idx),
+                            }))}>
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {currencySaved && (
+                    <div style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#4ade80' }}>
+                      ✓ Currency rates saved
+                    </div>
+                  )}
+                  {currencyError && <p style={{ fontSize: 13, color: '#f87171' }}>{currencyError}</p>}
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                    <button className={styles.ghostBtn} onClick={() => setShowCurrencyModal(false)}>Close</button>
+                    <button className={styles.primaryBtn} onClick={handleSaveCurrencyRates} disabled={currencyBusy}>
+                      {currencyBusy ? 'Saving…' : 'Save Rates'}
                     </button>
                   </div>
                 </div>
@@ -4792,15 +5034,51 @@ export default function Admin() {
                 <h2 className={styles.revSectionTitle}><Wallet size={16} /> Creator Payouts</h2>
                 <p className={styles.revSectionSub}>Revenue share distributed to content creators</p>
               </div>
-              <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
+              <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0, flexWrap:'wrap' }}>
                 <button className={styles.refreshBtn} onClick={loadCreatorRevenue} disabled={revenueLoading}>
                   <RefreshCw size={13} /> Refresh
+                </button>
+                <button className={styles.ghostBtn} style={{ padding:'7px 14px', fontSize:12 }}
+                  onClick={() => { setRatesError(''); setRatesSaved(false); setShowRatesModal(true); loadViewRates() }}>
+                  <Globe size={13} /> Manage View Rates
+                </button>
+                <button className={styles.ghostBtn} style={{ padding:'7px 14px', fontSize:12 }}
+                  onClick={() => { setCurrencyError(''); setCurrencySaved(false); setShowCurrencyModal(true); loadCurrencyRates() }}>
+                  <IndianRupee size={13} /> Manage Currency Rates
                 </button>
                 <button className={styles.primaryBtn} style={{ padding:'7px 14px', fontSize:12 }}
                   onClick={() => { setCalcResult(null); setRevenueError(''); setShowCalcModal(true) }}>
                   <Calculator size={13} /> Calculate Earnings
                 </button>
               </div>
+            </div>
+
+            {/* Auto-payout (RazorpayX) status banner */}
+            <div className={styles.revChartCard} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:10 }}>
+              <div>
+                <p className={styles.revChartTitle} style={{ margin:0 }}>
+                  <Banknote size={13} />
+                  {' '}RazorpayX Auto-Payout: {payoutAutoStatus?.configured
+                    ? <span style={{ color:'#4ade80' }}>Configured ({payoutAutoStatus.accountNumberHint})</span>
+                    : <span style={{ color:'var(--color-text-muted)' }}>Not configured — manual flow active</span>}
+                </p>
+                <p className={styles.revChartSub} style={{ marginTop:4 }}>
+                  {payoutAutoStatus?.configured
+                    ? 'Runs automatically on the 15th of each month for creators with bank/UPI details on file.'
+                    : 'Set RAZORPAY_X_ACCOUNT_NUMBER to enable automated creator payouts. Manual payouts below stay available either way.'}
+                </p>
+                {payoutAutoResult && (
+                  <p style={{ fontSize:12, color:'#4ade80', marginTop:6 }}>
+                    ✓ Auto-requested {payoutAutoResult.requested} · fulfilled {payoutAutoResult.fulfilled} · failed {payoutAutoResult.failed}
+                  </p>
+                )}
+              </div>
+              <button className={styles.ghostBtn} style={{ padding:'7px 14px', fontSize:12 }}
+                disabled={!payoutAutoStatus?.configured || payoutAutoBusy}
+                title={!payoutAutoStatus?.configured ? 'Configure RazorpayX first' : 'Run the auto-payout batch now'}
+                onClick={handleRunAutoPayout}>
+                <Banknote size={13} /> {payoutAutoBusy ? 'Running…' : 'Run Auto-Payout Now'}
+              </button>
             </div>
 
             {revenueNotice && <p className={`${styles.message} ${styles.notice}`}>{revenueNotice}</p>}
@@ -4868,6 +5146,12 @@ export default function Admin() {
                             {row.tier && (
                               <span style={{ fontFamily:'var(--font-body)', fontSize:10, fontWeight:600, padding:'1px 7px', borderRadius:99, border:`1px solid ${(TIER_COLORS[row.tier] || '#6366f1')}44`, color: TIER_COLORS[row.tier] || '#6366f1', background:'transparent' }}>
                                 {row.tier}
+                              </span>
+                            )}
+                            {row.autoPayoutEligible && (
+                              <span title="Bank/UPI details on file — eligible for RazorpayX auto-payout"
+                                style={{ display:'inline-flex', alignItems:'center', gap:3, fontFamily:'var(--font-body)', fontSize:10, fontWeight:600, padding:'1px 7px', borderRadius:99, border:'1px solid rgba(74,222,128,0.3)', color:'#4ade80' }}>
+                                <Banknote size={9} /> Auto
                               </span>
                             )}
                           </div>

@@ -1,6 +1,9 @@
 import { Router } from 'express'
 import { admin } from '../config/firebase.js'
 import { User } from '../models/User.js'
+import { CurrencyConfig } from '../models/CurrencyConfig.js'
+import { countryForRequest } from '../utils/geo.js'
+import { currencyForCountry } from '../utils/countryCurrency.js'
 
 const router = Router()
 
@@ -82,6 +85,43 @@ router.post('/login', async (req, res, next) => {
     res.json({
       user:           serializeUser(user, { isAdmin }),
       profileCreated: !userAlreadyExists,
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/auth/locale
+ * Public, unauthenticated. Detects the caller's country from their IP and
+ * returns an approximate local-currency hint for subscription pricing.
+ * Billing itself always stays in INR — this is display-only, so `currency`
+ * is null whenever the country is India, unmapped, or has no admin-set rate.
+ */
+router.get('/locale', async (req, res, next) => {
+  try {
+    const countryCode = countryForRequest(req)
+
+    if (!countryCode || countryCode === 'IN') {
+      return res.json({ countryCode: countryCode || null, currency: null })
+    }
+
+    const mapped = currencyForCountry(countryCode)
+    if (!mapped) return res.json({ countryCode, currency: null })
+
+    const config  = await CurrencyConfig.getConfig()
+    const rateMap = CurrencyConfig.toRateMap(config)
+    const rate     = rateMap.get(mapped.currencyCode)
+
+    if (!rate) return res.json({ countryCode, currency: null })
+
+    res.json({
+      countryCode,
+      currency: {
+        currencyCode: mapped.currencyCode,
+        symbol:       rate.symbol || mapped.symbol,
+        rateFromInr:  rate.rateFromInr,
+      },
     })
   } catch (err) {
     next(err)

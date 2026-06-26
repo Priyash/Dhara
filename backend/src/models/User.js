@@ -47,18 +47,35 @@ const userSchema = new mongoose.Schema(
     creatorReapplyAfter:    { type: Date,   default: null },  // set after 3+ rejections
     renewalReminderSentAt:  { type: Date,   default: null },  // track last renewal email
     creatorTier:            { type: String, default: 'Newcomer' },  // last known tier; used to detect advancement
+    trialUsedAt:            { type: Date,   default: null },  // set once when trial activates; never cleared — one trial per account
+
+    // Payout details — creator-entered bank/UPI info used by the (gated) RazorpayX
+    // auto-payout job. Until a creator fills this in, they're simply excluded from
+    // auto-runs and stay on the existing manual admin payout flow.
+    creatorPayoutDetails: {
+      method:            { type: String, enum: ['bank', 'upi', null], default: null },
+      accountHolderName: { type: String, default: '' },
+      accountNumber:     { type: String, default: '' },
+      ifsc:              { type: String, default: '' },
+      upiId:             { type: String, default: '' },
+      razorpayContactId:     { type: String, default: '' },  // RazorpayX contact, created lazily on first auto-payout
+      razorpayFundAccountId: { type: String, default: '' },  // RazorpayX fund account, recreated whenever details change
+      updatedAt:         { type: Date, default: null },
+    },
   },
   { timestamps: true }
 )
 
 userSchema.index({ email: 1 })
 userSchema.index({ subscriptionStatus: 1, subscriptionExpiresAt: 1 })
+userSchema.index({ lastLoginAt: 1 })
+userSchema.index({ createdAt: 1 })
 
 userSchema.virtual('isSubscriptionActive').get(function () {
   const now = new Date()
   switch (this.subscriptionStatus) {
     case 'trial':  return Boolean(this.trialEndsAt  && this.trialEndsAt  > now)
-    case 'active': return !this.subscriptionExpiresAt || this.subscriptionExpiresAt > now
+    case 'active': return Boolean(this.subscriptionExpiresAt) && this.subscriptionExpiresAt > now
     case 'grace':  return Boolean(this.graceEndsAt  && this.graceEndsAt  > now)
     default:       return false
   }

@@ -14,18 +14,24 @@ import {
   emailSubmissionApproved, emailSubmissionRejected,
 } from '../config/email.js'
 
-// Bust the Browse/Home content cache whenever admin mutates the catalog
-function bustContentCache() { cache.deleteByPrefix('/api/content') }
+// Bust the Browse/Home content and recommendation caches whenever admin mutates the catalog
+function bustContentCache() {
+  cache.deleteByPrefix('/api/content').catch(() => {})
+  cache.deleteByPrefix('/api/recommendations').catch(() => {})
+}
 import { UploadJob } from '../models/UploadJob.js'
 import { PaymentConfig } from '../models/PaymentConfig.js'
 import { Transaction } from '../models/Transaction.js'
 import { User } from '../models/User.js'
 import { CreatorEarning } from '../models/CreatorEarning.js'
 import { CreatorPayout } from '../models/CreatorPayout.js'
+import { ViewRateConfig } from '../models/ViewRateConfig.js'
+import { CurrencyConfig } from '../models/CurrencyConfig.js'
 import { ViewEvent } from '../models/ViewEvent.js'
 import { SearchLog } from '../models/SearchLog.js'
 import { Reel, REEL_MAX_DURATION_SECS } from '../models/Reel.js'
-import { SUPPORTED_PROVIDERS, getProviderStatus } from '../providers/index.js'
+import { SUPPORTED_PROVIDERS, getProviderStatus, getPayoutProviderStatus } from '../providers/index.js'
+import { runPayoutBatch } from '../config/payoutJob.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { calculateMonthlyEarnings } from '../config/earningsJob.js'
 
@@ -311,41 +317,36 @@ router.post('/import-from-cdn', async (req, res, next) => {
       'linear-gradient(135deg,#2d0a1a 0%,#8b004a 100%)',
     ]
 
-    let imported = 0
-    const created = []
-
-    for (const col of allCollections) {
-      const videos = await bunnyRequest(
-        `/library/${libraryId}/videos?page=1&itemsPerPage=100&collection=${col.guid}`
+    const videoLists = await Promise.all(
+      allCollections.map(col =>
+        bunnyRequest(`/library/${libraryId}/videos?page=1&itemsPerPage=100&collection=${col.guid}`)
+          .then(r => r?.items || [])
+          .catch(() => [])
       )
-      for (const video of videos?.items || []) {
-        if (existingIds.has(video.guid)) continue
+    )
 
-        const durationMins = Math.round((video.length || 0) / 60)
-        const palette = PALETTES[imported % PALETTES.length]
-
-        const rawTitle = video.title || 'Untitled'
-        const cleanTitle = rawTitle.replace(/\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|ts|mxf)$/i, '').trim() || 'Untitled'
-        const content = await Content.create({
-          title:        cleanTitle,
-          type:         'Film',
-          genre:        [],
-          rating:       0,
-          isPremium:    false,
-          isFeatured:   false,
-          bunnyVideoId: video.guid,
-          palette,
-          desc:         '',
-          releaseYear:  new Date().getFullYear(),
-        })
-
-        existingIds.add(video.guid)
-        created.push({ id: content._id, title: content.title })
-        imported++
+    const newVideos = videoLists.flat().filter(v => !existingIds.has(v.guid))
+    const releaseYear = new Date().getFullYear()
+    const docs = newVideos.map((video, i) => {
+      const rawTitle = video.title || 'Untitled'
+      return {
+        title:        rawTitle.replace(/\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|ts|mxf)$/i, '').trim() || 'Untitled',
+        type:         'Film',
+        genre:        [],
+        rating:       0,
+        isPremium:    false,
+        isFeatured:   false,
+        bunnyVideoId: video.guid,
+        palette:      PALETTES[i % PALETTES.length],
+        desc:         '',
+        releaseYear,
       }
-    }
+    })
 
-    res.json({ imported, created })
+    const inserted = docs.length ? await Content.insertMany(docs, { ordered: false }) : []
+    const created = inserted.map(c => ({ id: c._id, title: c.title }))
+
+    res.json({ imported: created.length, created })
   } catch (err) {
     next(err)
   }
@@ -509,12 +510,23 @@ router.get('/content', async (req, res, next) => {
   try {
     const showDeleted = req.query.showDeleted === 'true'
     const filter = showDeleted ? { isDeleted: true } : { isDeleted: { $ne: true } }
-    const items = await Content.find(filter)
-      .sort({ updatedAt: -1 })
-      .limit(100)
-      .select('title type bunnyVideoId isPremium isFeatured isPublished isDeleted releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount posterUrl')
-      .lean()
-    res.json(items)
+    const SELECT = 'title type bunnyVideoId isPremium isFeatured isPublished isDeleted releaseYear rating genre badge viewCount likeCount dislikeCount communityRating communityRatingCount posterUrl'
+
+    const pageNum  = Math.max(1, parseInt(req.query.page,  10) || 1)
+    const limitNum = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50))
+    const skip     = (pageNum - 1) * limitNum
+
+    const [items, total] = await Promise.all([
+      Content.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(limitNum).select(SELECT).lean(),
+      Content.countDocuments(filter),
+    ])
+
+    // Backward-compatible: no ?page → flat array (existing frontend expects this).
+    // With ?page → paginated envelope so new UI pages can show "1–50 of 312".
+    if (req.query.page == null) {
+      return res.json(items)
+    }
+    res.json({ items, total, page: pageNum, pages: Math.ceil(total / limitNum), limit: limitNum })
   } catch (err) {
     next(err)
   }
@@ -739,6 +751,17 @@ router.patch('/content/:id/subtitle', async (req, res, next) => {
     const { subtitleUrl = '', seasonNumber, episodeNumber } = req.body
     const url = String(subtitleUrl).trim()
 
+    if (url) {
+      let parsed
+      try { parsed = new URL(url) } catch { return res.status(400).json({ error: 'Invalid subtitle URL' }) }
+      if (!['https:', 'http:'].includes(parsed.protocol)) {
+        return res.status(400).json({ error: 'Subtitle URL must use HTTP(S)' })
+      }
+      if (!parsed.pathname.endsWith('.vtt')) {
+        return res.status(400).json({ error: 'Subtitle URL must point to a .vtt file' })
+      }
+    }
+
     if (episodeNumber) {
       const sNum = Number(seasonNumber || 1)
       const eNum = Number(episodeNumber)
@@ -779,7 +802,13 @@ router.get('/upload-jobs', async (req, res, next) => {
       .populate('collectionId', 'name bunnyCollectionId')
       .lean()
 
-    const synced = await Promise.all(jobs.map((job) => syncProcessingJob(job)))
+    const synced = await Promise.all(
+      jobs.map(job =>
+        job.bunnyVideoId && ['processing', 'uploading', 'queued'].includes(job.status)
+          ? syncProcessingJob(job)
+          : Promise.resolve(job)
+      )
+    )
     res.json(synced)
   } catch (err) {
     next(err)
@@ -1367,37 +1396,154 @@ function tierFor(totalViews) {
 }
 
 /**
+ * GET /api/admin/view-rates
+ * Returns the current country-tiered view-rate config used by earnings calculation.
+ */
+router.get('/view-rates', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await ViewRateConfig.getConfig()
+    res.json({
+      defaultRatePaise: config.defaultRatePaise,
+      countryRates: config.countryRates,
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PUT /api/admin/view-rates
+ * Full-replaces the view-rate config.
+ * Body: { defaultRatePaise, countryRates: [{ countryCode, countryName?, ratePaise }] }
+ */
+const MAX_RATE_PAISE = 100_000   // ₹1,000/view — sanity ceiling against fat-finger entry
+const MAX_COUNTRY_ROWS = 300     // more than the ~250 ISO country codes that exist
+
+router.put('/view-rates', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const defaultRatePaise = Number(req.body.defaultRatePaise)
+    if (!Number.isInteger(defaultRatePaise) || defaultRatePaise < 0 || defaultRatePaise > MAX_RATE_PAISE) {
+      return res.status(400).json({ error: `defaultRatePaise must be a whole number of paise between 0 and ${MAX_RATE_PAISE}` })
+    }
+
+    const rawRates = Array.isArray(req.body.countryRates) ? req.body.countryRates : []
+    if (rawRates.length > MAX_COUNTRY_ROWS) {
+      return res.status(400).json({ error: `Too many country rows (max ${MAX_COUNTRY_ROWS})` })
+    }
+
+    const seen = new Set()
+    const countryRates = []
+    for (const entry of rawRates) {
+      const countryCode = String(entry?.countryCode ?? '').trim().toUpperCase()
+      const ratePaise    = Number(entry?.ratePaise)
+      if (!/^[A-Z]{2}$/.test(countryCode)) {
+        return res.status(400).json({ error: `Invalid country code: "${entry?.countryCode}"` })
+      }
+      if (!Number.isInteger(ratePaise) || ratePaise < 0 || ratePaise > MAX_RATE_PAISE) {
+        return res.status(400).json({ error: `Invalid rate for ${countryCode}: must be a whole number of paise between 0 and ${MAX_RATE_PAISE}` })
+      }
+      if (seen.has(countryCode)) {
+        return res.status(400).json({ error: `Duplicate country code: ${countryCode}` })
+      }
+      seen.add(countryCode)
+      countryRates.push({ countryCode, countryName: String(entry?.countryName ?? '').trim().slice(0, 60), ratePaise })
+    }
+
+    const config = await ViewRateConfig.getConfig()
+    config.defaultRatePaise = defaultRatePaise
+    config.countryRates = countryRates
+    await config.save()
+
+    res.json({ defaultRatePaise: config.defaultRatePaise, countryRates: config.countryRates })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/admin/currency-rates
+ * Returns the admin-configured INR → foreign-currency display rates
+ * (used to show an approximate local-currency hint to subscribers; billing
+ * itself always stays in INR).
+ */
+router.get('/currency-rates', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await CurrencyConfig.getConfig()
+    res.json({ rates: config.rates })
+  } catch (err) {
+    next(err)
+  }
+})
+
+const MAX_FX_RATE = 1000
+const MAX_CURRENCY_ROWS = 50
+
+/**
+ * PUT /api/admin/currency-rates
+ * Full-replaces the currency-rate config.
+ * Body: { rates: [{ currencyCode, symbol?, rateFromInr }] }
+ */
+router.put('/currency-rates', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const rawRates = Array.isArray(req.body.rates) ? req.body.rates : []
+    if (rawRates.length > MAX_CURRENCY_ROWS) {
+      return res.status(400).json({ error: `Too many currency rows (max ${MAX_CURRENCY_ROWS})` })
+    }
+
+    const seen = new Set()
+    const rates = []
+    for (const entry of rawRates) {
+      const currencyCode = String(entry?.currencyCode ?? '').trim().toUpperCase()
+      const rateFromInr   = Number(entry?.rateFromInr)
+      if (!/^[A-Z]{3}$/.test(currencyCode)) {
+        return res.status(400).json({ error: `Invalid currency code: "${entry?.currencyCode}"` })
+      }
+      if (!Number.isFinite(rateFromInr) || rateFromInr <= 0 || rateFromInr > MAX_FX_RATE) {
+        return res.status(400).json({ error: `Invalid rate for ${currencyCode}: must be a positive number up to ${MAX_FX_RATE}` })
+      }
+      if (seen.has(currencyCode)) {
+        return res.status(400).json({ error: `Duplicate currency code: ${currencyCode}` })
+      }
+      seen.add(currencyCode)
+      rates.push({ currencyCode, symbol: String(entry?.symbol ?? '').trim().slice(0, 10), rateFromInr })
+    }
+
+    const config = await CurrencyConfig.getConfig()
+    config.rates = rates
+    await config.save()
+
+    res.json({ rates: config.rates })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
  * POST /api/admin/revenue/calculate
  * Calculates creator earnings for a given month/year.
- * Body: { month, year, ratePerViewPaise? }
- * ratePerViewPaise defaults to 50 (₹0.50 per view).
+ * Body: { month, year }
  *
- * For each approved creator content piece:
- *   monthlyViews = viewCount - viewCountSnapshot
- *   grossPaise   = monthlyViews × ratePerViewPaise
- *   netPaise     = grossPaise × (creatorShare / 100)
- * Creates a CreatorEarning record and advances the snapshot.
- * Skips content with no new views or already calculated for that period.
+ * For each approved creator content piece, views are broken down by country
+ * (from ViewEvent) and rated per-country via the admin-configured ViewRateConfig:
+ *   grossPaise = Σ countryViews × ratePaise(country)
+ *   netPaise   = grossPaise × (creatorShare / 100)
+ * Creates a CreatorEarning record per content piece.
+ * Skips content with no views this period or already calculated for it.
  */
 router.post('/revenue/calculate', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const now   = new Date()
     const month = Number(req.body.month ?? now.getMonth() + 1)
     const year  = Number(req.body.year  ?? now.getFullYear())
-    const rate  = Number(req.body.ratePerViewPaise ?? 50)
 
     if (month < 1 || month > 12) return res.status(400).json({ error: 'month must be 1–12' })
-    if (!Number.isFinite(rate) || rate <= 0) {
-      return res.status(400).json({ error: 'ratePerViewPaise must be a positive number' })
-    }
 
     // Shared with the scheduled job (earningsJob.js) — batches the idempotency
     // check into one query and safely ignores concurrent-run duplicate-key errors.
-    const { created, skipped } = await calculateMonthlyEarnings(month, year, rate)
+    const { created, skipped } = await calculateMonthlyEarnings(month, year)
 
     res.json({
       month, year,
-      ratePerViewPaise: rate,
       earningsCreated: created,
       skipped,
     })
@@ -1439,6 +1585,7 @@ router.get('/creator-earnings', requireAuth, requireAdmin, async (req, res, next
         totalViews:    1,
         recordCount:   1,
         latestMonth:   1,
+        autoPayoutEligible: { $cond: [{ $ifNull: ['$creator.creatorPayoutDetails.method', false] }, true, false] },
       }},
       { $sort: { pendingPaise: -1 } },
     ])
@@ -1453,6 +1600,7 @@ router.get('/creator-earnings', requireAuth, requireAdmin, async (req, res, next
       totalViews:  r.totalViews,
       recordCount: r.recordCount,
       tier:        tierFor(r.totalViews).name,
+      autoPayoutEligible: r.autoPayoutEligible,
     })))
   } catch (err) {
     next(err)
@@ -1476,17 +1624,36 @@ router.post('/creator-payouts', requireAuth, requireAdmin, async (req, res, next
 
     const totalPaise = pendingEarnings.reduce((s, e) => s + e.netAmountPaise, 0)
 
-    const payout = await CreatorPayout.create({
+    // Reuse an in-flight request (creator-filed or auto-job-filed) instead of
+    // creating a second, disconnected payout record for the same earnings.
+    const inFlight = await CreatorPayout.findOne({
       creatorId,
-      amountPaise:  totalPaise,
-      earningIds:   pendingEarnings.map((e) => e._id),
-      method,
-      referenceId,
-      notes,
-      status:       'paid',
-      paidAt:       new Date(),
-      initiatedBy:  req.user._id,
+      status: { $in: ['requested', 'processing'] },
     })
+
+    const payout = inFlight
+      ? Object.assign(inFlight, {
+          amountPaise: totalPaise,
+          earningIds:  pendingEarnings.map((e) => e._id),
+          method,
+          referenceId,
+          notes:       notes || inFlight.notes,
+          status:      'paid',
+          paidAt:      new Date(),
+          initiatedBy: req.user._id,
+        })
+      : new CreatorPayout({
+          creatorId,
+          amountPaise:  totalPaise,
+          earningIds:   pendingEarnings.map((e) => e._id),
+          method,
+          referenceId,
+          notes,
+          status:       'paid',
+          paidAt:       new Date(),
+          initiatedBy:  req.user._id,
+        })
+    await payout.save()
 
     // Mark all earnings as paid
     await CreatorEarning.updateMany(
@@ -1536,6 +1703,36 @@ router.get('/creator-payouts', requireAuth, requireAdmin, async (req, res, next)
       earningsCount: p.earningIds?.length ?? 0,
       createdAt:    p.createdAt,
     })))
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/admin/creator-payouts/auto-status
+ * Whether the RazorpayX auto-payout rail is configured, for the Revenue UI.
+ */
+router.get('/creator-payouts/auto-status', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    res.json(getPayoutProviderStatus())
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/admin/creator-payouts/auto-run
+ * Manually triggers one RazorpayX auto-payout batch immediately, instead of
+ * waiting for the monthly scheduled run. No-ops (configured: false) if
+ * RAZORPAY_X_ACCOUNT_NUMBER isn't set.
+ */
+router.post('/creator-payouts/auto-run', requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const result = await runPayoutBatch()
+    if (result.configured) {
+      logAdminAction(req, 'run_auto_payouts', 'config', null, '', result)
+    }
+    res.json(result)
   } catch (err) {
     next(err)
   }

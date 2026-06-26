@@ -11,8 +11,8 @@ export const dbStatus = {
 }
 
 const MONGO_OPTIONS = {
-  maxPoolSize:             20,
-  minPoolSize:              2,
+  maxPoolSize:             100,
+  minPoolSize:               2,
   serverSelectionTimeoutMS: 5_000,   // how long to wait per connection attempt
   socketTimeoutMS:         45_000,
   heartbeatFrequencyMS:    10_000,

@@ -15,6 +15,7 @@ import { connectMongoDB, dbStatus } from './src/config/mongodb.js'
 import { syncAdminClaims } from './src/config/adminSync.js'
 import { startSubscriptionExpiryJob } from './src/config/subscriptionExpiry.js'
 import { startEarningsJob } from './src/config/earningsJob.js'
+import { startPayoutJob } from './src/config/payoutJob.js'
 import { startArchiveDiscoveryJob, startArchiveReelDiscoveryJob } from './src/config/archiveDiscovery.js'
 import { startArchiveImportWorker } from './src/config/archiveImportWorker.js'
 import { startCdnReconcileJob } from './src/config/cdnReconcile.js'
@@ -53,6 +54,9 @@ if (isProd) {
   }
   if (!process.env.ADMIN_EMAILS) {
     console.warn('[startup] WARNING — ADMIN_EMAILS not set; admin access relies solely on Firebase custom claims')
+  }
+  if (!process.env.REDIS_URL) {
+    console.warn('[startup] WARNING — REDIS_URL not set. Rate limiting is per-instance (not shared). In-memory cache is capped at 5K entries. Required before scaling to 2+ instances.')
   }
 }
 
@@ -172,6 +176,10 @@ app.use(errorHandler)
 
 const server = app.listen(PORT, () => console.log(`Dhara backend → http://localhost:${PORT}`))
 
+// 30-second request timeout — prevents slow admin aggregations from hanging
+// connections indefinitely and exhausting the pool under load.
+server.requestTimeout = 30_000
+
 let startupTasksDone = false
 mongoose.connection.on('connected', async () => {
   if (startupTasksDone) return   // don't re-run on reconnect after a transient drop
@@ -183,6 +191,7 @@ mongoose.connection.on('connected', async () => {
   }
   startSubscriptionExpiryJob()
   startEarningsJob()
+  startPayoutJob()
   startArchiveDiscoveryJob()
   startArchiveReelDiscoveryJob()
   startArchiveImportWorker()

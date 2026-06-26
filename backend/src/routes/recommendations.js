@@ -1,11 +1,22 @@
 import { Router } from 'express'
 import { Types } from 'mongoose'
+import rateLimit from 'express-rate-limit'
 import { admin } from '../config/firebase.js'
 import { User } from '../models/User.js'
 import { Content } from '../models/Content.js'
 import { InteractionEvent, INTERACTION_EVENT_TYPES } from '../models/InteractionEvent.js'
+import { withCache, cache } from '../config/cache.js'
 
 const router = Router()
+
+const eventsRateLimit = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             300,
+  keyGenerator:    (req) => req.user?._id?.toString() || req.ip,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Too many tracking events. Please slow down.', code: 'RATE_LIMITED' },
+})
 
 const PUBLIC_FIELDS = '-bunnyVideoId -trailerVideoId -seasons.episodes.bunnyVideoId'
 
@@ -102,7 +113,7 @@ function normalizeEventPayload(body = {}) {
   }
 }
 
-router.post('/events', optionalAuth, async (req, res, next) => {
+router.post('/events', eventsRateLimit, optionalAuth, async (req, res, next) => {
   try {
     const payload = normalizeEventPayload(req.body)
     if (!payload.itemId) return res.status(400).json({ error: 'Valid itemId is required' })
@@ -472,6 +483,17 @@ async function buildGenreRows(identity, usedIds) {
 }
 
 // ── GET /api/recommendations/shelves ─────────────────────────────────────────
+// Caching strategy: per-identity key so personalized shelves are cached without
+// leaking User A's data into User B's response.
+//
+//   Authenticated → cache key: shelves:user:{userId}         (private, 60 s TTL)
+//   Anon+session  → cache key: shelves:session:{sessionId}   (private, 60 s TTL)
+//   Truly anon    → cache key: shelves:anon                  (public,  60 s TTL)
+//
+// At 500K DAU / 30% auth / 1,000 concurrent peak: ~1,000 live cache entries —
+// well within the 5K in-memory cap and Redis memory budget.
+const SHELVES_TTL_MS = 60 * 1000
+
 router.get('/shelves', optionalAuth, async (req, res, next) => {
   try {
     const rawSession = req.headers['x-rec-session'] || req.query.sessionId || ''
@@ -479,6 +501,23 @@ router.get('/shelves', optionalAuth, async (req, res, next) => {
     const identity   = req.user?._id
       ? { userId: req.user._id }
       : sessionId ? { sessionId } : null
+
+    const isAuthed   = Boolean(req.user?._id)
+    const cacheKey   = isAuthed
+      ? `shelves:user:${req.user._id}`
+      : sessionId
+        ? `shelves:session:${sessionId.slice(0, 40)}`
+        : 'shelves:anon'
+
+    const cacheControl = isAuthed ? 'private, max-age=60' : 'public, max-age=60'
+
+    // Serve from cache if available
+    const hit = await cache.get(cacheKey)
+    if (hit !== null) {
+      res.setHeader('X-Cache', 'HIT')
+      res.setHeader('Cache-Control', cacheControl)
+      return res.json(hit)
+    }
 
     const shelves = []
     const usedIds = new Set()
@@ -488,18 +527,25 @@ router.get('/shelves', optionalAuth, async (req, res, next) => {
     if (identity) {
       const cw = await buildContinueWatching(identity)
       if (cw.items.length) { track(cw.items); shelves.push(cw) }
-
-      const because = await buildBecauseYouWatched(identity, usedIds)
-      for (const row of because) { track(row.items); shelves.push(row) }
     }
 
-    const top10 = await buildTop10ThisWeek(usedIds)
+    // BYW and Top10 don't mutate usedIds — safe to run in parallel after CW populates it.
+    const [because, top10] = await Promise.all([
+      identity ? buildBecauseYouWatched(identity, usedIds) : Promise.resolve([]),
+      buildTop10ThisWeek(usedIds),
+    ])
+    for (const row of because) { track(row.items); shelves.push(row) }
     if (top10.items.length >= 5) { track(top10.items); shelves.push(top10) }
 
     const genreRows = await buildGenreRows(identity, usedIds)
     for (const row of genreRows) { track(row.items); shelves.push(row) }
 
-    res.json({ shelves })
+    const result = { shelves }
+    await cache.set(cacheKey, result, SHELVES_TTL_MS)
+
+    res.setHeader('X-Cache', 'MISS')
+    res.setHeader('Cache-Control', cacheControl)
+    res.json(result)
   } catch (err) {
     next(err)
   }

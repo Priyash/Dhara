@@ -1,3 +1,5 @@
+export const GRACE_DAYS = 7
+
 export const PLANS = {
   monthly: { label: 'Monthly',  amount: 9900,  days: 30  },  // ₹99
   annual:  { label: 'Annual',   amount: 59900, days: 365 },  // ₹599

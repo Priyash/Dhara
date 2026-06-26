@@ -9,4 +9,8 @@ const jobLockSchema = new mongoose.Schema({
   expiresAt: { type: Date,   required: true },
 })
 
+// TTL index: MongoDB auto-deletes expired lock docs so a crashed instance can't
+// hold a lock forever. expireAfterSeconds:0 means delete when expiresAt < now.
+jobLockSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+
 export const JobLock = mongoose.model('JobLock', jobLockSchema)

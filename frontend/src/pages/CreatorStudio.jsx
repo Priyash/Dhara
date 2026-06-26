@@ -20,6 +20,8 @@ import {
   getCreatorAnalytics,
   getCreatorRevenue,
   requestCreatorPayout,
+  getCreatorPayoutDetails,
+  updateCreatorPayoutDetails,
   listCreatorReels,
   deleteCreatorReel,
   resubmitCreatorReel,
@@ -720,6 +722,12 @@ export default function CreatorStudio() {
   const [revenueLoading, setRevenueLoading] = useState(false)
   const [payoutRequesting, setPayoutRequesting] = useState(false)
   const [payoutRequestMsg, setPayoutRequestMsg] = useState('')
+  const [showPayoutDetailsModal, setShowPayoutDetailsModal] = useState(false)
+  const [payoutDetails,      setPayoutDetails]      = useState(null)
+  const [payoutDetailsForm,  setPayoutDetailsForm]  = useState({ method: 'bank', accountHolderName: '', accountNumber: '', ifsc: '', upiId: '' })
+  const [payoutDetailsBusy,  setPayoutDetailsBusy]  = useState(false)
+  const [payoutDetailsError, setPayoutDetailsError] = useState('')
+  const [payoutDetailsSaved, setPayoutDetailsSaved] = useState(false)
   const [tierAdvancedDismissed, setTierAdvancedDismissed] = useState(false)
   const [expandedSeries, setExpandedSeries]     = useState(new Set())
   const [reels,           setReels]           = useState([])
@@ -801,6 +809,38 @@ export default function CreatorStudio() {
       setRevenueLoading(false)
     }
   }, [])
+
+  const loadPayoutDetails = async () => {
+    setPayoutDetailsBusy(true); setPayoutDetailsError('')
+    try {
+      const res = await getCreatorPayoutDetails()
+      setPayoutDetails(res)
+      setPayoutDetailsForm({
+        method:            res.method || 'bank',
+        accountHolderName: res.accountHolderName || '',
+        accountNumber:     '',
+        ifsc:              res.ifsc || '',
+        upiId:             '',
+      })
+    } catch (err) {
+      setPayoutDetailsError(err?.message || 'Could not load payout details.')
+    } finally {
+      setPayoutDetailsBusy(false)
+    }
+  }
+
+  const handleSavePayoutDetails = async () => {
+    setPayoutDetailsBusy(true); setPayoutDetailsError(''); setPayoutDetailsSaved(false)
+    try {
+      await updateCreatorPayoutDetails(payoutDetailsForm)
+      setPayoutDetailsSaved(true)
+      await loadPayoutDetails()
+    } catch (err) {
+      setPayoutDetailsError(err?.message || 'Could not save payout details.')
+    } finally {
+      setPayoutDetailsBusy(false)
+    }
+  }
 
   const loadReels = useCallback(async () => {
     setReelsLoading(true)
@@ -1881,7 +1921,13 @@ export default function CreatorStudio() {
 
                 {/* ── Payout history ── */}
                 <div className={styles.revenuePayoutCard}>
-                  <p className={styles.revenueChartTitle}><Wallet size={13} /> Payout History</p>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                    <p className={styles.revenueChartTitle}><Wallet size={13} /> Payout History</p>
+                    <button className={styles.ghostBtn} style={{ padding: '6px 12px', fontSize: 12 }}
+                      onClick={() => { setPayoutDetailsError(''); setPayoutDetailsSaved(false); setShowPayoutDetailsModal(true); loadPayoutDetails() }}>
+                      <Banknote size={13} /> {payoutDetails?.hasDetails ? 'Edit Payout Details' : 'Add Payout Details'}
+                    </button>
+                  </div>
                   {payouts.length === 0 ? (
                     <p className={styles.revenueEmpty}>No payouts yet — your first payout is issued once your balance reaches ₹1,000.</p>
                   ) : (
@@ -2217,6 +2263,77 @@ export default function CreatorStudio() {
           </section>
         )
       })()}
+
+      {/* ── Payout Details Modal ── */}
+      {showPayoutDetailsModal && createPortal(
+        <div className={styles.modalBackdrop} onClick={(e) => e.target === e.currentTarget && setShowPayoutDetailsModal(false)}>
+          <div className={styles.modalPanel} style={{ maxWidth: 460 }} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <h2 className={styles.modalTitle}><Banknote size={15} /> Payout Details</h2>
+              <button className={styles.modalClose} onClick={() => setShowPayoutDetailsModal(false)} aria-label="Close"><X size={16} /></button>
+            </div>
+            <div style={{ padding: '20px 24px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
+                Add your bank or UPI details so payouts can be sent directly to you. Until this is filled in, your payouts are processed manually by the Dhara team.
+              </p>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className={payoutDetailsForm.method === 'bank' ? styles.primaryBtn : styles.ghostBtn}
+                  style={{ flex: 1, padding: '8px 0', fontSize: 12 }}
+                  onClick={() => setPayoutDetailsForm((p) => ({ ...p, method: 'bank' }))}
+                >Bank Transfer</button>
+                <button
+                  className={payoutDetailsForm.method === 'upi' ? styles.primaryBtn : styles.ghostBtn}
+                  style={{ flex: 1, padding: '8px 0', fontSize: 12 }}
+                  onClick={() => setPayoutDetailsForm((p) => ({ ...p, method: 'upi' }))}
+                >UPI</button>
+              </div>
+
+              {payoutDetailsForm.method === 'bank' ? (
+                <>
+                  <label className={styles.label}>
+                    Account holder name
+                    <input className={styles.input} value={payoutDetailsForm.accountHolderName}
+                      onChange={(e) => setPayoutDetailsForm((p) => ({ ...p, accountHolderName: e.target.value }))} />
+                  </label>
+                  <label className={styles.label}>
+                    Account number <span style={{ fontSize: 10, color: '#888', fontWeight: 400 }}>{payoutDetails?.accountNumber ? `currently on file: ${payoutDetails.accountNumber}` : ''}</span>
+                    <input className={styles.input} value={payoutDetailsForm.accountNumber} placeholder="Re-enter to change"
+                      onChange={(e) => setPayoutDetailsForm((p) => ({ ...p, accountNumber: e.target.value }))} />
+                  </label>
+                  <label className={styles.label}>
+                    IFSC code
+                    <input className={styles.input} value={payoutDetailsForm.ifsc} placeholder="HDFC0000053"
+                      onChange={(e) => setPayoutDetailsForm((p) => ({ ...p, ifsc: e.target.value.toUpperCase() }))} />
+                  </label>
+                </>
+              ) : (
+                <label className={styles.label}>
+                  UPI ID <span style={{ fontSize: 10, color: '#888', fontWeight: 400 }}>{payoutDetails?.upiId ? `currently on file: ${payoutDetails.upiId}` : ''}</span>
+                  <input className={styles.input} value={payoutDetailsForm.upiId} placeholder="name@bank"
+                    onChange={(e) => setPayoutDetailsForm((p) => ({ ...p, upiId: e.target.value }))} />
+                </label>
+              )}
+
+              {payoutDetailsSaved && (
+                <div style={{ background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#4ade80' }}>
+                  ✓ Payout details saved
+                </div>
+              )}
+              {payoutDetailsError && <p style={{ fontSize: 13, color: '#f87171' }}>{payoutDetailsError}</p>}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className={styles.ghostBtn} onClick={() => setShowPayoutDetailsModal(false)}>Close</button>
+                <button className={styles.primaryBtn} onClick={handleSavePayoutDetails} disabled={payoutDetailsBusy}>
+                  {payoutDetailsBusy ? 'Saving…' : 'Save Details'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* ── Reel Upload Modal ── */}
       {showReelModal && (

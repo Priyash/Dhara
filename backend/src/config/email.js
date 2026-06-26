@@ -147,11 +147,35 @@ export function emailTierAdvancement(studioName, email, prevTier, newTier, reven
   })
 }
 
+export function emailPaymentSuccess(displayName, email, plan, expiresAt) {
+  const expiryStr = new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+  return sendEmail({
+    to:      email,
+    subject: 'Welcome to ধারা — your subscription is active',
+    html: `
+      <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+        <h2 style="color:#7c3aed">ধারা</h2>
+        <p>Hi <strong>${displayName}</strong>,</p>
+        <p>🎉 Your <strong>${plan}</strong> subscription is now active.</p>
+        <p>Enjoy unlimited access to Bengali cinema, series &amp; documentaries until <strong>${expiryStr}</strong>.</p>
+        <p>
+          <a href="https://dhara.stream" style="display:inline-block;background:#7c3aed;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600">
+            Start Watching
+          </a>
+        </p>
+        <p style="margin-top:32px;font-size:13px;color:#888">
+          — The ধারা team
+        </p>
+      </div>
+    `,
+  })
+}
+
 export function emailSubscriptionRenewalReminder(displayName, email, expiresAt, plan) {
   const expiryStr = new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
   return sendEmail({
     to:      email,
-    subject: 'Your ধারা subscription expires in 3 days',
+    subject: `Your ধারা ${plan} subscription expires on ${new Date(expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`,
     html: `
       <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
         <h2 style="color:#7c3aed">ধারা</h2>

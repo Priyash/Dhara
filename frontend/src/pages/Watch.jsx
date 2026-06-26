@@ -176,12 +176,14 @@ export default function Watch() {
   }, [content, id, activeSeason, activeEp, isLoggedIn, isSubscribed, user?.emailVerified])
 
   // Heartbeat: keeps the stream session alive while the player is open.
-  // Cleans up the session immediately when the component unmounts or the stream changes.
+  // 60s interval (up from 30s): at 50K concurrent viewers this halves the heartbeat
+  // request rate from 1.67K req/sec to ~833 req/sec. The ActiveStream TTL is 120s
+  // so a 60s heartbeat still keeps the session alive with a 2× safety margin.
   useEffect(() => {
     if (!sessionId) return
     const interval = setInterval(() => {
       sendStreamHeartbeat(sessionId).catch(() => {})
-    }, 30_000)
+    }, 60_000)
     return () => {
       clearInterval(interval)
       endStreamSession(sessionId).catch(() => {})

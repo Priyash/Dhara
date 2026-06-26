@@ -236,7 +236,7 @@ npm run dev        # backend :4000  +  frontend :5173
 | `Reel` | Short-form videos with creator, hashtags, stats |
 | `UploadJob` | Tracks each Bunny Stream upload/transcode job |
 | `Transaction` | Razorpay payment records |
-| `ViewEvent` | Per-play events (hour, state, device) — 1-year TTL |
+| `ViewEvent` | Per-play events (hour, state, device) — 90-day TTL |
 | `UserRating` | Per-user star rating; aggregated onto Content |
 | `InteractionEvent` | Plays, likes, searches — feed the recommendation engine |
 | `ContentRankSnapshot` | Daily rank snapshots for ▲▼ delta badges |
@@ -258,7 +258,108 @@ After deploying:
 3. Set `VITE_API_URL` in your Vercel project environment to the Render service URL
 4. Add your email to `ADMIN_EMAILS` — without this you cannot access `/admin` in production
 
-> **Redis:** Not required, but strongly recommended before scaling to 2+ backend instances. Without it, the in-memory response cache and rate-limiter state are not shared between instances.
+> **Redis:** Not required for a single instance, but **required before adding a second instance**. Without it, the in-memory response cache and rate-limiter state are not shared between instances — each instance gets its own disconnected copy.
+
+---
+
+## Scaling
+
+### Capacity at current configuration
+
+| Metric | Value |
+|--------|-------|
+| Concurrent users (peak) | ~6,650 |
+| Daily active users | ~320K |
+| Hard ceiling | MongoDB connection pool (100 connections) |
+| Single-instance? | Yes — Redis required before running 2+ instances |
+
+Bottleneck math: 100 pool connections × (1,000 ms ÷ 35 ms avg query latency) = 2,857 queries/sec. An authenticated session costs ~7.3 queries weighted across cached and uncached endpoints → ~6,650 concurrent users max on one instance.
+
+---
+
+### Tier 1 — up to 50K DAU ✅ Ready now
+
+No infrastructure changes needed. The current single-instance setup handles this comfortably with headroom.
+
+---
+
+### Tier 2 — up to 500K DAU ✅ Implemented
+
+All code changes are already in the codebase. The only remaining step is **adding Redis** — one environment variable in the Render dashboard.
+
+**What's already done in code:**
+| Change | File | Impact |
+|--------|------|--------|
+| Per-user cache for `/shelves` | `recommendations.js` | 11 DB queries → 0 for returning users (60 s TTL per user ID) |
+| Singleflight on cache misses | `cache.js` | Concurrent cache misses collapse to one DB call instead of N |
+| LRU eviction + 5K entry cap | `cache.js` | In-memory cache can't grow unbounded and crash the process |
+| `GET /api/content/:id` cached | `content.js` | Detail page load: 0 DB queries on cache hit (5 min TTL) |
+| MongoDB pool 100 → was 20 | `mongodb.js` | 5× more concurrent connections |
+| JobLock TTL index | `JobLock.js` | Crashed instances auto-release their lock; no stuck jobs |
+| Reel upload concurrency cap (3) | `reels.js` | 100 simultaneous uploads can't exhaust the connection pool |
+| Archive import concurrency cap (3) + timeout | `archiveImportWorker.js` | Background imports can't starve user requests |
+| InteractionEvent TTL 180 d → 30 d | `InteractionEvent.js` | Caps collection at ~75M docs instead of 900M at 500K users |
+| ViewEvent TTL 1 yr → 90 d | `ViewEvent.js` | Caps collection at ~225M docs instead of 1.8B |
+| Renewal reminder pagination + rate limit | `subscriptionExpiry.js` | Reminder job processes 100 users/batch at 1 email/sec |
+| Payment activation in DB transaction | `payments.js` | No more "charged but not subscribed" on network failure |
+| Covering indexes with `isDeleted` | `Content.js` | Hot browse path no longer fetches full docs to check soft-delete |
+
+**The one thing left to do — add Redis:**
+
+1. Create a free Redis instance at [Upstash](https://upstash.com) (free tier: 10K commands/day; paid: ~$0.20 per 100K commands)
+2. Copy the `REDIS_URL` (use the `rediss://` TLS URL)
+3. Add it to the Render dashboard under **Environment** → `REDIS_URL`
+4. Redeploy — the backend auto-detects it on startup
+
+Once Redis is set:
+- Rate limiting is shared across all instances (brute-force protection works correctly)
+- Response cache is shared across all instances (no thundering herd per instance)
+- You can safely add a second Render instance
+
+**Cost to run Tier 2 on Render:**
+
+| Item | Cost |
+|------|------|
+| Render Starter instance (current) | $7/mo |
+| Upstash Redis (free tier covers ~500K DAU) | $0–5/mo |
+| Second Render instance (optional, only if CPU-bound) | +$7/mo |
+| **Total** | **$7–19/mo** |
+
+A second Render instance is only needed if CPU becomes the bottleneck (unlikely before 500K DAU — the DB pool is the real ceiling). Add Redis first and monitor before adding compute.
+
+---
+
+### Tier 3 — up to 1M DAU 🗺 Roadmap
+
+These are the remaining engineering items once you're past 500K DAU:
+
+**Database**
+- [ ] MongoDB Atlas upgrade to M30+ tier with replica set reads offloaded to secondaries
+- [ ] Shard `ViewEvent` on `{ viewedAt: 1, contentId: 1 }` — collection hits ~225M docs at 500K users; 1M users doubles it
+- [ ] Shard `InteractionEvent` on `{ userId: 1, createdAt: -1 }`
+- [ ] Pre-compute hourly analytics aggregates into a `MaterializedAnalytics` collection so `/admin/monitor` reads rows instead of scanning millions of ViewEvents live
+
+**Caching**
+- [ ] CDN-level caching for anonymous `/shelves` and `/api/content` — set `public, s-maxage=60` and let Vercel/Cloudflare cache at the edge; backend only handles authenticated traffic
+- [ ] Cache `/api/content/:id/stream` validation per user+content (5 min TTL) — eliminates the DB hit on every video play
+
+**Recommendations**
+- [ ] Replace the 5-query `buildGenreRows` + `buildBecauseYouWatched` with a single `$lookup` aggregation pipeline (11 queries → 4)
+- [ ] Move `buildTop10ThisWeek` to a pre-computed job (runs every 15 min, writes to Redis) — Top 10 doesn't need to be live
+
+**Jobs**
+- [ ] Replace `setInterval` job scheduler with BullMQ for reliable queuing, retries, and a job dashboard
+- [ ] Add job health endpoint (`GET /api/admin/jobs/health`) that alerts if a job hasn't run in 2× its expected interval
+
+**Frontend**
+- [ ] Add a Service Worker (Workbox) to cache the JS/CSS bundle — saves ~100 GB/day of repeat downloads at 1M DAU
+- [ ] Virtual scrolling on Browse page (`react-window`) — 500+ DOM nodes with HLS.js attached currently causes scroll jank
+- [ ] Batch the 3 parallel home page API calls into a single `GET /api/home` endpoint
+
+**Infrastructure**
+- [ ] Horizontal scaling: 2–5 Render instances behind a load balancer (enabled by Redis already being in place)
+- [ ] Elasticsearch (or MongoDB Atlas Search) for full-text search — MongoDB `$text` index scans linearly at 10M+ content docs
+- [ ] Dedicated MongoDB connection pooler (e.g. pgBouncer equivalent via Atlas proxy) to handle connection spike from 5 instances
 
 ---
 
@@ -278,6 +379,8 @@ After deploying:
 - Razorpay recurring subscription object (auto-renewal without manual re-checkout)
 - Family plan seat management (invite and manage up to N members)
 - iOS and Android apps
+
+For infrastructure and scalability items see the [Scaling → Tier 3 roadmap](#tier-3----up-to-1m-dau--roadmap) above.
 
 ---
 

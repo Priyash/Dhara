@@ -17,9 +17,12 @@ const viewEventSchema = new Schema({
 
 viewEventSchema.index({ creatorId: 1, viewedAt: -1 })
 viewEventSchema.index({ contentId: 1, viewedAt: -1 })
-// Deduplication index: one counted view per user per content per episode per day
-viewEventSchema.index({ userId: 1, contentId: 1, episodeNumber: 1, viewedAt: -1 })
-// 1-year TTL — auto-purges old events so the collection stays bounded
-viewEventSchema.index({ viewedAt: 1 }, { expireAfterSeconds: 31_536_000 })
+// Deduplication index: one counted view per user per content per season/episode per day
+viewEventSchema.index({ userId: 1, contentId: 1, seasonNumber: 1, episodeNumber: 1, viewedAt: -1 })
+// Analytics range queries: creatorId/contentId filters with date range
+viewEventSchema.index({ viewedAt: 1, contentId: 1 })
+// 90-day TTL — 1-year retention at 500K users * 5 views/day = 1.8B docs/year (~450 GB).
+// 90 days caps the collection at ~225M docs while still covering quarterly analytics.
+viewEventSchema.index({ viewedAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 })
 
 export const ViewEvent = model('ViewEvent', viewEventSchema)

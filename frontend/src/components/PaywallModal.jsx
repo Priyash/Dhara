@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { X, Crown, Check, Loader, Clock, AlertCircle } from 'lucide-react'
 import { useStore } from '../store/useStore'
+import { useLocale } from '../hooks/useLocale'
 import { PLANS } from '../data/content'
-import { createOrder, verifyPayment, createSubscription, verifySubscription } from '../services/api'
+import { createOrder, verifyPayment, createSubscription, verifySubscription, startTrial } from '../services/api'
 import styles from './PaywallModal.module.css'
 
 function loadRazorpayScript() {
@@ -31,11 +32,13 @@ const RECURRING_PLANS = new Set(['monthly'])
 
 export default function PaywallModal() {
   const { setShowPaywall, refreshProfile, subscriptionStatus, subscriptionPlan, subscriptionExpiresAt, trialEndsAt, graceEndsAt, user } = useStore()
+  const { currency: fxCurrency } = useLocale()
 
   const currentPlan   = subscriptionPlan ?? user?.subscriptionPlan ?? null
   const isSubscribed  = subscriptionStatus === 'active'
   const isOnTrial     = subscriptionStatus === 'trial'
   const isOnGrace     = subscriptionStatus === 'grace'
+  const isFree        = subscriptionStatus === 'free'
 
   const defaultPlan = useMemo(() => {
     if (isSubscribed && currentPlan) return currentPlan
@@ -57,6 +60,25 @@ export default function PaywallModal() {
 
   // Prevent re-purchasing the plan the user is already on
   const isSamePlan = isSubscribed && selected === currentPlan
+
+  const handleStartTrial = useCallback(async () => {
+    setStage(STAGE.LOADING)
+    setErrorMsg('')
+    try {
+      await startTrial()
+      await refreshProfile()
+      setStage(STAGE.SUCCESS)
+      setTimeout(() => setShowPaywall(false), 1800)
+    } catch (err) {
+      const msg = err.message || ''
+      if (msg.includes('already') || msg.includes('409')) {
+        setErrorMsg('Your free trial has already been used. Please choose a plan below.')
+      } else {
+        setErrorMsg(msg || 'Could not start trial. Please try again.')
+      }
+      setStage(STAGE.ERROR)
+    }
+  }, [refreshProfile, setShowPaywall])
 
   const handleSubscribe = useCallback(async () => {
     setStage(STAGE.LOADING)
@@ -242,6 +264,15 @@ export default function PaywallModal() {
               </h2>
               <p className={styles.sub}>Subscribe now to keep watching unlimited Bengali content</p>
             </>
+          ) : isFree ? (
+            <>
+              <div className={styles.eyebrow}>
+                <Crown size={16} color="#db2777" />
+                <span>Free Trial</span>
+              </div>
+              <h2 className={styles.heading}>7 Days Free</h2>
+              <p className={styles.sub}>Try unlimited Bengali cinema, series & originals — no payment needed</p>
+            </>
           ) : (
             <>
               <div className={styles.eyebrow}>
@@ -287,7 +318,14 @@ export default function PaywallModal() {
                       ? <span className={styles.planCurrent}>Current</span>
                       : plan.badge && <span className={styles.planBadge}>{plan.badge}</span>
                     }
-                    <span className={styles.planPrice}>{plan.price}</span>
+                    <div className={styles.planPriceCol}>
+                      <span className={styles.planPrice}>{plan.price}</span>
+                      {fxCurrency && (
+                        <span className={styles.planFx}>
+                          ~ {fxCurrency.symbol}{(plan.amountInr * fxCurrency.rateFromInr).toFixed(2)} {fxCurrency.currencyCode}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </button>
               ))}
@@ -311,6 +349,23 @@ export default function PaywallModal() {
             {/* Error message */}
             {stage === STAGE.ERROR && errorMsg && (
               <p className={styles.errorMsg}>{errorMsg}</p>
+            )}
+
+            {/* Free trial CTA — shown for free-status users who haven't subscribed */}
+            {isFree && stage !== STAGE.SUCCESS && (
+              <>
+                <button
+                  className={styles.cta}
+                  onClick={handleStartTrial}
+                  disabled={busy}
+                  style={{ marginBottom: 8 }}
+                >
+                  {busy && <Loader size={15} className={styles.spinner} />}
+                  {busy ? 'Starting…' : 'Start 7-Day Free Trial'}
+                </button>
+                <p className={styles.fine} style={{ marginBottom: 16 }}>No credit card required · Cancel anytime</p>
+                <p className={styles.fine} style={{ opacity: 0.5, marginBottom: 4 }}>— or subscribe directly —</p>
+              </>
             )}
 
             {/* CTA */}

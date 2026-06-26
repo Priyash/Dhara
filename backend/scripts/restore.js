@@ -31,6 +31,8 @@ import { PaymentConfig }    from '../src/models/PaymentConfig.js'
 import { CuratedShelf }     from '../src/models/CuratedShelf.js'
 import { CreatorEarning }   from '../src/models/CreatorEarning.js'
 import { CreatorPayout }    from '../src/models/CreatorPayout.js'
+import { ViewRateConfig }   from '../src/models/ViewRateConfig.js'
+import { CurrencyConfig }   from '../src/models/CurrencyConfig.js'
 
 const MODEL_MAP = {
   content:           Content,
@@ -42,6 +44,8 @@ const MODEL_MAP = {
   curatedShelves:    CuratedShelf,
   creatorEarnings:   CreatorEarning,
   creatorPayouts:    CreatorPayout,
+  viewRateConfig:    ViewRateConfig,
+  currencyConfig:    CurrencyConfig,
 }
 
 const args    = process.argv.slice(2)

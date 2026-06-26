@@ -18,10 +18,11 @@ import { redisClient } from './redis.js'
 
 const KEY_PREFIX = 'dhara:cache:'
 
+const TTL_CACHE_MAX = 5_000  // max entries before LRU eviction kicks in
+
 class TTLCache {
   constructor() {
     this._store = new Map()
-    // Periodic eviction — prevents unbounded growth without needing an LRU library
     setInterval(() => this._evict(), 60_000).unref()
   }
 
@@ -29,11 +30,20 @@ class TTLCache {
     const entry = this._store.get(key)
     if (!entry) return null
     if (Date.now() > entry.exp) { this._store.delete(key); return null }
+    // Refresh insertion order (LRU: move to end on access)
+    this._store.delete(key)
+    this._store.set(key, entry)
     return entry.val
   }
 
   async set(key, val, ttlMs) {
+    // Delete first so re-insertion moves to end (LRU ordering)
+    this._store.delete(key)
     this._store.set(key, { val, exp: Date.now() + ttlMs })
+    if (this._store.size > TTL_CACHE_MAX) {
+      // Evict the oldest entry (first in Map insertion order)
+      this._store.delete(this._store.keys().next().value)
+    }
   }
 
   async deleteByPrefix(prefix) {
@@ -43,6 +53,17 @@ class TTLCache {
   }
 
   async clear() { this._store.clear() }
+
+  _evict() {
+    const now = Date.now()
+    for (const [key, entry] of this._store) {
+      if (now > entry.exp) this._store.delete(key)
+    }
+    // If still over limit after TTL sweep, evict oldest entries
+    while (this._store.size > TTL_CACHE_MAX) {
+      this._store.delete(this._store.keys().next().value)
+    }
+  }
 }
 
 class RedisCache {
@@ -101,6 +122,14 @@ class RedisCache {
 
 export const cache = redisClient ? new RedisCache(redisClient) : new TTLCache()
 
+if (!redisClient && process.env.NODE_ENV === 'production') {
+  console.warn('[cache] WARNING — REDIS_URL not set. In-memory cache is per-instance and capped at 5K entries. Rate limiting will NOT be shared across instances. Set REDIS_URL before scaling to 2+ instances.')
+}
+
+// Singleflight: prevents thundering herd by coalescing concurrent cache misses on
+// the same key. The first miss triggers the handler; concurrent misses wait for it.
+const _inFlight = new Map()
+
 /**
  * Express middleware factory — caches successful GET responses.
  *
@@ -125,16 +154,37 @@ export function withCache(ttlSeconds) {
         return res.json(hit)
       }
 
+      // Singleflight: if another request is already computing this key, wait for it
+      if (_inFlight.has(key)) {
+        return _inFlight.get(key).then((data) => {
+          res.setHeader('X-Cache',       'HIT')
+          res.setHeader('Cache-Control', `public, max-age=${ttlSeconds}`)
+          return res.json(data)
+        }).catch(next)
+      }
+
       // Intercept res.json so we capture the response before it's sent
+      let resolveInflight, rejectInflight
+      const inflight = new Promise((res, rej) => { resolveInflight = res; rejectInflight = rej })
+      _inFlight.set(key, inflight)
+
       const originalJson = res.json.bind(res)
       res.json = (data) => {
         if (res.statusCode === 200) {
           cache.set(key, data, ttlMs)
           res.setHeader('Cache-Control', `public, max-age=${ttlSeconds}`)
+          resolveInflight(data)
+        } else {
+          rejectInflight(new Error(`non-200 status ${res.statusCode}`))
         }
+        _inFlight.delete(key)
         res.setHeader('X-Cache', 'MISS')
         return originalJson(data)
       }
+
+      // Clean up inflight entry if the handler throws
+      const origNext = next
+      next = (err) => { _inFlight.delete(key); rejectInflight(err || new Error('handler error')); origNext(err) }
 
       next()
     }).catch(next)

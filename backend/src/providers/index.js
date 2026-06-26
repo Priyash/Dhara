@@ -1,5 +1,6 @@
 import { PaymentConfig } from '../models/PaymentConfig.js'
 import { createRazorpayAdapter } from './razorpay.js'
+import { isPayoutConfigured } from './razorpayPayout.js'
 
 /**
  * Registry of installed provider adapters.
@@ -46,5 +47,19 @@ export function getProviderStatus(backendUrl = '') {
         : null,
       webhookUrl: `${backendUrl}/api/payments/webhook`,
     },
+  }
+}
+
+/**
+ * Status of the RazorpayX auto-payout adapter, for the admin Revenue UI.
+ * Distinct from getProviderStatus() above — that's the subscription/payment
+ * provider, this is the (gated, dormant-by-default) creator payout rail.
+ */
+export function getPayoutProviderStatus() {
+  return {
+    configured: isPayoutConfigured(),
+    accountNumberHint: process.env.RAZORPAY_X_ACCOUNT_NUMBER
+      ? `••••${String(process.env.RAZORPAY_X_ACCOUNT_NUMBER).slice(-4)}`
+      : null,
   }
 }
