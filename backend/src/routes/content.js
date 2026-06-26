@@ -315,7 +315,7 @@ router.get('/shelves', withCache(60), async (req, res, next) => {
  * GET /api/content/:id
  * Public. Full metadata, no video GUIDs.
  */
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', withCache(300), async (req, res, next) => {
   try {
     const item = await Content.findOne({ _id: req.params.id, isPublished: true, isDeleted: { $ne: true }, submissionStatus: { $nin: ['pending', 'rejected'] } }).select(PUBLIC_FIELDS).lean()
     if (!item) return res.status(404).json({ error: 'Content not found' })

@@ -55,6 +55,9 @@ if (isProd) {
   if (!process.env.ADMIN_EMAILS) {
     console.warn('[startup] WARNING — ADMIN_EMAILS not set; admin access relies solely on Firebase custom claims')
   }
+  if (!process.env.REDIS_URL) {
+    console.warn('[startup] WARNING — REDIS_URL not set. Rate limiting is per-instance (not shared). In-memory cache is capped at 5K entries. Required before scaling to 2+ instances.')
+  }
 }
 
 // ── App setup ─────────────────────────────────────────────────────────────────
@@ -172,6 +175,10 @@ app.use(errorHandler)
 // first successful connection fires.
 
 const server = app.listen(PORT, () => console.log(`Dhara backend → http://localhost:${PORT}`))
+
+// 30-second request timeout — prevents slow admin aggregations from hanging
+// connections indefinitely and exhausting the pool under load.
+server.requestTimeout = 30_000
 
 let startupTasksDone = false
 mongoose.connection.on('connected', async () => {

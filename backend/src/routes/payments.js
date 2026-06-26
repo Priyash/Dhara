@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import mongoose from 'mongoose'
 import { User } from '../models/User.js'
 import { Transaction } from '../models/Transaction.js'
 import { CreatorPayout } from '../models/CreatorPayout.js'
@@ -141,23 +142,39 @@ router.post('/verify', requireAuth, async (req, res, next) => {
       })
     }
 
-    const currentUser = await User.findById(req.user._id).select('subscriptionExpiresAt').lean()
-    const expiresAt = extendPlanFrom(plan, currentUser?.subscriptionExpiresAt)
+    // Activate subscription inside a multi-document transaction so both the
+    // Transaction status update and the User subscription update are atomic.
+    // If the User write fails (network hiccup, timeout), the Transaction rolls back
+    // and the user is never left in a "charged but not subscribed" state.
+    let user, expiresAt
+    const session = await mongoose.startSession()
+    try {
+      await session.withTransaction(async () => {
+        const currentUser = await User.findById(req.user._id).select('subscriptionExpiresAt').session(session).lean()
+        expiresAt = extendPlanFrom(plan, currentUser?.subscriptionExpiresAt)
 
-    // Activate subscription
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      {
-        $set: {
-          subscriptionStatus:    'active',
-          subscriptionPlan:      plan,
-          subscriptionStartedAt: new Date(),
-          subscriptionExpiresAt: expiresAt,
-          graceEndsAt:           null,
-        },
-      },
-      { new: true }
-    )
+        await Transaction.findOneAndUpdate(
+          { orderId: razorpay_order_id },
+          { $set: { status: 'paid', paymentId: razorpay_payment_id } },
+          { session }
+        )
+        user = await User.findByIdAndUpdate(
+          req.user._id,
+          {
+            $set: {
+              subscriptionStatus:    'active',
+              subscriptionPlan:      plan,
+              subscriptionStartedAt: new Date(),
+              subscriptionExpiresAt: expiresAt,
+              graceEndsAt:           null,
+            },
+          },
+          { new: true, session }
+        )
+      })
+    } finally {
+      session.endSession()
+    }
 
     emailPaymentSuccess(req.user.displayName || req.user.email, req.user.email, plan, expiresAt).catch(() => {})
 

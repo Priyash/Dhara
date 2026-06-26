@@ -64,18 +64,18 @@ const contentSchema = new mongoose.Schema(
 )
 
 contentSchema.index({ title: 'text', desc: 'text', genre: 'text' })
-// Browsing queries: type + premium filter + sort
-contentSchema.index({ isPublished: 1, submissionStatus: 1, type: 1, isPremium: 1, rating: -1 })
-contentSchema.index({ isPublished: 1, submissionStatus: 1, type: 1, isPremium: 1, releaseYear: -1 })
-contentSchema.index({ isPublished: 1, submissionStatus: 1, type: 1, isPremium: 1, title: 1 })
+// Covering indexes for the hot browse path — include isDeleted so MongoDB doesn't
+// have to fetch the full doc to check the soft-delete flag.
+contentSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, type: 1, isPremium: 1, rating: -1 })
+contentSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, type: 1, isPremium: 1, releaseYear: -1 })
+contentSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, type: 1, isPremium: 1, title: 1 })
+// Popular-sort path: browse by viewCount
+contentSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, viewCount: -1 })
 // Genre facet aggregation
-contentSchema.index({ isPublished: 1, submissionStatus: 1, genre: 1 })
+contentSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, genre: 1 })
 contentSchema.index({ creatorId: 1, submissionStatus: 1 })
 contentSchema.index({ isPublished: 1, isFeatured: 1, featuredOrder: 1 })
-contentSchema.index({ isDeleted: 1, isPublished: 1, submissionStatus: 1 })
 contentSchema.index({ isPublished: 1, badge: 1 })
-// Popular-sort path: browse by viewCount (hot path, no existing index covers this sort)
-contentSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, viewCount: -1 })
 // Enforce uniqueness of Bunny video GUID — sparse so null/missing GUIDs don't conflict
 contentSchema.index({ bunnyVideoId: 1 }, { unique: true, sparse: true })
 

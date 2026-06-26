@@ -1,5 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Component } from 'react'
 import { useNavigate } from 'react-router-dom'
+
+// Granular row-level error boundary — isolates a single shelf crash so the rest
+// of the home page stays visible instead of the entire page going blank.
+class RowErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false } }
+  static getDerivedStateFromError() { return { hasError: true } }
+  componentDidCatch(err) { console.error('[Home row error]', err) }
+  render() {
+    if (this.state.hasError) return null  // silently hide the broken row
+    return this.props.children
+  }
+}
 import Hero from '../components/Hero'
 import ContentRow from '../components/ContentRow'
 import CinematicRow from '../components/CinematicRow'
@@ -96,30 +108,33 @@ export default function Home() {
 
         {/* ── Continue Watching — wide resume card ── */}
         {continueWatching.length > 0 && (
-          <WideResumeCard
-            items={continueWatching}
-            onCardClick={handleContinueClick}
-          />
+          <RowErrorBoundary key="cw">
+            <WideResumeCard
+              items={continueWatching}
+              onCardClick={handleContinueClick}
+            />
+          </RowErrorBoundary>
         )}
 
         {/* ── Recommendation shelves (affinity / top10 / genre) ── */}
         {recommendationShelves
           .filter(shelf => shelf.type !== 'progress')
           .map(shelf => (
-            <ContentRow
-              key={shelf.id}
-              title={shelf.type === 'affinity' && shelf.seed?.title ? shelf.seed.title : shelf.title}
-              eyebrow={
-                shelf.type === 'affinity' ? 'Because you watched' :
-                shelf.type === 'top10'    ? 'This week' :
-                undefined
-              }
-              items={shelf.items}
-              ranked={shelf.type === 'top10'}
-              onSeeAll={shelf.type === 'top10' ? () => navigate('/browse') : undefined}
-              eventSource={`shelf_${shelf.type}`}
-              {...rowProps}
-            />
+            <RowErrorBoundary key={shelf.id}>
+              <ContentRow
+                title={shelf.type === 'affinity' && shelf.seed?.title ? shelf.seed.title : shelf.title}
+                eyebrow={
+                  shelf.type === 'affinity' ? 'Because you watched' :
+                  shelf.type === 'top10'    ? 'This week' :
+                  undefined
+                }
+                items={shelf.items}
+                ranked={shelf.type === 'top10'}
+                onSeeAll={shelf.type === 'top10' ? () => navigate('/browse') : undefined}
+                eventSource={`shelf_${shelf.type}`}
+                {...rowProps}
+              />
+            </RowErrorBoundary>
           ))
         }
 
@@ -157,23 +172,27 @@ export default function Home() {
 
         {/* ── New Releases — cinematic 16:9 row ── */}
         {newReleases.length > 0 && (
-          <CinematicRow
-            title="New Releases"
-            eyebrow="Just dropped"
-            items={newReleases}
-            onCardClick={openItem}
-            onSeeAll={() => navigate('/browse?filter=New')}
-          />
+          <RowErrorBoundary key="new-releases">
+            <CinematicRow
+              title="New Releases"
+              eyebrow="Just dropped"
+              items={newReleases}
+              onCardClick={openItem}
+              onSeeAll={() => navigate('/browse?filter=New')}
+            />
+          </RowErrorBoundary>
         )}
 
         {/* ── Live ── */}
         {live.length > 0 && (
-          <ContentRow title="Live Now" items={live} {...rowProps} />
+          <RowErrorBoundary key="live">
+            <ContentRow title="Live Now" items={live} {...rowProps} />
+          </RowErrorBoundary>
         )}
 
         {/* ── Movies — editorial mosaic (5+ items) → grid overflow ── */}
         {movies.length > 0 && (
-          <>
+          <RowErrorBoundary key="movies">
             <div className={styles.ambientPulse} aria-hidden="true" />
 
             <div className={styles.promo}>
@@ -208,56 +227,63 @@ export default function Home() {
               totalCount={movies.length}
               eventSource="grid_films"
             />
-          </>
+          </RowErrorBoundary>
         )}
 
         {/* ── Series — grid layout ── */}
         {series.length > 0 && (
-          <CategoryGrid
-            title="Series"
-            eyebrow="Binge-worthy"
-            items={series}
-            onCardClick={openItem}
-            isSubscribed={isSubscribed}
-            onSeeAll={() => navigate('/browse?type=Series')}
-            totalCount={series.length}
-            eventSource="grid_series"
-          />
+          <RowErrorBoundary key="series">
+            <CategoryGrid
+              title="Series"
+              eyebrow="Binge-worthy"
+              items={series}
+              onCardClick={openItem}
+              isSubscribed={isSubscribed}
+              onSeeAll={() => navigate('/browse?type=Series')}
+              totalCount={series.length}
+              eventSource="grid_series"
+            />
+          </RowErrorBoundary>
         )}
 
         {/* ── ধারাবাহিক (Serial Drama) — cinematic row ── */}
         {serialDrama.length > 0 && (
-          <CinematicRow
-            title="ধারাবাহিক"
-            eyebrow="Serial Drama"
-            items={serialDrama}
-            onCardClick={openItem}
-            onSeeAll={() => navigate('/browse?type=Serial+Drama')}
-          />
+          <RowErrorBoundary key="serial-drama">
+            <CinematicRow
+              title="ধারাবাহিক"
+              eyebrow="Serial Drama"
+              items={serialDrama}
+              onCardClick={openItem}
+              onSeeAll={() => navigate('/browse?type=Serial+Drama')}
+            />
+          </RowErrorBoundary>
         )}
 
         {/* ── Originals — grid layout ── */}
         {originals.length > 0 && (
-          <CategoryGrid
-            title="Originals"
-            eyebrow="Dhara exclusive"
-            items={originals}
-            onCardClick={openItem}
-            isSubscribed={isSubscribed}
-            onSeeAll={() => navigate('/browse?type=Documentary')}
-            totalCount={originals.length}
-            eventSource="grid_originals"
-          />
+          <RowErrorBoundary key="originals">
+            <CategoryGrid
+              title="Originals"
+              eyebrow="Dhara exclusive"
+              items={originals}
+              onCardClick={openItem}
+              isSubscribed={isSubscribed}
+              onSeeAll={() => navigate('/browse?type=Documentary')}
+              totalCount={originals.length}
+              eventSource="grid_originals"
+            />
+          </RowErrorBoundary>
         )}
 
         {/* ── Curated shelves ── */}
         {shelves.map((shelf) => (
-          <CuratedShelfRow
-            key={shelf._id}
-            shelf={shelf}
-            onCardClick={openItem}
-            isSubscribed={isSubscribed}
-          />
+          <RowErrorBoundary key={shelf._id}>
+            <CuratedShelfRow
+              shelf={shelf}
+              onCardClick={openItem}
+              isSubscribed={isSubscribed}
+            />
+          </RowErrorBoundary>
         ))}
 
       </div>

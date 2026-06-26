@@ -483,7 +483,12 @@ async function buildGenreRows(identity, usedIds) {
 }
 
 // ── GET /api/recommendations/shelves ─────────────────────────────────────────
-router.get('/shelves', withCache(60), optionalAuth, async (req, res, next) => {
+// Caching strategy: anonymous requests are cached globally (same shelf for all anon);
+// authenticated requests are per-user and must NOT share a cache key — using the raw
+// URL would let User A's personalized shelf overwrite User B's. So we skip the
+// shared withCache() middleware for authed requests and let the client/CDN cache via
+// Cache-Control headers instead.
+router.get('/shelves', optionalAuth, async (req, res, next) => {
   try {
     const rawSession = req.headers['x-rec-session'] || req.query.sessionId || ''
     const sessionId  = String(rawSession).slice(0, 120)
@@ -512,6 +517,12 @@ router.get('/shelves', withCache(60), optionalAuth, async (req, res, next) => {
     const genreRows = await buildGenreRows(identity, usedIds)
     for (const row of genreRows) { track(row.items); shelves.push(row) }
 
+    // Allow the browser to cache the response briefly; no shared CDN caching for authed responses
+    if (identity && req.user?._id) {
+      res.setHeader('Cache-Control', 'private, max-age=60')
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=60')
+    }
     res.json({ shelves })
   } catch (err) {
     next(err)

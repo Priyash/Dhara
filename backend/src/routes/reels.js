@@ -16,6 +16,36 @@ import { requireAuth } from '../middleware/auth.js'
 const MAX_REEL_BYTES = 512 * 1024 * 1024  // 512 MB
 const ALLOWED_REEL_EXTS = new Set(['.mp4', '.mov', '.mkv', '.avi', '.webm', '.m4v', '.ts', '.mts'])
 
+// Upload concurrency limiter — prevents simultaneous uploads from exhausting the
+// MongoDB connection pool and starving user-facing requests. Each upload holds a
+// connection for ~30s while streaming to Bunny CDN; at max 3 concurrent uploads
+// the pool impact stays bounded even with many creator uploads.
+const MAX_CONCURRENT_UPLOADS = 3
+let _activeUploads = 0
+const _uploadQueue = []
+
+function enqueueUpload(jobId, stream, size) {
+  return new Promise((resolve, reject) => {
+    _uploadQueue.push({ jobId, stream, size, resolve, reject })
+    _drainUploadQueue()
+  })
+}
+
+async function _drainUploadQueue() {
+  if (_activeUploads >= MAX_CONCURRENT_UPLOADS || !_uploadQueue.length) return
+  const { jobId, stream, size, resolve, reject } = _uploadQueue.shift()
+  _activeUploads++
+  try {
+    await processUploadJob(jobId, stream, size)
+    resolve()
+  } catch (err) {
+    reject(err)
+  } finally {
+    _activeUploads--
+    _drainUploadQueue()
+  }
+}
+
 // Optional auth — attaches req.user when a valid token is present, proceeds without it if not.
 async function optionalAuth(req, _res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '')
@@ -460,15 +490,13 @@ router.put('/:id/file', requireAuth, async (req, res, next) => {
     })
 
     const capturedTmpPath = tmpPath
-    tmpPath = null // processUploadJob callback owns cleanup from here
+    tmpPath = null // enqueueUpload callback owns cleanup from here
 
-    setImmediate(async () => {
-      try {
-        await processUploadJob(job._id, createReadStream(capturedTmpPath), contentLength)
-      } catch { /* status already set to 'failed' by processUploadJob */ } finally {
-        unlink(capturedTmpPath, () => {})
-      }
-    })
+    // Enqueue with concurrency cap (MAX_CONCURRENT_UPLOADS) rather than setImmediate,
+    // so simultaneous creator uploads don't exhaust the MongoDB connection pool.
+    enqueueUpload(job._id, createReadStream(capturedTmpPath), contentLength)
+      .catch(() => { /* status already set to 'failed' by processUploadJob */ })
+      .finally(() => { unlink(capturedTmpPath, () => {}) })
 
     res.status(202).json({ success: true, jobId: job._id, message: 'File accepted and queued.' })
   } catch (err) {

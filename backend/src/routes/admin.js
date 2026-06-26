@@ -14,8 +14,11 @@ import {
   emailSubmissionApproved, emailSubmissionRejected,
 } from '../config/email.js'
 
-// Bust the Browse/Home content cache whenever admin mutates the catalog
-function bustContentCache() { cache.deleteByPrefix('/api/content').catch(() => {}) }
+// Bust the Browse/Home content and recommendation caches whenever admin mutates the catalog
+function bustContentCache() {
+  cache.deleteByPrefix('/api/content').catch(() => {})
+  cache.deleteByPrefix('/api/recommendations').catch(() => {})
+}
 import { UploadJob } from '../models/UploadJob.js'
 import { PaymentConfig } from '../models/PaymentConfig.js'
 import { Transaction } from '../models/Transaction.js'

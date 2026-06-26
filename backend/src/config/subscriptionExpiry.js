@@ -20,6 +20,8 @@ const INTERVAL_MS        = 6 * 60 * 60 * 1000   // run every 6 hours
 const REMINDER_WINDOW_MS = 3  * 86_400_000       // send reminder 3 days before expiry
 const REMINDER_COOLDOWN  = 2  * 86_400_000       // don't re-send within 2 days
 const LOCK_TTL_MS        = 30 * 60 * 1000        // covers a slow run; auto-expires if an instance crashes mid-job
+const REMINDER_BATCH     = 100                   // users per DB page — prevents loading all into RAM at once
+const EMAIL_DELAY_MS     = 1_000                 // 1 email/sec max — stays within Resend rate limits at scale
 
 async function runRenewalReminders() {
   try {
@@ -28,32 +30,51 @@ async function runRenewalReminders() {
     const windowEnd   = new Date(now.getTime() + REMINDER_WINDOW_MS)
     const cooloffCut  = new Date(now.getTime() - REMINDER_COOLDOWN)
 
-    // Find active subscribers expiring in the next 3 days who haven't been reminded recently
-    const users = await User.find({
+    const baseFilter = {
       subscriptionStatus:     'active',
       subscriptionExpiresAt:  { $gte: windowStart, $lte: windowEnd },
       $or: [
         { renewalReminderSentAt: null },
         { renewalReminderSentAt: { $lt: cooloffCut } },
       ],
-    }).select('displayName email subscriptionExpiresAt subscriptionPlan renewalReminderSentAt').lean()
+    }
 
-    for (const user of users) {
-      try {
-        await emailSubscriptionRenewalReminder(
-          user.displayName || user.email,
-          user.email,
-          user.subscriptionExpiresAt,
-          user.subscriptionPlan || 'subscription'
-        )
-        await User.findByIdAndUpdate(user._id, { $set: { renewalReminderSentAt: now } })
-      } catch (err) {
-        console.error('[email] renewal-reminder failed for', user.email, '—', err.message)
+    let sent = 0
+    let lastId = null
+
+    // Cursor-based pagination — avoids loading all matching users into RAM at once.
+    // At 500K users, even with 5K expiring on the same day, this processes 100 at a time.
+    while (true) {
+      const filter = lastId ? { ...baseFilter, _id: { $gt: lastId } } : baseFilter
+      const users = await User.find(filter)
+        .select('displayName email subscriptionExpiresAt subscriptionPlan renewalReminderSentAt')
+        .sort({ _id: 1 })
+        .limit(REMINDER_BATCH)
+        .lean()
+
+      if (!users.length) break
+      lastId = users[users.length - 1]._id
+
+      for (const user of users) {
+        try {
+          await emailSubscriptionRenewalReminder(
+            user.displayName || user.email,
+            user.email,
+            user.subscriptionExpiresAt,
+            user.subscriptionPlan || 'subscription'
+          )
+          await User.findByIdAndUpdate(user._id, { $set: { renewalReminderSentAt: now } })
+          sent++
+          // Rate-limit email sends to avoid exceeding Resend's per-second limit
+          await new Promise(r => setTimeout(r, EMAIL_DELAY_MS))
+        } catch (err) {
+          console.error('[email] renewal-reminder failed for', user.email, '—', err.message)
+        }
       }
     }
 
-    if (users.length > 0) {
-      console.log(`[renewal-reminder] sent to ${users.length} user(s)`)
+    if (sent > 0) {
+      console.log(`[renewal-reminder] sent to ${sent} user(s)`)
     }
   } catch (err) {
     console.error('[renewal-reminder] failed:', err.message)

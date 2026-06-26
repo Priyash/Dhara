@@ -317,6 +317,15 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   // is not required and setting it would break CDNs without CORS headers.
   const preloadImg = useCallback((sec) => {
     if (!thumbUrlFor || imgCacheRef.current.has(sec)) return
+    // Evict oldest entries when the img cache exceeds the same cap as frameCacheRef.
+    // Each HTMLImageElement holds ~50–200 KB; uncapped cache can exhaust browser RAM
+    // for long films (e.g. 3-hour film × 1 frame/sec = 10,800 potential entries).
+    if (imgCacheRef.current.size >= MAX_FRAME_CACHE_ENTRIES) {
+      const oldestKey = imgCacheRef.current.keys().next().value
+      const oldestImg = imgCacheRef.current.get(oldestKey)
+      if (oldestImg) oldestImg.src = ''  // release browser memory for the decoded bitmap
+      imgCacheRef.current.delete(oldestKey)
+    }
     imgCacheRef.current.set(sec, null)       // mark pending so we don't double-request
     const img = new Image()
     img.dataset.sec = String(sec)
