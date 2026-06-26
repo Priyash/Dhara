@@ -299,3 +299,89 @@ real footage. The Phase 1 scene-detection investment is what makes this cheap.
   licensed for compositing/redistribution.
 - **AI key-art path** — wrap a hosted image model behind a swappable interface;
   it is secondary and out of scope for the first three milestones.
+
+---
+
+## 8. Bengali-retention innovation roadmap
+
+The thumbnail/trailer pipeline is one expression of a broader thesis: **Dhara's
+moat is doing the Bengali-specific things horizontal platforms (Netflix,
+YouTube, Prime) won't bother to do.** The compositing discipline — shaping
+Indic conjuncts correctly — is the same instinct applied to artwork. This
+section captures four further bets in that vein. Build order is deliberately
+*not* fixed here; the recommendation is to lead with Banglish search.
+
+### 8.1 Banglish (transliteration-aware) search — *recommended wedge*
+
+**Problem.** Search today is a plain regex / `$text` match on the title
+(`backend/src/routes/search.js:44,65` over `title`/`desc`/`genre`), so the query
+script must match the stored script. But Bengali users overwhelmingly type
+**Romanized Bengali ("Banglish")** on phones — `bhalobashar bari`,
+`premer golpo` — because Bengali keyboards are painful. A title stored as
+ভালোবাসার বাড়ি then returns **nothing**, and the user bounces at the front door.
+
+**Why it's defensible.** Horizontal platforms do Bengali transliteration poorly;
+this is the search-bar equivalent of the per-script compositing moat.
+
+**It's measurable before building.** `SearchLog` already records `query`, `lang`,
+and `resultCount` (`search.js:75`). A one-off audit of zero-result Romanized
+queries sizes the lost traffic today — do this first to justify the work.
+
+**Build.** A transliteration normalizer (ITRANS/Avro-style) that maps Bengali
+script, Romanized Bengali, and English onto a single phonetic `searchKey` per
+`Content`, indexed and backfilled once. Queries get normalized the same way
+before matching, with fuzzy tolerance for spelling drift. **No new infra, no
+model training.**
+
+- Gating test: a set of known Banglish ↔ Bengali ↔ English title pairs that must
+  all resolve to the same result.
+- Risk: transliteration is many-to-many; keep the normalizer rule-based and
+  unit-tested, and prefer recall (show more) over precision in search.
+
+### 8.2 "Utsab" festival-aware auto-curation
+
+**Problem.** `CuratedShelf` (`backend/src/models/CuratedShelf.js`) is static —
+`isActive` + `displayOrder`, no time awareness. Bengali engagement is strongly
+seasonal (Durga Puja, Poila Boishakh, Saraswati Puja, Pohela Falgun).
+
+**Build.** Add `activeFrom` / `activeTo` and a `festivalTag` to `CuratedShelf`;
+a small scheduled check (reuse the `withJobLock` pattern) flips shelves live and
+retires them on the Bengali calendar. Festival title-cards are composited in
+Bengali via the Phase-1 thumbnail pipeline, so this reuses §3.4 directly.
+
+**Effort:** low–medium. **Signal:** high cultural relevance, recurring.
+
+### 8.3 AI Bengali recaps — "এখনো পর্যন্ত" (the story so far)
+
+**Problem.** Bengali serial dramas are a **daily ritual**; lapsed viewers lose
+the thread and churn.
+
+**Build.** Generate a short Bengali-language "story so far" recap per
+series/season from episode metadata and subtitles (`subtitleUrl` already exists
+on episodes and root content) via a hosted LLM, surfaced on the title page and
+as a catch-up rail. Drives daily return.
+
+**Effort:** medium. **Dependency:** subtitle/synopsis coverage; gate generation
+on availability and always allow human edit before publish (same
+approve-before-publish discipline as artwork).
+
+### 8.4 "Adda" (আড্ডা) social watch layer
+
+**Problem.** Adda — leisurely shared conversation — is core Bengali culture, and
+serial-drama audiences are highly social. Solo watching leaves session length
+and return on the table.
+
+**Build.** A lightweight live-reaction / group-watch layer on serial dramas,
+building on the existing `Comment` model and `ActiveStream`. Start async
+(threaded reactions pinned to timestamps) before committing to real-time, which
+is the largest infra bet of the four.
+
+**Effort:** high (real-time). **Bet size:** largest; sequence last.
+
+### 8.5 Suggested sequencing
+
+1. Banglish search — front door, measurable, no new infra.
+2. Utsab festival rails — reuses the thumbnail pipeline; recurring seasonal lift.
+3. AI Bengali recaps — daily-return driver once subtitle coverage is adequate.
+4. Adda social layer — highest effort; sequence after the measurement loop and
+   the above are in place.
