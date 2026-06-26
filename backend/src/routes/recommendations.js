@@ -5,7 +5,7 @@ import { admin } from '../config/firebase.js'
 import { User } from '../models/User.js'
 import { Content } from '../models/Content.js'
 import { InteractionEvent, INTERACTION_EVENT_TYPES } from '../models/InteractionEvent.js'
-import { withCache } from '../config/cache.js'
+import { withCache, cache } from '../config/cache.js'
 
 const router = Router()
 
@@ -483,11 +483,17 @@ async function buildGenreRows(identity, usedIds) {
 }
 
 // ── GET /api/recommendations/shelves ─────────────────────────────────────────
-// Caching strategy: anonymous requests are cached globally (same shelf for all anon);
-// authenticated requests are per-user and must NOT share a cache key — using the raw
-// URL would let User A's personalized shelf overwrite User B's. So we skip the
-// shared withCache() middleware for authed requests and let the client/CDN cache via
-// Cache-Control headers instead.
+// Caching strategy: per-identity key so personalized shelves are cached without
+// leaking User A's data into User B's response.
+//
+//   Authenticated → cache key: shelves:user:{userId}         (private, 60 s TTL)
+//   Anon+session  → cache key: shelves:session:{sessionId}   (private, 60 s TTL)
+//   Truly anon    → cache key: shelves:anon                  (public,  60 s TTL)
+//
+// At 500K DAU / 30% auth / 1,000 concurrent peak: ~1,000 live cache entries —
+// well within the 5K in-memory cap and Redis memory budget.
+const SHELVES_TTL_MS = 60 * 1000
+
 router.get('/shelves', optionalAuth, async (req, res, next) => {
   try {
     const rawSession = req.headers['x-rec-session'] || req.query.sessionId || ''
@@ -495,6 +501,23 @@ router.get('/shelves', optionalAuth, async (req, res, next) => {
     const identity   = req.user?._id
       ? { userId: req.user._id }
       : sessionId ? { sessionId } : null
+
+    const isAuthed   = Boolean(req.user?._id)
+    const cacheKey   = isAuthed
+      ? `shelves:user:${req.user._id}`
+      : sessionId
+        ? `shelves:session:${sessionId.slice(0, 40)}`
+        : 'shelves:anon'
+
+    const cacheControl = isAuthed ? 'private, max-age=60' : 'public, max-age=60'
+
+    // Serve from cache if available
+    const hit = await cache.get(cacheKey)
+    if (hit !== null) {
+      res.setHeader('X-Cache', 'HIT')
+      res.setHeader('Cache-Control', cacheControl)
+      return res.json(hit)
+    }
 
     const shelves = []
     const usedIds = new Set()
@@ -517,13 +540,12 @@ router.get('/shelves', optionalAuth, async (req, res, next) => {
     const genreRows = await buildGenreRows(identity, usedIds)
     for (const row of genreRows) { track(row.items); shelves.push(row) }
 
-    // Allow the browser to cache the response briefly; no shared CDN caching for authed responses
-    if (identity && req.user?._id) {
-      res.setHeader('Cache-Control', 'private, max-age=60')
-    } else {
-      res.setHeader('Cache-Control', 'public, max-age=60')
-    }
-    res.json({ shelves })
+    const result = { shelves }
+    await cache.set(cacheKey, result, SHELVES_TTL_MS)
+
+    res.setHeader('X-Cache', 'MISS')
+    res.setHeader('Cache-Control', cacheControl)
+    res.json(result)
   } catch (err) {
     next(err)
   }

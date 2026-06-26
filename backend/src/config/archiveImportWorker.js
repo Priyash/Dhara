@@ -29,9 +29,11 @@ async function resolveReelCollection() {
   return collection
 }
 
-const STALE_MS      = 10 * 60 * 1000   // a 'processing' task older than this is presumed crashed
-const MAX_ATTEMPTS  = 3
-const POLL_MS       = 30 * 1000        // safety-net sweep for queued work / stale reclaim
+const STALE_MS             = 10 * 60 * 1000   // a 'processing' task older than this is presumed crashed
+const MAX_ATTEMPTS         = 3
+const POLL_MS              = 30 * 1000        // safety-net sweep for queued work / stale reclaim
+const MAX_CONCURRENT       = 3               // max parallel tasks — prevents starving user-facing requests
+const TASK_TIMEOUT_MS      = 5 * 60 * 1000  // 5-min per-task timeout; archive.org can be slow
 
 let draining = false
 
@@ -122,6 +124,13 @@ async function processTask(task, filmCollection) {
   }
 }
 
+function withTimeout(promise, ms, label) {
+  const timer = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms)
+  )
+  return Promise.race([promise, timer])
+}
+
 /** Process all currently-pending tasks. Safe to call repeatedly; only one drain runs per process. */
 export async function drainImportQueue() {
   if (draining) return
@@ -133,10 +142,29 @@ export async function drainImportQueue() {
 
     const collection = await ensureArchiveCollection({ StreamCollectionModel: StreamCollection })
 
-    let task
-    // eslint-disable-next-line no-cond-assign
-    while ((task = await claimNext())) {
-      await processTask(task, collection)
+    // Process up to MAX_CONCURRENT tasks at a time so archive imports don't consume
+    // all MongoDB connections and starve user-facing requests.
+    while (true) {
+      const tasks = []
+      for (let i = 0; i < MAX_CONCURRENT; i++) {
+        const task = await claimNext()
+        if (!task) break
+        tasks.push(task)
+      }
+      if (!tasks.length) break
+
+      await Promise.all(
+        tasks.map(task =>
+          withTimeout(processTask(task, collection), TASK_TIMEOUT_MS, `task ${task._id}`)
+            .catch(err => {
+              console.error(`[archive-import-worker] task ${task._id} failed:`, err.message)
+              // Mark as failed so stale reclaim doesn't retry indefinitely
+              ArchiveImportTask.findByIdAndUpdate(task._id, {
+                $set: { status: 'failed', error: err.message },
+              }).catch(() => {})
+            })
+        )
+      )
     }
   } catch (err) {
     console.error('[archive-import-worker] drain failed:', err.message)
