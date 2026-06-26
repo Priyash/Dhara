@@ -490,6 +490,24 @@ export async function deleteAdminContent(id) {
   return request(`/api/admin/content/${id}`, { method: 'DELETE' })
 }
 
+// ── Admin: thumbnail variants (artwork A/B) ─────────────────────────────────
+export async function listAdminThumbnailVariants(itemType, itemId) {
+  const qs = new URLSearchParams({ itemType, itemId }).toString()
+  return request(`/api/admin/thumbnail-variants?${qs}`)
+}
+
+export async function createAdminThumbnailVariant(payload) {
+  return request('/api/admin/thumbnail-variants', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function updateAdminThumbnailVariant(id, patch) {
+  return request(`/api/admin/thumbnail-variants/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+}
+
+export async function deleteAdminThumbnailVariant(id) {
+  return request(`/api/admin/thumbnail-variants/${id}`, { method: 'DELETE' })
+}
+
 export async function getAdminTransactions(params = {}) {
   const qs = new URLSearchParams(params).toString()
   return request(`/api/admin/transactions${qs ? `?${qs}` : ''}`)
