@@ -331,8 +331,12 @@ real footage. The Phase 1 scene-detection investment is what makes this cheap.
 > - ✅ **Increment 3 (admin review grid)** — a per-title "Artwork" modal in the
 >   admin Content Library (`ThumbnailVariantModal`) to seed variants by URL,
 >   promote to `live` / reject / delete, and watch per-variant
->   impressions / clicks / CTR. This is the admin-side approval surface; the
->   creator-facing grid in `CreatorStudio` (§3.5) is still pending.
+>   impressions / clicks / CTR.
+> - ✅ **Increment 4 (creator review grid)** — the same modal, reused on the
+>   creator's own approved titles in `CreatorStudio` ("Artwork" action), backed
+>   by ownership-scoped `/api/creator/.../thumbnail-variants` routes. The modal
+>   is now backend-agnostic (takes an `api` prop), and the read-time stats
+>   aggregation is shared by both surfaces via `utils/variantStats.js`.
 
 
 1. **Attribution slice (lowest risk, highest leverage).** `ThumbnailVariant`

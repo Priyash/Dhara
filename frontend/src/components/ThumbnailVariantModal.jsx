@@ -1,18 +1,18 @@
 import { useEffect, useState, useCallback } from 'react'
 import { X, Plus, Check, Ban, Trash2, ImageIcon } from 'lucide-react'
-import {
-  listAdminThumbnailVariants,
-  createAdminThumbnailVariant,
-  updateAdminThumbnailVariant,
-  deleteAdminThumbnailVariant,
-} from '../services/api'
 
 /**
- * Admin grid for managing a title's artwork A/B variants (the thumbnail
- * pipeline's review surface — docs/thumbnail-trailer-pipeline.md). Seed a
- * variant by URL, promote it to `live` so it starts serving on browse rails,
- * reject it, or delete it. Per-variant impressions / clicks / CTR are shown
- * read-time from InteractionEvent.
+ * Grid for managing a title's artwork A/B variants (the thumbnail pipeline's
+ * review surface — docs/thumbnail-trailer-pipeline.md). Seed a variant by URL,
+ * promote it to `live` so it starts serving on browse rails, reject it, or
+ * delete it. Per-variant impressions / clicks / CTR are shown read-time.
+ *
+ * Backend-agnostic: callers pass an `api` object so the same grid serves both
+ * the admin and creator surfaces:
+ *   api.list()                  -> Promise<variant[]>   (caller binds the item)
+ *   api.create({ imageUrl, label }) -> Promise
+ *   api.update(id, patch)       -> Promise
+ *   api.remove(id)              -> Promise
  */
 const pct = (n) => `${(n * 100).toFixed(1)}%`
 
@@ -22,8 +22,7 @@ const STATUS_COLOR = {
   rejected:  '#f87171',
 }
 
-export default function ThumbnailVariantModal({ item, onClose }) {
-  const itemId = item?._id || item?.id
+export default function ThumbnailVariantModal({ item, api, onClose }) {
   const [variants, setVariants] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState('')
@@ -35,13 +34,13 @@ export default function ThumbnailVariantModal({ item, onClose }) {
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      setVariants(await listAdminThumbnailVariants('content', itemId))
+      setVariants(await api.list())
     } catch (err) {
       setError(err?.message || 'Failed to load variants.')
     } finally {
       setLoading(false)
     }
-  }, [itemId])
+  }, [api])
 
   useEffect(() => { load() }, [load])
 
@@ -57,7 +56,7 @@ export default function ThumbnailVariantModal({ item, onClose }) {
     if (!/^https?:\/\//i.test(url)) { setError('Enter a valid http(s) image URL.'); return }
     setAdding(true); setError('')
     try {
-      await createAdminThumbnailVariant({ itemType: 'content', itemId, imageUrl: url, label: newLabel.trim() })
+      await api.create({ imageUrl: url, label: newLabel.trim() })
       setNewUrl(''); setNewLabel('')
       await load()
     } catch (err) {
@@ -70,7 +69,7 @@ export default function ThumbnailVariantModal({ item, onClose }) {
   const setStatus = async (v, status) => {
     setBusyId(v._id); setError('')
     try {
-      await updateAdminThumbnailVariant(v._id, { status })
+      await api.update(v._id, { status })
       await load()
     } catch (err) {
       setError(err?.message || 'Failed to update variant.')
@@ -82,7 +81,7 @@ export default function ThumbnailVariantModal({ item, onClose }) {
   const handleDelete = async (v) => {
     setBusyId(v._id); setError('')
     try {
-      await deleteAdminThumbnailVariant(v._id)
+      await api.remove(v._id)
       await load()
     } catch (err) {
       setError(err?.message || 'Failed to delete variant.')

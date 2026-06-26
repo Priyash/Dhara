@@ -36,7 +36,7 @@ import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { calculateMonthlyEarnings } from '../config/earningsJob.js'
 import mongoose from 'mongoose'
 import { ThumbnailVariant } from '../models/ThumbnailVariant.js'
-import { InteractionEvent } from '../models/InteractionEvent.js'
+import { withVariantStats } from '../utils/variantStats.js'
 
 // Hard cap for unpaginated admin list endpoints — prevents an unbounded
 // collection scan/response as data grows, without changing the response
@@ -2391,42 +2391,7 @@ router.get('/thumbnail-variants', async (req, res, next) => {
       .sort({ createdAt: -1 })
       .lean()
 
-    // One aggregation for all this item's variants, grouped by variant+event.
-    const ids = variants.map((v) => v._id)
-    const counts = ids.length
-      ? await InteractionEvent.aggregate([
-          { $match: { variantId: { $in: ids } } },
-          { $group: { _id: { variantId: '$variantId', eventType: '$eventType' }, n: { $sum: 1 } } },
-        ])
-      : []
-
-    const byVariant = new Map()
-    for (const row of counts) {
-      const key = String(row._id.variantId)
-      const entry = byVariant.get(key) || { impression: 0, click: 0, play: 0, completion: 0 }
-      if (row._id.eventType in entry) entry[row._id.eventType] = row.n
-      byVariant.set(key, entry)
-    }
-
-    const items = variants.map((v) => {
-      const c = byVariant.get(String(v._id)) || { impression: 0, click: 0, play: 0, completion: 0 }
-      return {
-        ...v,
-        stats: {
-          impressions: c.impression,
-          clicks:      c.click,
-          plays:       c.play,
-          completions: c.completion,
-          // CTR is the core thumbnail metric: did the artwork earn the click?
-          ctr: c.impression ? c.click / c.impression : 0,
-          // Downstream play/completion attribution is wired in a later increment
-          // (needs the variant threaded across navigation), so cvr stays 0 for now.
-          cvr: c.impression ? c.completion / c.impression : 0,
-        },
-      }
-    })
-
-    res.json(items)
+    res.json(await withVariantStats(variants))
   } catch (err) {
     next(err)
   }

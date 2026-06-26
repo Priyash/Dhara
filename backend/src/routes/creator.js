@@ -9,6 +9,8 @@ import { requireAuth } from '../middleware/auth.js'
 import { emailTierAdvancement } from '../config/email.js'
 import { Reel, REEL_MAX_DURATION_SECS } from '../models/Reel.js'
 import { bunnyRequest } from '../services/bunnyUpload.js'
+import { ThumbnailVariant } from '../models/ThumbnailVariant.js'
+import { withVariantStats } from '../utils/variantStats.js'
 
 const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID
 
@@ -774,6 +776,101 @@ router.delete('/content/:id', requireAuth, requireCreator, async (req, res, next
     }
     await content.deleteOne()
     res.json({ success: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ── Creator thumbnail variants (artwork A/B) ────────────────────────────────
+// Creators manage artwork variants for their OWN content. Ownership is checked
+// on every route via the content's creatorId. See docs/thumbnail-trailer-pipeline.md.
+
+/** Loads a variant only if it belongs to content this creator owns; else null. */
+async function ownedVariant(variantId, creatorId) {
+  const variant = await ThumbnailVariant.findById(variantId)
+  if (!variant || variant.itemType !== 'content') return null
+  const owns = await Content.exists({ _id: variant.itemId, creatorId })
+  return owns ? variant : null
+}
+
+/**
+ * GET /api/creator/content/:id/thumbnail-variants
+ * Lists artwork variants (with read-time CTR stats) for one of the creator's titles.
+ */
+router.get('/content/:id/thumbnail-variants', requireAuth, requireCreator, async (req, res, next) => {
+  try {
+    const owns = await Content.exists({ _id: req.params.id, creatorId: req.user._id })
+    if (!owns) return res.status(404).json({ error: 'Content not found' })
+
+    const variants = await ThumbnailVariant.find({ itemType: 'content', itemId: req.params.id })
+      .sort({ createdAt: -1 })
+      .lean()
+    res.json(await withVariantStats(variants))
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/creator/content/:id/thumbnail-variants
+ * Seeds a candidate variant for one of the creator's titles. Body: { imageUrl, label? }.
+ */
+router.post('/content/:id/thumbnail-variants', requireAuth, requireCreator, async (req, res, next) => {
+  try {
+    const owns = await Content.exists({ _id: req.params.id, creatorId: req.user._id })
+    if (!owns) return res.status(404).json({ error: 'Content not found' })
+
+    const { imageUrl, label } = req.body || {}
+    if (!imageUrl || !/^https?:\/\//i.test(String(imageUrl).trim())) {
+      return res.status(400).json({ error: 'A valid imageUrl (http/https) is required' })
+    }
+
+    const variant = await ThumbnailVariant.create({
+      itemType:  'content',
+      itemId:    req.params.id,
+      imageUrl:  String(imageUrl).trim(),
+      label:     label ? String(label).trim().slice(0, 120) : '',
+      source:    'manual',
+      status:    'candidate',
+      createdBy: req.user._id,
+    })
+    res.status(201).json(variant)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/creator/thumbnail-variants/:id   Body: { status?, label? }
+ */
+router.patch('/thumbnail-variants/:id', requireAuth, requireCreator, async (req, res, next) => {
+  try {
+    const variant = await ownedVariant(req.params.id, req.user._id)
+    if (!variant) return res.status(404).json({ error: 'Variant not found' })
+
+    if (req.body?.status != null) {
+      if (!['candidate', 'live', 'rejected'].includes(req.body.status)) {
+        return res.status(400).json({ error: 'status must be candidate, live, or rejected' })
+      }
+      variant.status = req.body.status
+    }
+    if (req.body?.label != null) variant.label = String(req.body.label).trim().slice(0, 120)
+    await variant.save()
+    res.json(variant)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * DELETE /api/creator/thumbnail-variants/:id
+ */
+router.delete('/thumbnail-variants/:id', requireAuth, requireCreator, async (req, res, next) => {
+  try {
+    const variant = await ownedVariant(req.params.id, req.user._id)
+    if (!variant) return res.status(404).json({ error: 'Variant not found' })
+    await variant.deleteOne()
+    res.json({ ok: true })
   } catch (err) {
     next(err)
   }

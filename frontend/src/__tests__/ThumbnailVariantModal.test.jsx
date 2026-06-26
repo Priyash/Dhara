@@ -3,19 +3,14 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import ThumbnailVariantModal from '../components/ThumbnailVariantModal'
 
 const api = {
-  listAdminThumbnailVariants: vi.fn(),
-  createAdminThumbnailVariant: vi.fn().mockResolvedValue({}),
-  updateAdminThumbnailVariant: vi.fn().mockResolvedValue({}),
-  deleteAdminThumbnailVariant: vi.fn().mockResolvedValue({}),
+  list:   vi.fn(),
+  create: vi.fn().mockResolvedValue({}),
+  update: vi.fn().mockResolvedValue({}),
+  remove: vi.fn().mockResolvedValue({}),
 }
-vi.mock('../services/api', () => ({
-  listAdminThumbnailVariants: (...a) => api.listAdminThumbnailVariants(...a),
-  createAdminThumbnailVariant: (...a) => api.createAdminThumbnailVariant(...a),
-  updateAdminThumbnailVariant: (...a) => api.updateAdminThumbnailVariant(...a),
-  deleteAdminThumbnailVariant: (...a) => api.deleteAdminThumbnailVariant(...a),
-}))
 
 const item = { _id: 'c1', title: 'Bhalobashar Bari' }
+const renderModal = () => render(<ThumbnailVariantModal item={item} api={api} onClose={() => {}} />)
 
 function variant(over = {}) {
   return {
@@ -31,31 +26,31 @@ describe('ThumbnailVariantModal', () => {
   })
 
   it('loads and renders a variant with its CTR', async () => {
-    api.listAdminThumbnailVariants.mockResolvedValue([variant()])
-    render(<ThumbnailVariantModal item={item} onClose={() => {}} />)
+    api.list.mockResolvedValue([variant()])
+    renderModal()
 
     expect(await screen.findByText(/Artwork A\/B — Bhalobashar Bari/)).toBeInTheDocument()
     expect(await screen.findByText('12.0%')).toBeInTheDocument()
-    expect(api.listAdminThumbnailVariants).toHaveBeenCalledWith('content', 'c1')
+    expect(api.list).toHaveBeenCalled()
   })
 
   it('promotes a candidate to live', async () => {
-    api.listAdminThumbnailVariants.mockResolvedValue([variant()])
-    render(<ThumbnailVariantModal item={item} onClose={() => {}} />)
+    api.list.mockResolvedValue([variant()])
+    renderModal()
 
     const liveBtn = await screen.findByTitle('Set live')
     fireEvent.click(liveBtn)
-    await waitFor(() => expect(api.updateAdminThumbnailVariant).toHaveBeenCalledWith('v1', { status: 'live' }))
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith('v1', { status: 'live' }))
   })
 
   it('rejects an invalid image URL without calling the API', async () => {
-    api.listAdminThumbnailVariants.mockResolvedValue([])
-    render(<ThumbnailVariantModal item={item} onClose={() => {}} />)
+    api.list.mockResolvedValue([])
+    renderModal()
     await screen.findByText(/No variants yet/)
 
     fireEvent.change(screen.getByPlaceholderText(/artwork\.jpg/), { target: { value: 'not-a-url' } })
     fireEvent.click(screen.getByText('Add'))
-    expect(api.createAdminThumbnailVariant).not.toHaveBeenCalled()
+    expect(api.create).not.toHaveBeenCalled()
     expect(await screen.findByText(/valid http\(s\) image URL/)).toBeInTheDocument()
   })
 })
