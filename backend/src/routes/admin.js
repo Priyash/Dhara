@@ -2370,7 +2370,11 @@ router.get('/audit-log', async (req, res, next) => {
 // wires selection in. Per-variant stats are computed on read from
 // InteractionEvent (no denormalized rollup).
 
-const VARIANT_ITEM_TYPES = ['content', 'reel']
+// Only content artwork is served today — the browse rails attach variants for
+// content, not reels. Accepting 'reel' here would create variants that can
+// never appear, so it is rejected until reel serving exists. (The model enum
+// keeps 'reel' for that future.)
+const VARIANT_ITEM_TYPES = ['content']
 
 /**
  * GET /api/admin/thumbnail-variants?itemType=content&itemId=...
@@ -2383,7 +2387,7 @@ router.get('/thumbnail-variants', async (req, res, next) => {
     const itemType = String(req.query.itemType || 'content')
     const itemId   = req.query.itemId
     if (!VARIANT_ITEM_TYPES.includes(itemType)) {
-      return res.status(400).json({ error: 'itemType must be "content" or "reel"' })
+      return res.status(400).json({ error: 'itemType must be "content" (reel artwork is not supported yet)' })
     }
     if (!mongoose.Types.ObjectId.isValid(itemId)) {
       return res.status(400).json({ error: 'A valid itemId is required' })
@@ -2408,7 +2412,7 @@ router.post('/thumbnail-variants', async (req, res, next) => {
   try {
     const { itemType = 'content', itemId, imageUrl, label, seasonNumber, episodeNumber } = req.body || {}
     if (!VARIANT_ITEM_TYPES.includes(itemType)) {
-      return res.status(400).json({ error: 'itemType must be "content" or "reel"' })
+      return res.status(400).json({ error: 'itemType must be "content" (reel artwork is not supported yet)' })
     }
     if (!mongoose.Types.ObjectId.isValid(itemId)) {
       return res.status(400).json({ error: 'A valid itemId is required' })
