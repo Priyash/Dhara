@@ -3,7 +3,7 @@ import Hls from 'hls.js'
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   SkipBack, SkipForward, Settings, Loader2, RotateCcw, PictureInPicture2,
-  Airplay, ArrowLeft, Captions, MonitorPlay,
+  Airplay, ArrowLeft, Captions, MonitorPlay, ChevronRight, Check,
 } from 'lucide-react'
 import styles from './VideoPlayer.module.css'
 
@@ -146,6 +146,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const [buffered,         setBuffered]         = useState(0)
   const [buffering,        setBuffering]        = useState(false)
   const [showSettings,     setShowSettings]     = useState(false)
+  const [settingsScreen,   setSettingsScreen]   = useState('home')
   const [playbackRate,     setPlaybackRate]     = useState(1)
   const [qualityOptions,   setQualityOptions]   = useState([])
   const [qualityValue,     setQualityValue]     = useState('auto')
@@ -842,25 +843,30 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     }
   }, [captureFrame])
 
-  // Pure seek — updates video time and progress DOM; no capture side-effects
-  const seekFromClientX = useCallback((clientX) => {
-    const v    = videoRef.current
+  // Visual-only progress update — moves the fill and thumb without touching
+  // v.currentTime. Used during drag so HLS.js isn't interrupted on every pixel.
+  const updateProgressVisual = useCallback((clientX) => {
     const rect = progressRef.current?.getBoundingClientRect()
-    if (!v || !duration || !rect) return
+    if (!duration || !rect) return undefined
 
     const pct     = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
     const newTime = pct * duration
     const pctStr  = `${pct * 100}%`
 
-    v.currentTime = newTime
     hoverTimeRef.current = newTime
-
     if (fillRef.current)  fillRef.current.style.width = pctStr
     if (thumbRef.current) thumbRef.current.style.left  = pctStr
-
     setHoverPct(pct * 100)
     setHoverTime(newTime)
+    return newTime
   }, [duration])
+
+  // Seek + visual update combined — used for click-to-position and drag-start.
+  const seekFromClientX = useCallback((clientX) => {
+    const v       = videoRef.current
+    const newTime = updateProgressVisual(clientX)
+    if (v && newTime !== undefined) v.currentTime = newTime
+  }, [updateProgressVisual])
 
   const handleProgressHover = (e) => {
     if (isDragging) return
@@ -916,7 +922,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
     const onMove = (ev) => {
       const cx = ev.touches ? ev.touches[0].clientX : ev.clientX
-      seekFromClientX(cx)                // updates hoverTimeRef
+      updateProgressVisual(cx)           // visual only — no seek during drag
       const t   = hoverTimeRef.current
       const sec = Math.round(t ?? 0)
       if (thumbUrlFor) {
@@ -944,6 +950,12 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     }
     const onUp = () => {
       setIsDragging(false)
+      // Commit the seek exactly once on release — avoids thrashing HLS.js
+      // with hundreds of currentTime writes during a buffering drag.
+      const finalTime = hoverTimeRef.current
+      if (videoRef.current && finalTime !== null && finalTime !== undefined) {
+        videoRef.current.currentTime = finalTime
+      }
       hoverTimeRef.current = null
       lastChapterRef.current = -1
       // Cancel any pending thumb rVFC so it doesn't fire after drag ends
@@ -1125,57 +1137,63 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     const hasWebKitAirPlay = typeof v.webkitShowPlaybackTargetPicker === 'function'
     const hasRemotePlayback = Boolean(v.remote && typeof v.remote.prompt === 'function')
 
-    // Show cast button if any cast API is present — the prompt itself will fail gracefully if no devices found
-    setCastAvailable(Boolean(hasWebKitAirPlay || hasRemotePlayback))
+    // AirPlay availability is known immediately on Safari.
+    // For Chrome's RemotePlayback (Chromecast), v.remote always exists on any
+    // <video> element — do NOT show the button until watchAvailability confirms
+    // an actual receiver device is on the network.
+    setCastAvailable(hasWebKitAirPlay)
     setCastConnected(Boolean(v.webkitCurrentPlaybackTargetIsWireless))
 
     const onWebKitAvailability = (event) => {
-      if (event.availability === 'available') setCastAvailable(true)
+      setCastAvailable(event.availability === 'available' || hasWebKitAirPlay)
     }
     const onWebKitTargetChange = () => {
       setCastConnected(Boolean(v.webkitCurrentPlaybackTargetIsWireless))
     }
     const onConnect = () => setCastConnected(true)
-    const onDisconnect = () => setCastConnected(false)
+    const onDisconnect = () => {
+      setCastConnected(false)
+      // Re-attach HLS.js if we had swapped to native src for casting
+      if (hlsRef.current === null && isHlsSource(src) && Hls.isSupported()) {
+        attachHlsSource(v, src)
+      }
+    }
 
     v.addEventListener('webkitplaybacktargetavailabilitychanged', onWebKitAvailability)
     v.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', onWebKitTargetChange)
+
+    let watchId
+    let cancelled = false
 
     if (hasRemotePlayback) {
       v.remote.addEventListener('connect', onConnect)
       v.remote.addEventListener('disconnect', onDisconnect)
 
       if (typeof v.remote.watchAvailability === 'function') {
-        let cancelled = false
-        let watchId
         v.remote.watchAvailability((available) => {
-          if (!cancelled) setCastAvailable(Boolean(available || hasWebKitAirPlay))
+          if (!cancelled) setCastAvailable(available || hasWebKitAirPlay)
         })
           .then((id) => { watchId = id })
-          .catch(() => { if (!cancelled) setCastAvailable(Boolean(hasWebKitAirPlay || hasRemotePlayback)) })
-
-        return () => {
-          cancelled = true
-          if (watchId !== undefined && typeof v.remote.cancelWatchAvailability === 'function') {
-            v.remote.cancelWatchAvailability(watchId).catch(() => {})
-          }
-          v.remote.removeEventListener('connect', onConnect)
-          v.remote.removeEventListener('disconnect', onDisconnect)
-          v.removeEventListener('webkitplaybacktargetavailabilitychanged', onWebKitAvailability)
-          v.removeEventListener('webkitcurrentplaybacktargetiswirelesschanged', onWebKitTargetChange)
-        }
+          // watchAvailability can throw in some browsers when no Cast extension
+          // is installed — just leave the button hidden (AirPlay already handled).
+          .catch(() => {})
       }
     }
 
     return () => {
+      cancelled = true
       if (hasRemotePlayback) {
+        if (watchId !== undefined && typeof v.remote.cancelWatchAvailability === 'function') {
+          v.remote.cancelWatchAvailability(watchId).catch(() => {})
+        }
         v.remote.removeEventListener('connect', onConnect)
         v.remote.removeEventListener('disconnect', onDisconnect)
       }
       v.removeEventListener('webkitplaybacktargetavailabilitychanged', onWebKitAvailability)
       v.removeEventListener('webkitcurrentplaybacktargetiswirelesschanged', onWebKitTargetChange)
     }
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src])
 
   // Shortcut hint: show a brief overlay label then auto-dismiss
   const showHint = useCallback((text) => {
@@ -1399,6 +1417,15 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
           onTheaterToggle?.()
           break
         }
+        case 'KeyC': {
+          e.preventDefault()
+          if (!subtitleUrl) break
+          setSubtitlesEnabled((s) => {
+            showHint(s ? 'Subtitles Off' : 'Subtitles On')
+            return !s
+          })
+          break
+        }
         case 'KeyI': {
           if (!e.shiftKey) break
           e.preventDefault()
@@ -1421,7 +1448,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [showHint, resetIdleTimer])
+  }, [showHint, resetIdleTimer, subtitleUrl])
 
   // Cleanup timers on unmount
   useEffect(() => () => {
@@ -1444,18 +1471,43 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const handleCast = async () => {
     const v = videoRef.current
     if (!v) return
-    try {
-      if (typeof v.webkitShowPlaybackTargetPicker === 'function') {
-        v.webkitShowPlaybackTargetPicker()
-      } else if (v.remote && typeof v.remote.prompt === 'function') {
-        await v.remote.prompt()
-      } else if (typeof PresentationRequest !== 'undefined' && src) {
-        const req = new PresentationRequest([src])
-        const conn = await req.start()
-        conn.addEventListener('terminate', () => setCastConnected(false))
-        setCastConnected(true)
+
+    // Safari / iOS — AirPlay picker; v.src is already the real .m3u8 URL on
+    // Safari (native HLS), so AirPlay works without any extra steps.
+    if (typeof v.webkitShowPlaybackTargetPicker === 'function') {
+      v.webkitShowPlaybackTargetPicker()
+      return
+    }
+
+    // Chrome — W3C Remote Playback API (Chromecast, Cast-compatible devices).
+    // Problem: when HLS.js is active the video element's src is a blob: MSE URL,
+    // not the real .m3u8 — the Chromecast can't use a blob URL.
+    // Fix: destroy HLS.js, set the real src, let the Chromecast's built-in HLS
+    // player handle it. The 'disconnect' listener (in the cast useEffect) will
+    // re-attach HLS.js when casting ends.
+    if (v.remote && typeof v.remote.prompt === 'function') {
+      const usingHls = Boolean(hlsRef.current)
+      const resumeTime = v.currentTime
+      if (usingHls && isHlsSource(src)) {
+        cleanupHls()
+        v.src = src
+        v.currentTime = resumeTime
       }
-    } catch { /* user dismissed or no devices */ }
+      try {
+        await v.remote.prompt()
+      } catch (err) {
+        // User dismissed, no devices found, or browser denied the prompt.
+        // Restore HLS.js if we had torn it down.
+        if (usingHls && isHlsSource(src) && !v.remote?.state?.startsWith('connect')) {
+          attachHlsSource(v, src)
+          // Restore playhead after HLS re-parses the manifest
+          v.addEventListener('loadedmetadata', () => { v.currentTime = resumeTime }, { once: true })
+        }
+        if (err?.name !== 'NotAllowedError') {
+          showHint('No cast devices found')
+        }
+      }
+    }
   }
 
   // Double-click to fullscreen; single-click to play/pause
@@ -1951,17 +2003,16 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
           {/* Right — CC, Settings, Fullscreen only; advanced options live in the settings panel */}
           <div className={styles.rightControls}>
-            {subtitleUrl && (
-              <button
-                className={`${styles.ctrlBtn} ${subtitlesEnabled ? styles.ctrlBtnActive : ''}`}
-                onClick={() => setSubtitlesEnabled((s) => !s)}
-                aria-label={subtitlesEnabled ? 'Disable subtitles' : 'Enable subtitles'}
-                title="Subtitles / CC"
-              >
-                <Captions size={18} />
-              </button>
-            )}
-            <button className={styles.ctrlBtn} onClick={() => setShowSettings((s) => !s)} aria-label="Settings">
+            <button
+              className={`${styles.ctrlBtn} ${subtitlesEnabled && subtitleUrl ? styles.ctrlBtnActive : ''} ${!subtitleUrl ? styles.ctrlBtnUnavailable : ''}`}
+              onClick={() => { if (subtitleUrl) setSubtitlesEnabled((s) => !s) }}
+              aria-label={!subtitleUrl ? 'No subtitles available' : subtitlesEnabled ? 'Disable subtitles' : 'Enable subtitles'}
+              title={!subtitleUrl ? 'No subtitles available' : 'Subtitles / CC'}
+              disabled={!subtitleUrl}
+            >
+              <Captions size={18} />
+            </button>
+            <button className={styles.ctrlBtn} onClick={() => { setShowSettings((s) => !s); setSettingsScreen('home') }} aria-label="Settings">
               <Settings size={18} />
             </button>
             <button className={styles.ctrlBtn} onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
@@ -2032,6 +2083,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
                   { keys: ['M'],           action: 'Mute'               },
                   { keys: ['F'],           action: 'Fullscreen'         },
                   { keys: ['T'],           action: 'Theater mode'       },
+                  { keys: ['C'],           action: 'Subtitles / CC'     },
                   { keys: ['P'],           action: 'Picture in Picture' },
                   { keys: ['Shift+I'],     action: 'Debug stats'        },
                   { keys: ['?'],           action: 'Close this panel'   },
@@ -2058,75 +2110,167 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         )}
         {showSettings && controlsVisible && (
           <div className={styles.settingsPanel} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.settingsGroup}>
-              <p className={styles.settingsLabel}>Speed</p>
-              <div className={styles.settingsChips}>
-                {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
-                  <button
-                    key={rate}
-                    className={`${styles.chipBtn} ${playbackRate === rate ? styles.chipBtnActive : ''}`}
-                    onClick={() => setPlaybackRate(rate)}
-                  >
-                    {rate}×
+
+            {/* ── Home screen ── */}
+            {settingsScreen === 'home' && (
+              <div className={styles.settingsMenu}>
+                <button className={styles.settingsMenuRow} onClick={() => setSettingsScreen('speed')}>
+                  <span className={styles.settingsMenuLabel}>Speed</span>
+                  <span className={styles.settingsMenuValue}>{playbackRate}×</span>
+                  <ChevronRight size={14} className={styles.settingsMenuChevron} />
+                </button>
+                {qualityOptions.length > 0 && (
+                  <button className={styles.settingsMenuRow} onClick={() => setSettingsScreen('quality')}>
+                    <span className={styles.settingsMenuLabel}>Quality</span>
+                    <span className={styles.settingsMenuValue}>
+                      {qualityValue === 'auto' ? 'Auto' : (qualityOptions.find(o => o.value === qualityValue)?.label ?? qualityValue)}
+                    </span>
+                    <ChevronRight size={14} className={styles.settingsMenuChevron} />
                   </button>
-                ))}
-              </div>
-            </div>
-            {qualityOptions.length > 0 && (
-              <div className={styles.settingsGroup}>
-                <p className={styles.settingsLabel}>Quality</p>
-                <div className={styles.settingsChips}>
-                  <button
-                    className={`${styles.chipBtn} ${qualityValue === 'auto' ? styles.chipBtnActive : ''}`}
-                    onClick={() => handleQualityChange('auto')}
-                  >Auto</button>
-                  {qualityOptions.map((opt) => (
-                    <button
-                      key={opt.value}
-                      className={`${styles.chipBtn} ${qualityValue === opt.value ? styles.chipBtnActive : ''}`}
-                      onClick={() => handleQualityChange(opt.value)}
-                    >{opt.label}</button>
-                  ))}
-                </div>
+                )}
+                <button
+                  className={`${styles.settingsMenuRow} ${!subtitleUrl ? styles.settingsMenuRowDisabled : ''}`}
+                  onClick={() => subtitleUrl && setSettingsScreen('subtitles')}
+                  disabled={!subtitleUrl}
+                >
+                  <span className={styles.settingsMenuLabel}>Subtitles</span>
+                  <span className={styles.settingsMenuValue}>{!subtitleUrl ? 'None' : subtitlesEnabled ? 'On' : 'Off'}</span>
+                  {subtitleUrl && <ChevronRight size={14} className={styles.settingsMenuChevron} />}
+                </button>
+                {(onTheaterToggle || document.pictureInPictureEnabled || castAvailable) && (
+                  <button className={styles.settingsMenuRow} onClick={() => setSettingsScreen('view')}>
+                    <span className={styles.settingsMenuLabel}>View</span>
+                    <span className={styles.settingsMenuValue}>
+                      {theaterMode ? 'Theater' : pipEnabled ? 'PiP' : castConnected ? 'Casting' : ''}
+                    </span>
+                    <ChevronRight size={14} className={styles.settingsMenuChevron} />
+                  </button>
+                )}
               </div>
             )}
-            {(onTheaterToggle || document.pictureInPictureEnabled || castAvailable) && (
-              <div className={styles.settingsGroup}>
-                <p className={styles.settingsLabel}>View</p>
-                <div className={styles.settingsToggles}>
+
+            {/* ── Speed screen ── */}
+            {settingsScreen === 'speed' && (
+              <>
+                <div className={styles.settingsSubHeader}>
+                  <button className={styles.settingsBackBtn} onClick={() => setSettingsScreen('home')}>
+                    <ArrowLeft size={15} />
+                  </button>
+                  <span className={styles.settingsSubTitle}>Playback Speed</span>
+                </div>
+                <div className={styles.settingsList}>
+                  {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((rate) => (
+                    <button
+                      key={rate}
+                      className={`${styles.settingsListRow} ${playbackRate === rate ? styles.settingsListRowActive : ''}`}
+                      onClick={() => { setPlaybackRate(rate); setSettingsScreen('home') }}
+                    >
+                      <span className={styles.settingsListCheck}>
+                        {playbackRate === rate && <Check size={13} />}
+                      </span>
+                      <span>{rate === 1 ? 'Normal' : `${rate}×`}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* ── Quality screen ── */}
+            {settingsScreen === 'quality' && (
+              <>
+                <div className={styles.settingsSubHeader}>
+                  <button className={styles.settingsBackBtn} onClick={() => setSettingsScreen('home')}>
+                    <ArrowLeft size={15} />
+                  </button>
+                  <span className={styles.settingsSubTitle}>Video Quality</span>
+                </div>
+                <div className={styles.settingsList}>
+                  {[{ value: 'auto', label: 'Auto' }, ...qualityOptions].map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={`${styles.settingsListRow} ${qualityValue === opt.value ? styles.settingsListRowActive : ''}`}
+                      onClick={() => { handleQualityChange(opt.value); setSettingsScreen('home') }}
+                    >
+                      <span className={styles.settingsListCheck}>
+                        {qualityValue === opt.value && <Check size={13} />}
+                      </span>
+                      <span>{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* ── Subtitles screen ── */}
+            {settingsScreen === 'subtitles' && (
+              <>
+                <div className={styles.settingsSubHeader}>
+                  <button className={styles.settingsBackBtn} onClick={() => setSettingsScreen('home')}>
+                    <ArrowLeft size={15} />
+                  </button>
+                  <span className={styles.settingsSubTitle}>Subtitles</span>
+                </div>
+                <div className={styles.settingsList}>
+                  {[{ id: false, label: 'Off' }, { id: true, label: 'On' }].map(({ id, label }) => (
+                    <button
+                      key={label}
+                      className={`${styles.settingsListRow} ${subtitlesEnabled === id ? styles.settingsListRowActive : ''}`}
+                      onClick={() => { setSubtitlesEnabled(id); setSettingsScreen('home') }}
+                    >
+                      <span className={styles.settingsListCheck}>
+                        {subtitlesEnabled === id && <Check size={13} />}
+                      </span>
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* ── View screen ── */}
+            {settingsScreen === 'view' && (
+              <>
+                <div className={styles.settingsSubHeader}>
+                  <button className={styles.settingsBackBtn} onClick={() => setSettingsScreen('home')}>
+                    <ArrowLeft size={15} />
+                  </button>
+                  <span className={styles.settingsSubTitle}>View</span>
+                </div>
+                <div className={styles.settingsList}>
                   {onTheaterToggle && (
                     <button
-                      className={`${styles.settingsToggleBtn} ${theaterMode ? styles.settingsToggleBtnActive : ''}`}
+                      className={`${styles.settingsListRow} ${theaterMode ? styles.settingsListRowActive : ''}`}
                       onClick={(e) => { e.stopPropagation(); onTheaterToggle(); setShowSettings(false) }}
                     >
-                      <MonitorPlay size={14} />
+                      <MonitorPlay size={14} className={styles.settingsListIcon} />
                       <span>Theater mode</span>
-                      {theaterMode && <span className={styles.settingsToggleBadge}>On</span>}
+                      {theaterMode && <span className={styles.settingsListBadge}>On</span>}
                     </button>
                   )}
                   {document.pictureInPictureEnabled && (
                     <button
-                      className={`${styles.settingsToggleBtn} ${pipEnabled ? styles.settingsToggleBtnActive : ''}`}
+                      className={`${styles.settingsListRow} ${pipEnabled ? styles.settingsListRowActive : ''}`}
                       onClick={(e) => { e.stopPropagation(); togglePip() }}
                     >
-                      <PictureInPicture2 size={14} />
+                      <PictureInPicture2 size={14} className={styles.settingsListIcon} />
                       <span>Picture in Picture</span>
-                      {pipEnabled && <span className={styles.settingsToggleBadge}>On</span>}
+                      {pipEnabled && <span className={styles.settingsListBadge}>On</span>}
                     </button>
                   )}
                   {castAvailable && (
                     <button
-                      className={`${styles.settingsToggleBtn} ${castConnected ? styles.settingsToggleBtnActive : ''}`}
+                      className={`${styles.settingsListRow} ${castConnected ? styles.settingsListRowActive : ''}`}
                       onClick={(e) => { e.stopPropagation(); handleCast() }}
                     >
-                      <Airplay size={14} />
+                      <Airplay size={14} className={styles.settingsListIcon} />
                       <span>{castConnected ? 'Casting to TV' : 'Cast / AirPlay'}</span>
-                      {castConnected && <span className={styles.settingsToggleBadge}>Live</span>}
+                      {castConnected && <span className={styles.settingsListBadge}>Live</span>}
                     </button>
                   )}
                 </div>
-              </div>
+              </>
             )}
+
           </div>
         )}
       </div>{/* end videoArea */}
