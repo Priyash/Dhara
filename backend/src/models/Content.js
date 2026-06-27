@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { phoneticKey } from '../utils/banglish.js'
 
 const episodeSchema = new mongoose.Schema({
   number:       { type: Number, required: true },
@@ -19,6 +20,9 @@ const seasonSchema = new mongoose.Schema({
 const contentSchema = new mongoose.Schema(
   {
     title:        { type: String, required: true },
+    // Phonetic skeleton of the title for transliteration-aware ("Banglish")
+    // search — kept in sync by the hooks below. See utils/banglish.js.
+    searchKey:    { type: String, default: '' },
     subtitle:     String,
     archiveId:    { type: String, default: null, index: true },  // archive.org identifier, set when sourced from an import
     type:         { type: String, enum: ['Film', 'Series', 'Serial Drama', 'Documentary', 'Live'], required: true },
@@ -64,6 +68,28 @@ const contentSchema = new mongoose.Schema(
 )
 
 contentSchema.index({ title: 'text', desc: 'text', genre: 'text' })
+// Transliteration-aware search lookups (utils/banglish.js).
+contentSchema.index({ searchKey: 1 })
+
+// ── Keep searchKey in sync with the title ────────────────────────────────────
+contentSchema.pre('save', function (next) {
+  if (this.isModified('title')) this.searchKey = phoneticKey(this.title || '')
+  next()
+})
+
+function syncSearchKeyOnUpdate(next) {
+  const update = this.getUpdate() || {}
+  const title = update.title ?? update.$set?.title
+  if (title != null) {
+    if (!update.$set) update.$set = {}
+    update.$set.searchKey = phoneticKey(title)
+    this.setUpdate(update)
+  }
+  next()
+}
+contentSchema.pre('findOneAndUpdate', syncSearchKeyOnUpdate)
+contentSchema.pre('updateOne',        syncSearchKeyOnUpdate)
+contentSchema.pre('updateMany',       syncSearchKeyOnUpdate)
 // Covering indexes for the hot browse path — include isDeleted so MongoDB doesn't
 // have to fetch the full doc to check the soft-delete flag.
 contentSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, type: 1, isPremium: 1, rating: -1 })
