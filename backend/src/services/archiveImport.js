@@ -285,7 +285,11 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
   try { posterUrl = await uploadPosterFromUrl(`https://archive.org/services/img/${encodeURIComponent(id)}`, slug) }
   catch { /* poster is best-effort */ }
 
-  // Content created without bunnyVideoId — the job-sync links it once ready.
+  // Content created WITHOUT bunnyVideoId — the job-sync links it once ready.
+  // Must be omitted (not ''): the unique index on bunnyVideoId is sparse, which
+  // skips a MISSING field but still indexes an empty string — so writing '' here
+  // makes the 2nd+ pending import collide with E11000 (duplicate key) until the
+  // first one's real GUID is backfilled.
   const doc = await ContentModel.create({
     type:        'Film',
     genre:       Array.isArray(item.genre) ? item.genre : [],
@@ -295,7 +299,6 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
     desc:        item.desc || (Array.isArray(meta.description) ? meta.description[0] : meta.description) || '',
     releaseYear: item.releaseYear || (meta.year ? Number(String(meta.year).slice(0, 4)) : null),
     posterUrl,
-    bunnyVideoId:     '',
     isPublished:      false,
     submissionStatus: 'approved',
     archiveId:        id,
@@ -446,14 +449,16 @@ async function queueReel(item, { ReelModel, UploadJobModel, collection, allowUnl
     return { skipped: true, reason: `clip is ${durationSecs}s — exceeds the ${REEL_MAX_DURATION_SECS}s reel limit`, title }
   }
 
-  // Reel created without bunnyVideoId — the job-sync links it once ready.
+  // Reel created WITHOUT bunnyVideoId — the job-sync links it once ready.
+  // Omit it (not ''): Reel's bunnyVideoId unique index is sparse, which indexes
+  // an empty string but skips a missing field — writing '' collides the 2nd+
+  // pending import with E11000 (same root cause as the Film import).
   const doc = await ReelModel.create({
     creatorId,
     title,
     description:      item.desc || (Array.isArray(meta.description) ? meta.description[0] : meta.description) || '',
     durationSecs,
     archiveId:         id,
-    bunnyVideoId:      '',
     isPublished:       false,
     submissionStatus:  'pending',
   })
