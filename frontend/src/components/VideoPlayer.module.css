@@ -1393,6 +1393,207 @@
   }
 }
 
+/* ── Multi-screen settings navigation ───────────────────────────────────────*/
+.settingsMenu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.settingsMenuRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 10px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+  color: rgba(255,255,255,0.85);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-body, sans-serif);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.settingsMenuRow:hover {
+  background: rgba(255,255,255,0.09);
+}
+
+.settingsMenuRowDisabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.settingsMenuLabel {
+  flex: 1;
+  font-size: 13px;
+  color: rgba(255,255,255,0.85);
+}
+
+.settingsMenuValue {
+  font-size: 12px;
+  color: rgba(255,255,255,0.38);
+  white-space: nowrap;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settingsMenuChevron {
+  color: rgba(255,255,255,0.25);
+  flex-shrink: 0;
+}
+
+/* ── Settings sub-screen ─────────────────────────────────────────────────────*/
+.settingsSubHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 4px;
+}
+
+.settingsBackBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.65);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.settingsBackBtn:hover {
+  background: rgba(255,255,255,0.14);
+  color: #fff;
+}
+
+.settingsSubTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.85);
+}
+
+.settingsList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 240px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+.settingsList::-webkit-scrollbar { width: 3px; }
+.settingsList::-webkit-scrollbar-track { background: transparent; }
+.settingsList::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 99px; }
+
+.settingsListRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255,255,255,0.72);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-body, sans-serif);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.settingsListRow:hover {
+  background: rgba(255,255,255,0.07);
+  color: #fff;
+}
+
+.settingsListRowActive {
+  color: #f472b6;
+  background: rgba(219,39,119,0.1);
+}
+
+.settingsListRowActive:hover {
+  background: rgba(219,39,119,0.16);
+  color: #f9a8d4;
+}
+
+.settingsListCheck {
+  width: 18px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: #f472b6;
+}
+
+.settingsListName {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.settingsListBitrate {
+  font-size: 11px;
+  color: rgba(255,255,255,0.32);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.settingsListBadge {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.badgeSD  { background: rgba(99,102,241,0.18);  color: #a5b4fc; border: 1px solid rgba(99,102,241,0.28); }
+.badgeHD  { background: rgba(16,185,129,0.18);  color: #6ee7b7; border: 1px solid rgba(16,185,129,0.28); }
+.badgeFHD { background: rgba(245,158,11,0.18);  color: #fcd34d; border: 1px solid rgba(245,158,11,0.28); }
+.badgeQHD { background: rgba(239,68,68,0.18);   color: #fca5a5; border: 1px solid rgba(239,68,68,0.28); }
+.badgeUHD { background: rgba(219,39,119,0.18);  color: #f9a8d4; border: 1px solid rgba(219,39,119,0.28); }
+
+/* CC button — visually disabled when no subtitle track */
+.ctrlBtnUnavailable {
+  opacity: 0.28;
+  cursor: not-allowed;
+}
+
+/* 4K / TV: scale up settings rows */
+@media (min-width: 1920px) {
+  .settingsMenuRow,
+  .settingsListRow {
+    font-size: 15px;
+    padding: 13px 12px;
+  }
+
+  .settingsListName { font-size: 15px; }
+  .settingsListBitrate { font-size: 12px; }
+  .settingsListBadge { font-size: 10px; padding: 3px 8px; }
+  .settingsList { max-height: 340px; }
+}
+
+/* Mobile: compact rows */
+@media (max-width: 640px) {
+  .settingsListRow { padding: 8px 8px; font-size: 13px; }
+  .settingsList { max-height: 190px; }
+}
+
 /* ── Double-tap seek ripple ──────────────────────────────────────────────────*/
 .seekRipple {
   position: absolute;

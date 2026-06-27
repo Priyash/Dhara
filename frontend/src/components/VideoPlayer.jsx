@@ -3,7 +3,7 @@ import Hls from 'hls.js'
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   SkipBack, SkipForward, Settings, Loader2, RotateCcw, PictureInPicture2,
-  Airplay, ArrowLeft, Captions, MonitorPlay,
+  Airplay, ArrowLeft, Captions, MonitorPlay, ChevronRight, Check,
 } from 'lucide-react'
 import styles from './VideoPlayer.module.css'
 
@@ -90,6 +90,16 @@ function qualityLabel(level) {
   return kbps ? `${h} · ${kbps}kbps` : h
 }
 
+function qualityTier(height) {
+  if (!height) return null
+  if (height >= 2160) return 'UHD'
+  if (height >= 1440) return 'QHD'
+  if (height >= 1080) return 'FHD'
+  if (height >= 720)  return 'HD'
+  if (height >= 480)  return 'SD'
+  return null
+}
+
 const MAX_NETWORK_RETRIES = 5   // fatal NETWORK_ERROR retries before giving up (with backoff)
 const MAX_MEDIA_RETRIES   = 5   // fatal MEDIA_ERROR recovery attempts before giving up
 
@@ -146,6 +156,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
   const [buffered,         setBuffered]         = useState(0)
   const [buffering,        setBuffering]        = useState(false)
   const [showSettings,     setShowSettings]     = useState(false)
+  const [settingsScreen,   setSettingsScreen]   = useState('home')
   const [playbackRate,     setPlaybackRate]     = useState(1)
   const [qualityOptions,   setQualityOptions]   = useState([])
   const [qualityValue,     setQualityValue]     = useState('auto')
@@ -433,7 +444,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
       const visibleLevels = maxQualityHeight !== null
         ? levels.filter((l) => (l.height ?? 0) <= maxQualityHeight)
         : levels
-      setQualityOptions(visibleLevels.map((l, i) => ({ value: String(levels.indexOf(l)), label: qualityLabel(l) })))
+      setQualityOptions(visibleLevels.map((l) => ({ value: String(levels.indexOf(l)), height: l.height, bitrate: l.bitrate })))
       setQualityValue('auto')
       setActiveQualityLabel(visibleLevels.length ? `Auto · ${visibleLevels.length} levels` : 'Auto')
 
@@ -1033,7 +1044,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         localStorage.removeItem('dhara_quality')
       } else {
         const selected = qualityOptions.find((opt) => opt.value === val)
-        if (selected) setActiveQualityLabel(selected.label)
+        if (selected) setActiveQualityLabel(selected.height ? `${selected.height}p` : qualityLabel(hlsRef.current.levels?.[Number(val)]))
         const level = hlsRef.current.levels?.[Number(val)]
         if (level?.height) localStorage.setItem('dhara_quality', String(level.height))
       }
@@ -1405,6 +1416,13 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
           setShowStats((s) => !s)
           break
         }
+        case 'KeyC': {
+          e.preventDefault()
+          if (!subtitleUrl) break
+          setSubtitlesEnabled((s) => !s)
+          showHint(subtitlesEnabled ? 'CC off' : 'CC on')
+          break
+        }
         case 'Escape': {
           setShowSettings(false)
           setShowShortcuts(false)
@@ -1421,7 +1439,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [showHint, resetIdleTimer])
+  }, [showHint, resetIdleTimer, subtitleUrl, subtitlesEnabled])
 
   // Cleanup timers on unmount
   useEffect(() => () => {
@@ -1951,17 +1969,16 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
 
           {/* Right — CC, Settings, Fullscreen only; advanced options live in the settings panel */}
           <div className={styles.rightControls}>
-            {subtitleUrl && (
-              <button
-                className={`${styles.ctrlBtn} ${subtitlesEnabled ? styles.ctrlBtnActive : ''}`}
-                onClick={() => setSubtitlesEnabled((s) => !s)}
-                aria-label={subtitlesEnabled ? 'Disable subtitles' : 'Enable subtitles'}
-                title="Subtitles / CC"
-              >
-                <Captions size={18} />
-              </button>
-            )}
-            <button className={styles.ctrlBtn} onClick={() => setShowSettings((s) => !s)} aria-label="Settings">
+            <button
+              className={`${styles.ctrlBtn} ${subtitlesEnabled && subtitleUrl ? styles.ctrlBtnActive : ''} ${!subtitleUrl ? styles.ctrlBtnUnavailable : ''}`}
+              onClick={() => subtitleUrl && setSubtitlesEnabled((s) => !s)}
+              disabled={!subtitleUrl}
+              aria-label={subtitlesEnabled ? 'Disable subtitles' : 'Enable subtitles'}
+              title={subtitleUrl ? 'Subtitles / CC  (C)' : 'No subtitles available'}
+            >
+              <Captions size={18} />
+            </button>
+            <button className={styles.ctrlBtn} onClick={() => { setSettingsScreen('home'); setShowSettings((s) => !s) }} aria-label="Settings">
               <Settings size={18} />
             </button>
             <button className={styles.ctrlBtn} onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
@@ -2031,6 +2048,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
                   { keys: ['↑', '↓'],     action: 'Volume'             },
                   { keys: ['M'],           action: 'Mute'               },
                   { keys: ['F'],           action: 'Fullscreen'         },
+                  { keys: ['C'],           action: 'Subtitles / CC'     },
                   { keys: ['T'],           action: 'Theater mode'       },
                   { keys: ['P'],           action: 'Picture in Picture' },
                   { keys: ['Shift+I'],     action: 'Debug stats'        },
@@ -2058,75 +2076,183 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
         )}
         {showSettings && controlsVisible && (
           <div className={styles.settingsPanel} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.settingsGroup}>
-              <p className={styles.settingsLabel}>Speed</p>
-              <div className={styles.settingsChips}>
-                {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
-                  <button
-                    key={rate}
-                    className={`${styles.chipBtn} ${playbackRate === rate ? styles.chipBtnActive : ''}`}
-                    onClick={() => setPlaybackRate(rate)}
-                  >
-                    {rate}×
+
+            {/* ── Home screen ── */}
+            {settingsScreen === 'home' && (
+              <div className={styles.settingsMenu}>
+                <button className={styles.settingsMenuRow} onClick={() => setSettingsScreen('speed')}>
+                  <span className={styles.settingsMenuLabel}>Speed</span>
+                  <span className={styles.settingsMenuValue}>{playbackRate === 1 ? 'Normal' : `${playbackRate}×`}</span>
+                  <ChevronRight size={14} className={styles.settingsMenuChevron} />
+                </button>
+                <button
+                  className={`${styles.settingsMenuRow} ${qualityOptions.length === 0 ? styles.settingsMenuRowDisabled : ''}`}
+                  onClick={() => qualityOptions.length > 0 && setSettingsScreen('quality')}
+                  disabled={qualityOptions.length === 0}
+                >
+                  <span className={styles.settingsMenuLabel}>Quality</span>
+                  <span className={styles.settingsMenuValue}>
+                    {qualityValue === 'auto'
+                      ? 'Auto'
+                      : (qualityOptions.find((o) => o.value === qualityValue)?.height
+                          ? `${qualityOptions.find((o) => o.value === qualityValue).height}p`
+                          : activeQualityLabel || 'Auto')}
+                  </span>
+                  <ChevronRight size={14} className={styles.settingsMenuChevron} />
+                </button>
+                <button
+                  className={`${styles.settingsMenuRow} ${!subtitleUrl ? styles.settingsMenuRowDisabled : ''}`}
+                  onClick={() => subtitleUrl && setSettingsScreen('subtitles')}
+                  disabled={!subtitleUrl}
+                >
+                  <span className={styles.settingsMenuLabel}>Subtitles</span>
+                  <span className={styles.settingsMenuValue}>{!subtitleUrl ? 'None' : subtitlesEnabled ? 'On' : 'Off'}</span>
+                  <ChevronRight size={14} className={styles.settingsMenuChevron} />
+                </button>
+                {(onTheaterToggle || document.pictureInPictureEnabled || castAvailable) && (
+                  <button className={styles.settingsMenuRow} onClick={() => setSettingsScreen('view')}>
+                    <span className={styles.settingsMenuLabel}>View</span>
+                    <span className={styles.settingsMenuValue}>
+                      {castConnected ? 'Casting' : theaterMode ? 'Theater' : pipEnabled ? 'PiP' : '—'}
+                    </span>
+                    <ChevronRight size={14} className={styles.settingsMenuChevron} />
                   </button>
-                ))}
-              </div>
-            </div>
-            {qualityOptions.length > 0 && (
-              <div className={styles.settingsGroup}>
-                <p className={styles.settingsLabel}>Quality</p>
-                <div className={styles.settingsChips}>
-                  <button
-                    className={`${styles.chipBtn} ${qualityValue === 'auto' ? styles.chipBtnActive : ''}`}
-                    onClick={() => handleQualityChange('auto')}
-                  >Auto</button>
-                  {qualityOptions.map((opt) => (
-                    <button
-                      key={opt.value}
-                      className={`${styles.chipBtn} ${qualityValue === opt.value ? styles.chipBtnActive : ''}`}
-                      onClick={() => handleQualityChange(opt.value)}
-                    >{opt.label}</button>
-                  ))}
-                </div>
+                )}
               </div>
             )}
-            {(onTheaterToggle || document.pictureInPictureEnabled || castAvailable) && (
-              <div className={styles.settingsGroup}>
-                <p className={styles.settingsLabel}>View</p>
-                <div className={styles.settingsToggles}>
+
+            {/* ── Speed sub-screen ── */}
+            {settingsScreen === 'speed' && (
+              <>
+                <div className={styles.settingsSubHeader}>
+                  <button className={styles.settingsBackBtn} onClick={() => setSettingsScreen('home')}>
+                    <ArrowLeft size={14} />
+                  </button>
+                  <span className={styles.settingsSubTitle}>Speed</span>
+                </div>
+                <div className={styles.settingsList}>
+                  {[0.75, 1, 1.25, 1.5, 2].map((rate) => (
+                    <button
+                      key={rate}
+                      className={`${styles.settingsListRow} ${playbackRate === rate ? styles.settingsListRowActive : ''}`}
+                      onClick={() => { setPlaybackRate(rate); setSettingsScreen('home') }}
+                    >
+                      <span className={styles.settingsListCheck}>{playbackRate === rate && <Check size={13} />}</span>
+                      <span className={styles.settingsListName}>{rate === 1 ? 'Normal' : `${rate}×`}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* ── Quality sub-screen ── */}
+            {settingsScreen === 'quality' && (
+              <>
+                <div className={styles.settingsSubHeader}>
+                  <button className={styles.settingsBackBtn} onClick={() => setSettingsScreen('home')}>
+                    <ArrowLeft size={14} />
+                  </button>
+                  <span className={styles.settingsSubTitle}>Video Quality</span>
+                </div>
+                <div className={styles.settingsList}>
+                  <button
+                    className={`${styles.settingsListRow} ${qualityValue === 'auto' ? styles.settingsListRowActive : ''}`}
+                    onClick={() => { handleQualityChange('auto'); setSettingsScreen('home') }}
+                  >
+                    <span className={styles.settingsListCheck}>{qualityValue === 'auto' && <Check size={13} />}</span>
+                    <span className={styles.settingsListName}>Auto</span>
+                    {qualityOptions.length > 0 && (
+                      <span className={styles.settingsListBitrate}>{qualityOptions.length} levels</span>
+                    )}
+                  </button>
+                  {[...qualityOptions].reverse().map((opt) => {
+                    const tier = qualityTier(opt.height)
+                    const mbps = opt.bitrate ? (opt.bitrate / 1_000_000).toFixed(1) : null
+                    return (
+                      <button
+                        key={opt.value}
+                        className={`${styles.settingsListRow} ${qualityValue === opt.value ? styles.settingsListRowActive : ''}`}
+                        onClick={() => { handleQualityChange(opt.value); setSettingsScreen('home') }}
+                      >
+                        <span className={styles.settingsListCheck}>{qualityValue === opt.value && <Check size={13} />}</span>
+                        <span className={styles.settingsListName}>{opt.height ? `${opt.height}p` : 'Auto'}</span>
+                        {tier && <span className={`${styles.settingsListBadge} ${styles[`badge${tier}`]}`}>{tier}</span>}
+                        {mbps && <span className={styles.settingsListBitrate}>{mbps} Mbps</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* ── Subtitles sub-screen ── */}
+            {settingsScreen === 'subtitles' && (
+              <>
+                <div className={styles.settingsSubHeader}>
+                  <button className={styles.settingsBackBtn} onClick={() => setSettingsScreen('home')}>
+                    <ArrowLeft size={14} />
+                  </button>
+                  <span className={styles.settingsSubTitle}>Subtitles</span>
+                </div>
+                <div className={styles.settingsList}>
+                  {[true, false].map((on) => (
+                    <button
+                      key={String(on)}
+                      className={`${styles.settingsListRow} ${subtitlesEnabled === on ? styles.settingsListRowActive : ''}`}
+                      onClick={() => { setSubtitlesEnabled(on); setSettingsScreen('home') }}
+                    >
+                      <span className={styles.settingsListCheck}>{subtitlesEnabled === on && <Check size={13} />}</span>
+                      <span className={styles.settingsListName}>{on ? 'On' : 'Off'}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* ── View sub-screen ── */}
+            {settingsScreen === 'view' && (
+              <>
+                <div className={styles.settingsSubHeader}>
+                  <button className={styles.settingsBackBtn} onClick={() => setSettingsScreen('home')}>
+                    <ArrowLeft size={14} />
+                  </button>
+                  <span className={styles.settingsSubTitle}>View</span>
+                </div>
+                <div className={styles.settingsList}>
                   {onTheaterToggle && (
                     <button
-                      className={`${styles.settingsToggleBtn} ${theaterMode ? styles.settingsToggleBtnActive : ''}`}
-                      onClick={(e) => { e.stopPropagation(); onTheaterToggle(); setShowSettings(false) }}
+                      className={`${styles.settingsListRow} ${theaterMode ? styles.settingsListRowActive : ''}`}
+                      onClick={() => { onTheaterToggle(); setShowSettings(false) }}
                     >
-                      <MonitorPlay size={14} />
-                      <span>Theater mode</span>
-                      {theaterMode && <span className={styles.settingsToggleBadge}>On</span>}
+                      <span className={styles.settingsListCheck}>{theaterMode && <Check size={13} />}</span>
+                      <MonitorPlay size={14} style={{ flexShrink: 0 }} />
+                      <span className={styles.settingsListName}>Theater mode</span>
                     </button>
                   )}
                   {document.pictureInPictureEnabled && (
                     <button
-                      className={`${styles.settingsToggleBtn} ${pipEnabled ? styles.settingsToggleBtnActive : ''}`}
-                      onClick={(e) => { e.stopPropagation(); togglePip() }}
+                      className={`${styles.settingsListRow} ${pipEnabled ? styles.settingsListRowActive : ''}`}
+                      onClick={() => { togglePip(); setSettingsScreen('home') }}
                     >
-                      <PictureInPicture2 size={14} />
-                      <span>Picture in Picture</span>
-                      {pipEnabled && <span className={styles.settingsToggleBadge}>On</span>}
+                      <span className={styles.settingsListCheck}>{pipEnabled && <Check size={13} />}</span>
+                      <PictureInPicture2 size={14} style={{ flexShrink: 0 }} />
+                      <span className={styles.settingsListName}>Picture in Picture</span>
                     </button>
                   )}
                   {castAvailable && (
                     <button
-                      className={`${styles.settingsToggleBtn} ${castConnected ? styles.settingsToggleBtnActive : ''}`}
-                      onClick={(e) => { e.stopPropagation(); handleCast() }}
+                      className={`${styles.settingsListRow} ${castConnected ? styles.settingsListRowActive : ''}`}
+                      onClick={() => { handleCast(); setShowSettings(false) }}
                     >
-                      <Airplay size={14} />
-                      <span>{castConnected ? 'Casting to TV' : 'Cast / AirPlay'}</span>
-                      {castConnected && <span className={styles.settingsToggleBadge}>Live</span>}
+                      <span className={styles.settingsListCheck}>{castConnected && <Check size={13} />}</span>
+                      <Airplay size={14} style={{ flexShrink: 0 }} />
+                      <span className={styles.settingsListName}>{castConnected ? 'Casting to TV' : 'Cast / AirPlay'}</span>
                     </button>
                   )}
                 </div>
-              </div>
+              </>
             )}
+
           </div>
         )}
       </div>{/* end videoArea */}
