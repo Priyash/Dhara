@@ -65,47 +65,116 @@ function validateFile(file) {
   return null
 }
 
-// Analyse video: duration, dimensions, aspect ratio + capture thumbnail frame
+// Fractions of the clip to sample for a thumbnail. We skip t≈0 because most
+// reels open on a black fade-in frame, which is why grid posters looked dark.
+const THUMB_SAMPLE_FRACTIONS = [0.2, 0.45, 0.7]
+// If a single seek never resolves (odd codec / browser), don't hang the upload.
+const SEEK_TIMEOUT_MS = 700
+
+// Average luma of the current canvas, sampling a sparse grid of pixels so it
+// stays cheap on large frames. Returns 0..255 (higher = brighter).
+function frameBrightness(ctx, w, h) {
+  let data
+  try {
+    data = ctx.getImageData(0, 0, w, h).data
+  } catch {
+    return -1 // tainted/unreadable canvas — treat as worst so a later frame wins
+  }
+  let sum = 0
+  let n = 0
+  // step ~every 41st pixel (×4 bytes) — coprime-ish stride to avoid banding
+  for (let i = 0; i < data.length; i += 41 * 4) {
+    sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+    n++
+  }
+  return n ? sum / n : 0
+}
+
+// Analyse video: duration, dimensions, aspect ratio + capture thumbnail frame.
+// Samples a few frames spread across the clip and keeps the brightest one,
+// which reliably skips black/dark intro frames.
 function analyseVideo(file) {
   return new Promise((resolve) => {
     const video  = document.createElement('video')
     const canvas = document.createElement('canvas')
+    const ctx    = canvas.getContext('2d', { willReadFrequently: true })
     const url    = URL.createObjectURL(file)
     let   settled = false
 
-    const finish = () => {
+    let bestThumb = null
+    let bestScore = -Infinity
+    let timer     = null
+
+    const cleanupAndResolve = (result) => {
       if (settled) return
       settled = true
+      clearTimeout(timer)
+      video.onseeked = null
+      video.onloadeddata = null
+      video.onerror = null
+      URL.revokeObjectURL(url)
+      resolve(result)
+    }
 
+    const finish = () => {
       const { duration, videoWidth: w, videoHeight: h } = video
       const r = w > 0 && h > 0 ? w / h : 0
       const aspectRatio = r >= 1.5 ? '16:9' : r >= 0.85 && r <= 1.15 ? '1:1' : '9:16'
-
-      let thumb = null
-      try {
-        const scale = w > 0 ? Math.min(1, 360 / w) : 1
-        canvas.width  = Math.round(w * scale) || 360
-        canvas.height = Math.round(h * scale) || 640
-        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
-        thumb = canvas.toDataURL('image/jpeg', 0.8)
-      } catch {}
-
-      URL.revokeObjectURL(url)
-      resolve({ duration, width: w, height: h, aspectRatio, thumb })
+      cleanupAndResolve({ duration, width: w, height: h, aspectRatio, thumb: bestThumb })
     }
 
-    // preload='auto' ensures actual video data loads so the seek produces a real frame.
-    // Seeking to 1e-5 avoids the blank frame some codecs return at exactly t=0.
+    // Build the list of timestamps to sample, clamped inside the clip.
+    let samples = []
+    let sampleIdx = 0
+
+    const captureCurrent = () => {
+      const { videoWidth: w, videoHeight: h } = video
+      if (!w || !h) return
+      const scale = Math.min(1, 360 / w)
+      canvas.width  = Math.round(w * scale) || 360
+      canvas.height = Math.round(h * scale) || 640
+      try {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        const score = frameBrightness(ctx, canvas.width, canvas.height)
+        // Keep the brightest frame seen so far. Always keep at least one frame
+        // (bestThumb starts null) even if every frame scores poorly.
+        if (score > bestScore || bestThumb === null) {
+          bestScore = score
+          bestThumb = canvas.toDataURL('image/jpeg', 0.8)
+        }
+      } catch {}
+    }
+
+    const seekNext = () => {
+      if (settled) return
+      if (sampleIdx >= samples.length) { finish(); return }
+      const t = samples[sampleIdx++]
+      clearTimeout(timer)
+      // If this seek stalls, move on to the next sample rather than hang.
+      timer = setTimeout(() => { captureCurrent(); seekNext() }, SEEK_TIMEOUT_MS)
+      try {
+        video.currentTime = t
+      } catch {
+        clearTimeout(timer)
+        seekNext()
+      }
+    }
+
     video.preload = 'auto'
     video.onloadedmetadata = () => {
-      video.currentTime = Math.min(1e-5, video.duration)
+      const d = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0
+      samples = d > 0
+        ? THUMB_SAMPLE_FRACTIONS.map((f) => Math.min(d * f, Math.max(0, d - 0.05)))
+        : [0]
+      seekNext()
     }
-    video.onseeked = finish
-    // Fallback: if seeked never fires (e.g. unsupported codec), draw whatever is loaded
-    video.onloadeddata = () => setTimeout(() => { if (!settled) finish() }, 200)
+    video.onseeked = () => {
+      clearTimeout(timer)
+      captureCurrent()
+      seekNext()
+    }
     video.onerror = () => {
-      URL.revokeObjectURL(url)
-      resolve({ duration: 0, width: 0, height: 0, aspectRatio: '9:16', thumb: null })
+      cleanupAndResolve({ duration: 0, width: 0, height: 0, aspectRatio: '9:16', thumb: bestThumb })
     }
     video.src = url
   })
