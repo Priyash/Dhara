@@ -162,6 +162,30 @@ export async function uploadPosterFromUrl(remoteUrl, slug) {
 
 const EPISODIC_TYPES = new Set(['Series', 'Serial Drama'])
 
+// Catalog-metadata fields an import item may carry through to the Content doc.
+// Everything else — _id, status flags (isPublished/submissionStatus/isDeleted),
+// counters (viewCount/likeCount/…), bunnyVideoId, searchKey, archiveId — is set
+// explicitly below or must NEVER come from caller-supplied item data. Spreading
+// a raw `...item` risked exactly that.
+const CONTENT_PASSTHROUGH = [
+  'subtitle', 'duration', 'badge', 'cast', 'director',
+  'contentLanguage', 'certification', 'contentWarnings', 'moodTags', 'backdropUrl', 'rating',
+]
+
+/** Picks only the allow-listed keys from an object (skips undefined values). */
+export function pickFields(obj = {}, allowed = []) {
+  const out = {}
+  for (const k of allowed) if (obj[k] !== undefined) out[k] = obj[k]
+  return out
+}
+
+/** Resolve a sane integer release year from the import item or archive.org metadata, or null. */
+export function parseReleaseYear(item = {}, meta = {}) {
+  if (item.releaseYear) return Number(item.releaseYear) || null
+  const y = Number(String(meta.year ?? '').slice(0, 4))
+  return Number.isFinite(y) && y > 0 ? y : null
+}
+
 /** Parse archive.org's per-file `length` field — either a plain-seconds string or "HH:MM:SS" — into integer seconds. Returns null if unparseable. */
 export function parseDurationSecs(length) {
   if (length == null || length === '') return null
@@ -291,13 +315,13 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
   // makes the 2nd+ pending import collide with E11000 (duplicate key) until the
   // first one's real GUID is backfilled.
   const doc = await ContentModel.create({
-    type:        'Film',
+    ...pickFields(item, CONTENT_PASSTHROUGH),
+    type:        item.type === 'Documentary' ? 'Documentary' : 'Film',
     genre:       Array.isArray(item.genre) ? item.genre : [],
     isPremium:   Boolean(item.isPremium),
-    ...item,
     title,
     desc:        item.desc || (Array.isArray(meta.description) ? meta.description[0] : meta.description) || '',
-    releaseYear: item.releaseYear || (meta.year ? Number(String(meta.year).slice(0, 4)) : null),
+    releaseYear: parseReleaseYear(item, meta),
     posterUrl,
     isPublished:      false,
     submissionStatus: 'approved',
@@ -387,18 +411,18 @@ async function queueEpisodic(item, { ContentModel, UploadJobModel, collection, a
   }
 
   const doc = await ContentModel.create({
+    ...pickFields(item, CONTENT_PASSTHROUGH),
     type:      EPISODIC_TYPES.has(item.type) ? item.type : 'Series',
     genre:     Array.isArray(item.genre) ? item.genre : [],
     isPremium: Boolean(item.isPremium),
-    ...item,
     title,
     desc:      item.desc || '',
+    releaseYear: parseReleaseYear(item, {}),
     posterUrl,
     seasons:   [...seasonMap.values()].sort((a, b) => a.number - b.number),
     isPublished:      false,
     submissionStatus: 'approved',
     archiveId:        item.archiveId || null,
-    posterArchiveId:  undefined,
   })
 
   // One Bunny fetch + UploadJob per episode; job-sync links each when ready.
