@@ -423,6 +423,17 @@ script, Romanized Bengali, and English onto a single phonetic `searchKey` per
 before matching, with fuzzy tolerance for spelling drift. **No new infra, no
 model training.**
 
+> ✅ **IMPLEMENTED.** `utils/banglish.js`'s `phoneticKey()` folds Bengali script,
+> Romanized Bengali, and English onto one consonant-skeleton key (handles
+> aspirates, the য/'y' glide, nukta forms ড়/য়, and conjuncts). `Content.searchKey`
+> is kept in sync by model hooks (`save` + `findOneAndUpdate`/`updateOne`) and
+> backfilled via `scripts/backfillSearchKeys.js`. `GET /api/search` augments the
+> exact title/$text match with a phonetic match (additive — exact results keep
+> their rank; phonetic hits append for recall, query skeleton ≥ 3 chars).
+> `scripts/auditBanglishSearch.js` sizes the recovered traffic from `SearchLog`.
+> 12 unit tests pin the cross-script gating pairs. **No frontend change needed —
+> the existing search box benefits automatically.**
+
 > **v1 scope.** Don't build a *perfect* bidirectional transliterator — that's the
 > trap here. A rule-based phonetic folding (lookup table + loose vowel/consonant
 > collapsing) captures most of the value; favour recall over precision and let
