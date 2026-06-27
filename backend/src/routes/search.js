@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { Content } from '../models/Content.js'
 import { SearchLog } from '../models/SearchLog.js'
+import { phoneticKey } from '../utils/banglish.js'
 
 const router = Router()
 
@@ -67,6 +68,28 @@ router.get('/', async (req, res, next) => {
           .limit(20)
           .select(HIDE_STREAM)
           .lean()
+      }
+    }
+
+    // ── Banglish (transliteration-aware) augmentation ─────────────────────────
+    // Catches Romanized-Bengali queries that the exact title match misses
+    // ("bhalobasha" → ভালোবাসা). Additive only: exact/text matches above keep
+    // their rank; phonetic hits are appended for recall. See utils/banglish.js.
+    if (results.length < 20) {
+      const pk = phoneticKey(raw)
+      if (pk.length >= 3) {
+        const seen = new Set(results.map((r) => String(r._id)))
+        const phonetic = await Content
+          .find({ ...approvedOnly, searchKey: { $regex: pk } })
+          .sort({ rating: -1, viewCount: -1 })
+          .limit(20)
+          .select(HIDE_STREAM)
+          .lean()
+        for (const item of phonetic) {
+          if (seen.has(String(item._id))) continue
+          results.push(item)
+          if (results.length >= 20) break
+        }
       }
     }
 
