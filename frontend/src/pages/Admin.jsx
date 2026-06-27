@@ -2402,32 +2402,45 @@ export default function Admin() {
 
           {/* Filter row */}
           <div className={styles.contentFilterRow}>
-            <SlidersHorizontal size={12} className={styles.contentFilterIcon} />
-            {['all', 'Film', 'Series', 'Documentary', 'Serial Drama'].map((t) => (
-              <button
-                key={t}
-                className={`${styles.contentFilterChip} ${contentTypeFilter === t ? styles.contentFilterChipActive : ''}`}
-                onClick={() => setContentTypeFilter(t)}
-              >
-                {t === 'all' ? 'All types' : t}
-              </button>
-            ))}
+            <div className={styles.filterGroup}>
+              <span className={styles.filterGroupLabel}>Type</span>
+              <div className={styles.filterGroupChips}>
+                {['all', 'Film', 'Series', 'Documentary', 'Serial Drama'].map((t) => (
+                  <button
+                    key={t}
+                    className={`${styles.contentFilterChip} ${contentTypeFilter === t ? styles.contentFilterChipActive : ''}`}
+                    onClick={() => setContentTypeFilter(t)}
+                  >
+                    {t === 'all' ? 'All' : t}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className={styles.contentFilterDivider} />
-            {[
-              { value: 'all',         label: 'All status' },
-              { value: 'published',   label: 'Published' },
-              { value: 'unpublished', label: 'Unpublished' },
-              { value: 'processing',  label: 'Transcoding' },
-              { value: 'no-video',    label: 'No video' },
-            ].map(({ value, label }) => (
-              <button
-                key={value}
-                className={`${styles.contentFilterChip} ${contentStatusFilter === value ? styles.contentFilterChipActive : ''}`}
-                onClick={() => setContentStatusFilter(value)}
-              >
-                {label}
-              </button>
-            ))}
+
+            <div className={styles.filterGroup}>
+              <span className={styles.filterGroupLabel}>Status</span>
+              <div className={styles.filterGroupChips}>
+                {[
+                  { value: 'all',         label: 'All',         dot: null },
+                  { value: 'published',   label: 'Live',        dot: '#4ade80' },
+                  { value: 'unpublished', label: 'Draft',       dot: 'rgba(255,255,255,0.25)' },
+                  { value: 'processing',  label: 'Transcoding', dot: '#fbbf24' },
+                  { value: 'no-video',    label: 'No video',    dot: '#f87171' },
+                ].map(({ value, label, dot }) => (
+                  <button
+                    key={value}
+                    className={`${styles.contentFilterChip} ${contentStatusFilter === value ? styles.contentFilterChipActive : ''}`}
+                    onClick={() => setContentStatusFilter(value)}
+                  >
+                    {dot && <span className={styles.filterDot} style={{ background: dot }} />}
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <label className={styles.showDeletedToggle}>
               <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
               Deleted{deletedItems.length > 0 ? ` · ${deletedItems.length}` : ''}

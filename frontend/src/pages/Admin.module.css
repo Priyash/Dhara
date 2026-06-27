@@ -1321,55 +1321,97 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
   margin-bottom: 14px;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius-md);
 }
-.contentFilterIcon {
-  color: rgba(255,255,255,0.3);
+
+/* A labeled group — e.g. "Type" or "Status" */
+.filterGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filterGroupLabel {
+  font-size: 10px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.28);
+  white-space: nowrap;
   flex-shrink: 0;
-  margin-right: 2px;
 }
+
+.filterGroupChips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
 .contentFilterChip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 11.5px;
+  border-radius: 6px;
+  font-size: 12px;
   font-family: var(--font-body);
   font-weight: 500;
   cursor: pointer;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.45);
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  background: transparent;
+  border: 1px solid transparent;
+  color: rgba(255,255,255,0.4);
+  transition: background 0.13s, border-color 0.13s, color 0.13s;
   white-space: nowrap;
 }
 .contentFilterChip:hover {
-  background: rgba(255,255,255,0.08);
-  border-color: rgba(255,255,255,0.14);
-  color: rgba(255,255,255,0.75);
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.8);
 }
 .contentFilterChipActive {
-  background: rgba(219,39,119,0.12);
-  border-color: rgba(219,39,119,0.35);
-  color: var(--color-accent);
+  background: rgba(219,39,119,0.13);
+  border-color: rgba(219,39,119,0.3);
+  color: #f472b6;
+  font-weight: 600;
 }
+.contentFilterChipActive:hover {
+  background: rgba(219,39,119,0.2);
+}
+
+/* Coloured dot inside status chips */
+.filterDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+.contentFilterChipActive .filterDot { opacity: 1; }
+
 .contentFilterDivider {
   width: 1px;
-  height: 16px;
-  background: rgba(255,255,255,0.09);
+  height: 20px;
+  background: rgba(255,255,255,0.08);
   align-self: center;
   flex-shrink: 0;
-  margin: 0 2px;
+  margin: 0 4px;
 }
+
 .showDeletedToggle {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: 11.5px;
   font-family: var(--font-body);
-  color: rgba(255,255,255,0.35);
+  color: rgba(255,255,255,0.3);
   cursor: pointer;
   user-select: none;
   margin-left: auto;
@@ -2315,11 +2357,13 @@
     font-size: 12px;
   }
 
-  /* Filter row: wrap and tighten on small screens */
+  /* Filter row: stack groups vertically, hide divider on small screens */
   .contentFilterRow {
-    gap: 4px;
+    gap: 6px;
     margin-bottom: 10px;
+    padding: 8px 10px;
   }
+  .filterGroup { gap: 6px; }
   .contentFilterChip {
     padding: 3px 8px;
     font-size: 11px;

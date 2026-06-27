@@ -7,6 +7,7 @@ vi.mock('../services/api.js', () => ({
   fetchTrailerUrl: vi.fn(),
   recordInteractionEvent: vi.fn().mockResolvedValue(undefined),
   chooseThumbnailVariant: vi.fn(() => null),
+  rememberShownVariant: vi.fn(),
 }))
 
 const baseItem = { id: '1', title: 'Film A.mp4', type: 'Film', genre: ['Drama', 'Romance', 'Thriller'] }
