@@ -184,7 +184,7 @@ export function withCache(ttlSeconds) {
 
       // Clean up inflight entry if the handler throws
       const origNext = next
-      next = (err) => { _inFlight.delete(key); rejectInflight(err || new Error('handler error')); origNext(err) }
+      next = (err) => { _inFlight.delete(key); if (err) rejectInflight(err); origNext(err) }
 
       next()
     }).catch(next)

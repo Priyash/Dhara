@@ -1144,13 +1144,49 @@
 }
 
 /* ── Theater mode ────────────────────────────────────────────────────────────*/
-.pageTheater .below {
-  background: rgba(0,0,0,0.85);
-  padding-top: 12px;
+/* Base: all player-wrap height-related rules already make the video fill the
+   viewport while playing (via body.video-playing). Theater mode layers on top:
+   dims the below-player section so the video gets all the visual attention. */
+
+.pageTheater {
+  background: #000;
 }
 
-.pageTheater .below .info button {
-  opacity: 0.7;
+/* Below section: dim in theater mode, restore instantly on hover/focus */
+.pageTheater .below {
+  opacity: 0.2;
+  transform: translateY(6px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  background: #000;
+}
+
+.pageTheater .below:hover,
+.pageTheater .below:focus-within {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+/* While actively playing in theater mode — fully hide the below section so
+   nothing competes with the video. Snap back immediately when paused. */
+:global(body.video-playing) .pageTheater .below {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(16px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+/* Subtle top glow on the player wrap in theater mode to frame it */
+.pageTheater .playerWrap {
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 8px 64px rgba(0,0,0,0.9);
+}
+
+/* Restore hover-reveal for users who scroll down on the page */
+:global(body.video-playing) .pageTheater .below:hover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 /* ── End card overlay ────────────────────────────────────────────────────────*/
