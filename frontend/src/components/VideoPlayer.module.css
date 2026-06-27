@@ -567,126 +567,145 @@
 }
 
 /* ── Settings panel ──────────────────────────────────────────────────────────*/
-/* Positioned relative to videoArea (not controlsBar) so it stays in the same
-   spot regardless of screen aspect ratio, orientation, or controls bar height. */
 .settingsPanel {
   position: absolute;
   right: 24px;
   bottom: 110px;
   z-index: 9;
-  width: min(260px, calc(100% - 48px));
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 14px;
-  background: rgba(12,12,16,0.96);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  box-shadow: 0 16px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
-}
-
-.settingsGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.settingsLabel {
-  font-size: 10px;
-  color: rgba(255,255,255,0.35);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  font-weight: 600;
-  padding: 0 2px;
-}
-
-/* ── Speed — segmented control ───────────────────────────────────────────────*/
-.settingsChips {
-  display: flex;
-  gap: 0;
-  border-radius: 8px;
+  width: min(280px, calc(100% - 48px));
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  background: rgba(10,10,14,0.97);
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.1);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  box-shadow: 0 24px 64px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.04);
 }
 
-.chipBtn {
-  flex: 1;
-  border: none;
-  border-right: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.04);
-  color: rgba(255,255,255,0.55);
-  padding: 9px 0;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  font-family: var(--font-body, sans-serif);
-}
-
-.chipBtn:last-child { border-right: none; }
-
-.chipBtn:hover {
-  background: rgba(255,255,255,0.1);
-  color: #fff;
-}
-
-.chipBtnActive {
-  background: rgba(219,39,119,0.2);
-  color: #f9a8d4;
-}
-
-/* ── View toggle rows ────────────────────────────────────────────────────────*/
-.settingsToggles {
+/* ── Home menu ───────────────────────────────────────────────────────────────*/
+.settingsMenu {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.07);
 }
 
-.settingsToggleBtn {
+.settingsMenuRow {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0;
   width: 100%;
-  padding: 11px 12px;
+  padding: 14px 16px;
   border: none;
   border-bottom: 1px solid rgba(255,255,255,0.05);
-  border-radius: 0;
-  background: rgba(255,255,255,0.03);
-  color: rgba(255,255,255,0.7);
-  font-size: 13px;
+  background: transparent;
+  color: rgba(255,255,255,0.85);
+  font-size: 14px;
   font-weight: 500;
   font-family: var(--font-body, sans-serif);
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.13s;
 }
 
-.settingsToggleBtn:last-child { border-bottom: none; }
+.settingsMenuRow:last-child { border-bottom: none; }
 
-.settingsToggleBtn:hover {
-  background: rgba(255,255,255,0.08);
-  color: #fff;
+.settingsMenuRow:hover { background: rgba(255,255,255,0.06); }
+
+.settingsMenuLabel { flex: 1; }
+
+.settingsMenuValue {
+  font-size: 13px;
+  color: rgba(255,255,255,0.4);
+  margin-right: 6px;
 }
 
-.settingsToggleBtnActive {
-  background: rgba(219,39,119,0.1);
+.settingsMenuChevron {
+  color: rgba(255,255,255,0.25);
+  flex-shrink: 0;
+}
+
+/* ── Sub-screen header ───────────────────────────────────────────────────────*/
+.settingsSubHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+
+.settingsBackBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.7);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.13s, color 0.13s;
+}
+
+.settingsBackBtn:hover { background: rgba(255,255,255,0.13); color: #fff; }
+
+.settingsSubTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+  letter-spacing: 0.1px;
+}
+
+/* ── Sub-screen list ─────────────────────────────────────────────────────────*/
+.settingsList {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.settingsListRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 16px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.7);
+  font-size: 14px;
+  font-weight: 400;
+  font-family: var(--font-body, sans-serif);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.13s, color 0.13s;
+}
+
+.settingsListRow:hover { background: rgba(255,255,255,0.06); color: #fff; }
+
+.settingsListRowActive {
   color: #f9a8d4;
+  font-weight: 600;
 }
 
-.settingsToggleBtnActive:hover {
-  background: rgba(219,39,119,0.16);
+.settingsListCheck {
+  width: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: #ec4899;
 }
 
-.settingsToggleBtn > span:first-of-type {
-  flex: 1;
+.settingsListIcon {
+  color: rgba(255,255,255,0.45);
+  flex-shrink: 0;
 }
 
-.settingsToggleBadge {
+.settingsListRowActive .settingsListIcon { color: #ec4899; }
+
+.settingsListBadge {
+  margin-left: auto;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.3px;
@@ -757,6 +776,11 @@
     right: 12px;
     bottom: max(82px, calc(72px + env(safe-area-inset-bottom)));
     width: min(300px, calc(100% - 24px));
+    border-radius: 14px;
+  }
+
+  .settingsList {
+    max-height: 200px;
   }
 
   .skipIntroBtn {
@@ -1145,6 +1169,30 @@
   border-color: rgba(219,39,119,0.3) !important;
 }
 
+/* Shown for features that exist but are unavailable for this content (e.g. CC
+   when no subtitle track is provided). Always visible so users know the feature
+   exists; interaction and hover effects are suppressed. */
+.ctrlBtnUnavailable,
+.ctrlBtn:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+.ctrlBtnUnavailable:hover,
+.ctrlBtn:disabled:hover {
+  background: rgba(255,255,255,0.02);
+  border-color: transparent;
+  color: rgba(255,255,255,0.7);
+  transform: none;
+}
+
+.settingsMenuRowDisabled,
+.settingsMenuRow:disabled {
+  opacity: 0.3;
+  cursor: default;
+  pointer-events: none;
+}
+
 /* ── Offline ribbon ──────────────────────────────────────────────────────────*/
 .offlineRibbon {
   position: absolute;
@@ -1387,7 +1435,7 @@
   }
 
   .settingsPanel {
-    width: 380px;
+    width: 320px;
     right: 48px;
     bottom: 140px;
   }
