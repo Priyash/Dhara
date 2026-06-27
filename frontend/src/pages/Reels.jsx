@@ -23,6 +23,17 @@ const VIEW_THRESHOLD = 5
 // alive. A window of 2 still covers the ≤1 neighbour preload (isNearby).
 const SLIDE_WINDOW = 2
 
+// The player keeps two per-session dedup sets — reels already view-counted, and
+// interaction milestones already fired. They'd otherwise grow for the lifetime
+// of the page as the feed auto-loads more reels. Cap them and evict the oldest
+// entry; the only consequence is re-counting a reel the user scrolled hundreds
+// of items back past, which doesn't happen in practice.
+const DEDUP_CAP = 800
+function addBounded(set, key) {
+  set.add(key)
+  if (set.size > DEDUP_CAP) set.delete(set.values().next().value)
+}
+
 function fmt(n) {
   if (!n || n < 1000) return String(n || 0)
   if (n < 1_000_000)  return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}K`
@@ -688,12 +699,12 @@ function ReelPlayer({ startId }) {
 
         {/* Nav arrows */}
         <div className={styles.navCol}>
-          <button className={styles.navArrow} onClick={() => goTo(activeIndex - 1)} disabled={activeIndex === 0}>
-            <ChevronUp size={18} />
+          <button className={styles.navArrow} onClick={() => goTo(activeIndex - 1)} disabled={activeIndex === 0} aria-label="Previous reel">
+            <ChevronUp size={18} aria-hidden="true" />
           </button>
-          <span className={styles.navNum}>{activeIndex + 1}<em>/{reels.length}</em></span>
-          <button className={styles.navArrow} onClick={() => goTo(activeIndex + 1)} disabled={activeIndex === reels.length - 1 && !feedHasMore}>
-            <ChevronDown size={18} />
+          <span className={styles.navNum} aria-label={`Reel ${activeIndex + 1} of ${reels.length}`}>{activeIndex + 1}<em>/{reels.length}</em></span>
+          <button className={styles.navArrow} onClick={() => goTo(activeIndex + 1)} disabled={activeIndex === reels.length - 1 && !feedHasMore} aria-label="Next reel">
+            <ChevronDown size={18} aria-hidden="true" />
           </button>
         </div>
 
@@ -852,7 +863,7 @@ function ReelSlide({ reel, isActive, isNearby, userPaused, hlsUrl, muted, liked,
       if (pos < VIEW_THRESHOLD) return
       clearInterval(pollRef.current)
       if (viewRecordedRef.current.has(key)) return
-      viewRecordedRef.current.add(key)
+      addBounded(viewRecordedRef.current, key)
       recordReelView(reel._id, Math.floor(pos))
         .then((res) => { if (res?.stats) onViewCounted(res.stats) })
         .catch(() => {})
@@ -865,7 +876,7 @@ function ReelSlide({ reel, isActive, isNearby, userPaused, hlsUrl, muted, liked,
     const id = reel._id, ms = milestoneRef.current
     const mkKey = (e) => `${id}:${e}`
     const send  = (eventType, extra = {}) => {
-      const k = mkKey(eventType); if (ms.has(k)) return; ms.add(k)
+      const k = mkKey(eventType); if (ms.has(k)) return; addBounded(ms, k)
       recordInteractionEvent({ itemType: 'reel', itemId: id, eventType, source: 'reels', ...extra }).catch(() => {})
     }
     send('play')
@@ -919,6 +930,7 @@ function ReelSlide({ reel, isActive, isNearby, userPaused, hlsUrl, muted, liked,
       <video
         ref={videoRef}
         className={styles.vid}
+        aria-label={reel.title ? `Reel: ${reel.title}` : 'Reel'}
         muted={muted}
         playsInline
         preload={isActive ? 'auto' : 'metadata'}
@@ -939,15 +951,15 @@ function ReelSlide({ reel, isActive, isNearby, userPaused, hlsUrl, muted, liked,
 
       {/* Loading spinner — shown while stream URL is being fetched */}
       {isActive && hlsUrl === undefined && !hlsError && (
-        <div className={styles.slideLoader} aria-hidden="true">
-          <Loader2 size={28} className={styles.spin} />
+        <div className={styles.slideLoader} role="status" aria-label="Loading video">
+          <Loader2 size={28} className={styles.spin} aria-hidden="true" />
         </div>
       )}
 
       {/* Error state — stream URL returned null (404 / not ready) or HLS fatal error */}
       {isActive && (hlsUrl === null || hlsError) && (
-        <div className={styles.slideUnavailable} aria-hidden="true">
-          <Play size={22} strokeWidth={1.5} />
+        <div className={styles.slideUnavailable} role="status">
+          <Play size={22} strokeWidth={1.5} aria-hidden="true" />
           <span>Video not available</span>
         </div>
       )}
