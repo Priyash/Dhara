@@ -9,7 +9,7 @@
  */
 import { describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseDurationSecs, detectLicense, pickVideoFile } from '../src/services/archiveImport.js'
+import { parseDurationSecs, detectLicense, pickVideoFile, pickFields, parseReleaseYear } from '../src/services/archiveImport.js'
 
 // ── parseDurationSecs ─────────────────────────────────────────────────────────
 
@@ -98,5 +98,38 @@ describe('queueReel (via queueArchiveImport dispatch)', async () => {
       () => queueArchiveImport(baseItem, { ReelModel, UploadJobModel: {}, collection }),
       /creatorId/
     )
+  })
+})
+
+// ── pickFields — whitelist passthrough (no field leakage) ─────────────────────
+
+describe('pickFields', () => {
+  it('keeps only allow-listed keys', () => {
+    const item = { cast: ['A'], director: 'B', _id: 'x', isDeleted: true, viewCount: 99, bunnyVideoId: 'zzz' }
+    assert.deepEqual(pickFields(item, ['cast', 'director']), { cast: ['A'], director: 'B' })
+  })
+  it('drops dangerous fields that are not allow-listed', () => {
+    const out = pickFields({ _id: 'x', isPublished: true, bunnyVideoId: 'g' }, ['cast', 'director'])
+    assert.equal('_id' in out, false)
+    assert.equal('isPublished' in out, false)
+    assert.equal('bunnyVideoId' in out, false)
+  })
+  it('skips undefined values', () => {
+    assert.deepEqual(pickFields({ cast: undefined, director: 'B' }, ['cast', 'director']), { director: 'B' })
+  })
+})
+
+// ── parseReleaseYear — never NaN ──────────────────────────────────────────────
+
+describe('parseReleaseYear', () => {
+  it('prefers a valid item.releaseYear', () => {
+    assert.equal(parseReleaseYear({ releaseYear: 1998 }, { year: 2002 }), 1998)
+  })
+  it('falls back to archive metadata year', () => {
+    assert.equal(parseReleaseYear({}, { year: '2017-05-01' }), 2017)
+  })
+  it('returns null for a non-numeric year instead of NaN', () => {
+    assert.equal(parseReleaseYear({}, { year: 'n/a' }), null)
+    assert.equal(parseReleaseYear({}, {}), null)
   })
 })
