@@ -23,12 +23,29 @@ import { spawn, spawnSync } from 'node:child_process'
 import { mkdtemp, rm }      from 'node:fs/promises'
 import { tmpdir }           from 'node:os'
 import { join }             from 'node:path'
+import { createRequire }    from 'node:module'
 import { cloudinary }       from '../config/cloudinary.js'
 import { ThumbnailVariant } from '../models/ThumbnailVariant.js'
 
 const EXTRACTION_ENABLED = process.env.ARTWORK_EXTRACTION_ENABLED === 'true'
 const FRAME_TIMEOUT_MS   = 30_000
 const MAX_FRAMES         = 20
+
+// Resolve an ffmpeg binary without relying on it being on PATH — which it is
+// NOT on Render's `env: node` runtime. Order: explicit FFMPEG_PATH override →
+// the ffmpeg-static bundled binary (downloaded at npm install) → system PATH.
+// The require is defensive: if the package is somehow absent, we fall back to
+// 'ffmpeg' rather than crash the backend on import (admin routes import this).
+function resolveFfmpegBin() {
+  if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH
+  try {
+    const require = createRequire(import.meta.url)
+    return require('ffmpeg-static') || 'ffmpeg'
+  } catch {
+    return 'ffmpeg'
+  }
+}
+const FFMPEG_BIN = resolveFfmpegBin()
 
 // ── ffmpeg availability (probed once, lazily, and only if the flag is on) ─────
 let _ffmpegChecked = false
@@ -37,8 +54,8 @@ export function ffmpegAvailable() {
   if (_ffmpegChecked) return _ffmpegOk
   _ffmpegChecked = true
   try {
-    const r = spawnSync('ffmpeg', ['-version'], { timeout: 5_000 })
-    _ffmpegOk = r.status === 0
+    const r = spawnSync(FFMPEG_BIN, ['-version'], { timeout: 5_000 })
+    _ffmpegOk = r.status === 0   // any non-zero/null (missing, EACCES, crash) → stays dormant
   } catch {
     _ffmpegOk = false
   }
@@ -96,7 +113,7 @@ function grabFrame(videoUrl, ts, outPath) {
     let child
     try {
       // -ss before -i = fast input seek (HTTP range); single frame; high quality; overwrite.
-      child = spawn('ffmpeg', [
+      child = spawn(FFMPEG_BIN, [
         '-y', '-ss', String(ts), '-i', videoUrl,
         '-frames:v', '1', '-q:v', '2', outPath,
       ], { stdio: 'ignore' })
