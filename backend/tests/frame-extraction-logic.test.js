@@ -5,9 +5,9 @@
  * DB — none of which exist in the test environment. This is exactly the surface
  * that must stay correct while the feature sits dormant.
  */
-import { describe, it } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { evenTimestamps, buildBunnyMp4Url, isExtractionConfigured } from '../src/services/frameExtraction.js'
+import { evenTimestamps, buildBunnyMp4Url, mp4ResolutionOrder, isExtractionConfigured } from '../src/services/frameExtraction.js'
 
 describe('evenTimestamps', () => {
   it('returns [] for an invalid/zero duration', () => {
@@ -73,6 +73,33 @@ describe('buildBunnyMp4Url', () => {
     assert.equal(buildBunnyMp4Url('guid-1'), 'https://cdn.example.net/guid-1/play_1080p.mp4')
     if (prevZone === undefined) delete process.env.BUNNY_CDN_PULL_ZONE; else process.env.BUNNY_CDN_PULL_ZONE = prevZone
     if (prevRes === undefined) delete process.env.BUNNY_STREAM_MP4_RESOLUTION; else process.env.BUNNY_STREAM_MP4_RESOLUTION = prevRes
+  })
+})
+
+describe('mp4ResolutionOrder', () => {
+  let prevRes
+  beforeEach(() => { prevRes = process.env.BUNNY_STREAM_MP4_RESOLUTION; delete process.env.BUNNY_STREAM_MP4_RESOLUTION })
+  afterEach(()  => { if (prevRes === undefined) delete process.env.BUNNY_STREAM_MP4_RESOLUTION; else process.env.BUNNY_STREAM_MP4_RESOLUTION = prevRes })
+
+  it('uses Bunny availableResolutions highest-first, then appends fallbacks', () => {
+    const order = mp4ResolutionOrder('240p,480p,720p')
+    assert.equal(order[0], '720p')          // highest of the available
+    assert.ok(order.indexOf('480p') < order.indexOf('240p')) // higher before lower
+    assert.ok(order.includes('1080p'))      // fallback appended
+  })
+
+  it('falls back to a default order when none reported', () => {
+    assert.deepEqual(mp4ResolutionOrder(''), ['720p', '480p', '1080p', '360p', '240p'])
+  })
+
+  it('honours an explicit BUNNY_STREAM_MP4_RESOLUTION override first', () => {
+    process.env.BUNNY_STREAM_MP4_RESOLUTION = '360p'
+    assert.equal(mp4ResolutionOrder('240p,480p,720p')[0], '360p')
+  })
+
+  it('contains no duplicate resolutions', () => {
+    const order = mp4ResolutionOrder('720p,480p')
+    assert.equal(order.length, new Set(order).size)
   })
 })
 

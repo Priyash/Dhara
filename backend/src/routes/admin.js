@@ -38,7 +38,7 @@ import mongoose from 'mongoose'
 import { ThumbnailVariant } from '../models/ThumbnailVariant.js'
 import { withVariantStats } from '../utils/variantStats.js'
 import { validateVariantImageUrl } from '../utils/variantImage.js'
-import { isExtractionConfigured, buildBunnyMp4Url, generateFrameVariants } from '../services/frameExtraction.js'
+import { isExtractionConfigured, resolveBunnyMp4Url, generateFrameVariants } from '../services/frameExtraction.js'
 
 // Hard cap for unpaginated admin list endpoints — prevents an unbounded
 // collection scan/response as data grows, without changing the response
@@ -2465,21 +2465,30 @@ router.post('/thumbnail-variants/extract', async (req, res, next) => {
     if (!content?.bunnyVideoId) {
       return res.status(400).json({ error: 'This title has no source video to extract frames from.' })
     }
-
-    const videoUrl = buildBunnyMp4Url(content.bunnyVideoId)
-    if (!videoUrl) {
+    if (!process.env.BUNNY_CDN_PULL_ZONE) {
       return res.status(400).json({ error: 'Bunny CDN pull zone is not configured (BUNNY_CDN_PULL_ZONE).' })
     }
 
-    // Bunny reports the encoded length (seconds); we need it to space samples.
+    // Bunny reports the encoded length (seconds) and which renditions exist.
     let durationSecs = 0
+    let availableResolutions = ''
     try {
       const meta = await bunnyRequest(`/library/${process.env.BUNNY_STREAM_LIBRARY_ID}/videos/${content.bunnyVideoId}`)
-      durationSecs = Number(meta?.length || 0)
-    } catch { /* fall through to the guard below */ }
+      durationSecs         = Number(meta?.length || 0)
+      availableResolutions = meta?.availableResolutions || ''
+    } catch { /* fall through to the guards below */ }
     if (!durationSecs) {
       return res.status(400).json({ error: 'Could not determine the video length from Bunny Stream.' })
     }
+
+    // Probe for a reachable, token-signed MP4 rendition (don't hard-guess 720p).
+    const videoUrl = await resolveBunnyMp4Url({ bunnyVideoId: content.bunnyVideoId, availableResolutions })
+    if (!videoUrl) {
+      return res.status(400).json({
+        error: 'No downloadable MP4 rendition is reachable for this video. Enable "MP4 Fallback" on the Bunny Stream library (older videos may need re-encoding).',
+      })
+    }
+    console.log(`[artwork] extract source resolved (res list: ${availableResolutions || 'n/a'}, ${durationSecs}s) for content ${contentId}`)
 
     // Run in the background: a full extract is up to ~20 ffmpeg grabs + Cloudinary
     // uploads and can take minutes — far longer than an HTTP request should hold
