@@ -1,6 +1,6 @@
 # Thumbnail & Trailer Pipeline — Build Design
 
-Status: **Proposed** · Owner: TBD · Last updated: 2026-06-26 (added v1 scope-discipline guardrails)
+Status: **Proposed** · Owner: TBD · Last updated: 2026-06-27 (increments 1–5 implemented + hardening review — see §9)
 
 This document specifies a two-phase system for generating, approving, serving,
 and A/B-attributing artwork for Dhara titles:
@@ -485,3 +485,49 @@ is the largest infra bet of the four.
 3. AI Bengali recaps — daily-return driver once subtitle coverage is adequate.
 4. Adda social layer — highest effort; sequence after the measurement loop and
    the above are in place.
+
+---
+
+## 9. Hardening review (post-increment-5)
+
+A correctness/security pass over increments 1–5. Fixes applied:
+
+- **Public browse rails can't be broken by the artwork layer.** `attachLiveVariants`
+  in `content.js` is now fully self-contained in a try/catch — any failure
+  (DB hiccup on the variant collection, etc.) logs and degrades to the default
+  posters instead of 500-ing the homepage/Browse content listing. The
+  enhancement is strictly non-essential to the core path.
+- **Attribution index made truly small.** The `InteractionEvent.variantId` index
+  was changed from a compound *sparse* index to a *partial* index
+  (`partialFilterExpression: { variantId: { $type: 'objectId' } }`). A compound
+  sparse index would still index every event (because `eventType` is always
+  present), defeating the goal; the partial filter indexes only the tiny subset
+  of events that actually carried a served variant.
+- **Broken variant art never hides the original.** `PosterCard` now has a
+  resilience chain — variant image → original poster → palette. A dead variant
+  URL falls back to the title's real poster instead of a blank card. Covered by
+  new tests.
+
+### Known gaps / recommendations (not yet addressed)
+
+1. **Creator-set-live moderation + arbitrary external image URLs (highest).**
+   Approved creators can set a variant `live` on their own published title, and
+   the `imageUrl` may be any external `http(s)` URL — which is then served as an
+   `<img>` to all viewers. Blast radius is limited (their own approved title),
+   but two risks remain: an external host could log every viewer's IP (tracking
+   pixel), and the image bypasses poster moderation. **Recommendation:** give the
+   creator modal a Cloudinary upload widget and validate variant `imageUrl`
+   hosts against an allowlist (our Cloudinary cloud + Bunny pull zone) on the
+   creator route, or restrict creators to `candidate` and let admins promote.
+2. **`extract` runs synchronously in the request.** Up to ~20 ffmpeg grabs +
+   Cloudinary uploads can take minutes and risk a gateway timeout. Fine while
+   gated/admin-only; **background it (job queue) before any broad rollout.**
+3. **Reel variants are accepted but never served.** The admin routes accept
+   `itemType: 'reel'`, but only the content rails call `attachLiveVariants`, so a
+   reel variant set live would never appear. Either wire reel serving or reject
+   `reel` until then.
+4. **Downstream play/completion attribution still deferred.** Only impression→
+   click CTR is attributed; `play`/`completion` need the variant threaded across
+   navigation into `Watch.jsx`.
+5. **CTR is sampled only from the popular/Browse rail** (the only rail that
+   attaches variants), so it's a biased-but-consistent sample for v1.

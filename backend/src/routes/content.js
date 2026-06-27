@@ -110,21 +110,28 @@ async function attachLiveVariants(items) {
   const ids = items.map((it) => it._id).filter(Boolean)
   if (!ids.length) return items
 
-  const variants = await ThumbnailVariant
-    .find({ itemType: 'content', itemId: { $in: ids }, status: 'live' })
-    .select('itemId imageUrl')
-    .lean()
-  if (!variants.length) return items
+  // This is a non-essential enhancement layered on the public browse rails, so
+  // it must NEVER be able to break the core content listing. Any failure here
+  // (DB hiccup, etc.) degrades silently to the default posters.
+  try {
+    const variants = await ThumbnailVariant
+      .find({ itemType: 'content', itemId: { $in: ids }, status: 'live' })
+      .select('itemId imageUrl')
+      .lean()
+    if (!variants.length) return items
 
-  const byItem = new Map()
-  for (const v of variants) {
-    const key = String(v.itemId)
-    if (!byItem.has(key)) byItem.set(key, [])
-    byItem.get(key).push({ _id: v._id, imageUrl: v.imageUrl })
-  }
-  for (const it of items) {
-    const vs = byItem.get(String(it._id))
-    if (vs) it.variants = vs
+    const byItem = new Map()
+    for (const v of variants) {
+      const key = String(v.itemId)
+      if (!byItem.has(key)) byItem.set(key, [])
+      byItem.get(key).push({ _id: v._id, imageUrl: v.imageUrl })
+    }
+    for (const it of items) {
+      const vs = byItem.get(String(it._id))
+      if (vs) it.variants = vs
+    }
+  } catch (err) {
+    console.error('[content] attachLiveVariants failed (serving default posters):', err.message)
   }
   return items
 }

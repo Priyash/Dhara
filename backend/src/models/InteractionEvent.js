@@ -49,9 +49,14 @@ const interactionEventSchema = new mongoose.Schema(
 interactionEventSchema.index({ userId: 1, createdAt: -1 })
 interactionEventSchema.index({ sessionId: 1, createdAt: -1 })
 interactionEventSchema.index({ itemType: 1, itemId: 1, eventType: 1, createdAt: -1 })
-// Per-variant attribution rollup (computed on read). Sparse — only the small
-// fraction of events that carried a served variant are indexed.
-interactionEventSchema.index({ variantId: 1, eventType: 1 }, { sparse: true })
+// Per-variant attribution rollup (computed on read). PARTIAL, not sparse: a
+// compound sparse index would still index every event (eventType is always
+// present), defeating the point. The partial filter indexes only the tiny
+// fraction of events that actually carried a served variant.
+interactionEventSchema.index(
+  { variantId: 1, eventType: 1 },
+  { partialFilterExpression: { variantId: { $type: 'objectId' } } }
+)
 // 30-day TTL — at 500K users * 5 events/day = 2.5M events/day; 180-day retention
 // would accumulate 450M+ docs. 30 days gives enough signal for recommendations
 // while keeping the collection at ~75M docs max.

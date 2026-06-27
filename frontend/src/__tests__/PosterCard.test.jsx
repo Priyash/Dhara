@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import PosterCard from '../components/PosterCard'
+import { recordInteractionEvent, chooseThumbnailVariant } from '../services/api.js'
 
 vi.mock('../services/api.js', () => ({
   fetchTrailerUrl: vi.fn(),
@@ -61,5 +62,36 @@ describe('PosterCard', () => {
     render(<PosterCard item={baseItem} onClick={onClick} />)
     fireEvent.keyDown(screen.getByLabelText('Film A, Film'), { key: 'Enter' })
     expect(onClick).toHaveBeenCalledWith(baseItem)
+  })
+})
+
+describe('PosterCard — artwork A/B variant', () => {
+  const variantItem = { ...baseItem, posterUrl: 'https://cdn/original.jpg' }
+
+  beforeEach(() => {
+    recordInteractionEvent.mockClear()
+    chooseThumbnailVariant.mockReturnValue({ imageUrl: 'https://res.cloudinary.com/x/image/upload/v1/variant.jpg', variantId: 'v9' })
+  })
+
+  it('renders the chosen variant image instead of the original poster', () => {
+    const { container } = render(<PosterCard item={variantItem} />)
+    const img = container.querySelector('img')
+    expect(img.getAttribute('src')).toContain('variant.jpg')
+  })
+
+  it('fires a click event attributed to the variant', () => {
+    render(<PosterCard item={variantItem} onClick={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Film A, Film'))
+    expect(recordInteractionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ itemId: '1', eventType: 'click', variantId: 'v9' })
+    )
+  })
+
+  it('falls back to the original poster when the variant image fails to load', () => {
+    const { container } = render(<PosterCard item={variantItem} />)
+    const img = container.querySelector('img')
+    fireEvent.error(img)
+    const after = container.querySelector('img')
+    expect(after.getAttribute('src')).toContain('original.jpg')
   })
 })

@@ -10,8 +10,9 @@ function stripExtension(name = '') {
 }
 
 function PosterCard({ item, onClick, size = 'normal', isSubscribed = false, source = 'row' }) {
-  const [imgError,    setImgError]    = useState(false)
-  const [trailerSrc,  setTrailerSrc]  = useState(null)
+  const [imgError,     setImgError]     = useState(false)
+  const [variantFailed, setVariantFailed] = useState(false)
+  const [trailerSrc,   setTrailerSrc]   = useState(null)
   const hoverTimer = useRef(null)
   const videoRef   = useRef(null)
   const hlsRef     = useRef(null)
@@ -91,10 +92,18 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false, sour
   }
 
   // A live A/B variant's artwork overrides the default poster when present.
-  const posterUrl = variant?.imageUrl || item.posterUrl
+  // Resilience chain: variant image → original poster → palette. A broken
+  // variant URL must never hide the title's working original art.
+  const posterUrl = (!variantFailed && variant?.imageUrl) || item.posterUrl
   const posterSrc = posterUrl && !imgError
     ? cloudinaryTransform(posterUrl, 'w_400,h_600,c_fill,g_auto,f_auto,q_auto')
     : null
+
+  const handleImgError = () => {
+    // If the variant image failed, fall back to the original poster first.
+    if (variant?.imageUrl && !variantFailed) setVariantFailed(true)
+    else setImgError(true)
+  }
 
   const cleanTitle  = stripExtension(item.title)
   const genres      = (item.genre || []).slice(0, 2)
@@ -131,7 +140,7 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false, sour
             className={styles.posterImg}
             loading="lazy"
             decoding="async"
-            onError={() => setImgError(true)}
+            onError={handleImgError}
           />
         )}
         {trailerSrc && (
