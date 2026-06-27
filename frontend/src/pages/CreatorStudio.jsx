@@ -26,10 +26,15 @@ import {
   deleteCreatorReel,
   resubmitCreatorReel,
   fetchReelAnalytics,
+  listCreatorThumbnailVariants,
+  createCreatorThumbnailVariant,
+  updateCreatorThumbnailVariant,
+  deleteCreatorThumbnailVariant,
 } from '../services/api'
 import styles from './CreatorStudio.module.css'
 import { isValidDuration } from '../utils/duration'
 import ReelUploadModal from '../components/ReelUploadModal'
+import ThumbnailVariantModal from '../components/ThumbnailVariantModal'
 
 // ── Smooth Catmull-Rom area chart ─────────────────────────────────────────────
 function AreaChart({ data }) {
@@ -712,6 +717,7 @@ export default function CreatorStudio() {
   const [loading, setLoading]           = useState(true)
   const [dashData, setDashData]         = useState(null)
   const [submissions, setSubmissions]   = useState([])
+  const [artworkItem, setArtworkItem]   = useState(null)   // content whose artwork A/B modal is open
   const [filterTab, setFilterTab]       = useState('all')
   const [listLoading, setListLoading]   = useState(false)
   const [activeTab, setActiveTab]       = useState('submissions')
@@ -2064,6 +2070,11 @@ export default function CreatorStudio() {
                       <Eye size={12} /> View Live
                     </button>
                   )}
+                  {item.submissionStatus === 'approved' && (
+                    <button className={styles.actionBtn} onClick={() => setArtworkItem(item)} title="A/B test poster artwork">
+                      <ImagePlus size={12} /> Artwork
+                    </button>
+                  )}
                   {item.submissionStatus === 'rejected' && (
                     <button className={styles.actionBtnPrimary} onClick={() => handleResubmit(item._id)}>
                       <RotateCcw size={12} /> Resubmit
@@ -2341,6 +2352,20 @@ export default function CreatorStudio() {
           onClose={() => setShowReelModal(false)}
           onCreated={() => { loadReels(); showToast({ type: 'success', message: 'Reel submitted for review!' }) }}
           onReelReady={loadReels}
+        />
+      )}
+
+      {/* ── Artwork A/B Modal ── */}
+      {artworkItem && (
+        <ThumbnailVariantModal
+          item={artworkItem}
+          api={{
+            list:   () => listCreatorThumbnailVariants(artworkItem._id),
+            create: (p) => createCreatorThumbnailVariant(artworkItem._id, p),
+            update: updateCreatorThumbnailVariant,
+            remove: deleteCreatorThumbnailVariant,
+          }}
+          onClose={() => setArtworkItem(null)}
         />
       )}
 

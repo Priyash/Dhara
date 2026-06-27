@@ -9,6 +9,7 @@ import { User } from '../models/User.js'
 import { ViewEvent } from '../models/ViewEvent.js'
 import { UserRating } from '../models/UserRating.js'
 import { ActiveStream } from '../models/ActiveStream.js'
+import { ThumbnailVariant } from '../models/ThumbnailVariant.js'
 import { requireAuth, requireSubscription } from '../middleware/auth.js'
 import { withCache } from '../config/cache.js'
 import { getPlanLimits, getPlanTier } from '../config/planLimits.js'
@@ -95,6 +96,47 @@ function buildHlsUrl(videoId, sign = false) {
 const PUBLIC_FIELDS = '-bunnyVideoId -trailerVideoId -seasons.episodes.bunnyVideoId'
 
 /**
+ * Attaches `live` artwork variants to content list items, in place, for the
+ * thumbnail A/B pipeline (docs/thumbnail-trailer-pipeline.md). Each item that
+ * has at least one live variant gets `variants: [{ _id, imageUrl }]`; the
+ * client picks one deterministically per session and overrides the poster.
+ *
+ * Dormant by default: when no item has a live variant (the normal case), this
+ * adds nothing to the payload. One indexed batch query, and since the caller is
+ * wrapped in withCache, it only runs on a cache miss.
+ */
+async function attachLiveVariants(items) {
+  if (!Array.isArray(items) || items.length === 0) return items
+  const ids = items.map((it) => it._id).filter(Boolean)
+  if (!ids.length) return items
+
+  // This is a non-essential enhancement layered on the public browse rails, so
+  // it must NEVER be able to break the core content listing. Any failure here
+  // (DB hiccup, etc.) degrades silently to the default posters.
+  try {
+    const variants = await ThumbnailVariant
+      .find({ itemType: 'content', itemId: { $in: ids }, status: 'live' })
+      .select('itemId imageUrl')
+      .lean()
+    if (!variants.length) return items
+
+    const byItem = new Map()
+    for (const v of variants) {
+      const key = String(v.itemId)
+      if (!byItem.has(key)) byItem.set(key, [])
+      byItem.get(key).push({ _id: v._id, imageUrl: v.imageUrl })
+    }
+    for (const it of items) {
+      const vs = byItem.get(String(it._id))
+      if (vs) it.variants = vs
+    }
+  } catch (err) {
+    console.error('[content] attachLiveVariants failed (serving default posters):', err.message)
+  }
+  return items
+}
+
+/**
  * GET /api/content
  * Public. Query: type, filter, genre, sort, page, limit
  *
@@ -136,12 +178,14 @@ router.get('/', withCache(60), async (req, res, next) => {
         Content.find(query).sort(sortObj).skip(skip).limit(limitNum).select(PUBLIC_FIELDS).lean(),
         Content.countDocuments(query),
       ])
+      await attachLiveVariants(items)
 
       return res.json({ items, total, page: pageNum, pages: Math.ceil(total / limitNum), limit: limitNum })
     }
 
     // ── Legacy flat-array mode (Home.jsx) ─────────────────────────────────────
     const items = await Content.find(query).sort(sortObj).limit(200).select(PUBLIC_FIELDS).lean()
+    await attachLiveVariants(items)
     res.json(items)
   } catch (err) {
     next(err)

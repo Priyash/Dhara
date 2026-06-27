@@ -34,6 +34,11 @@ import { SUPPORTED_PROVIDERS, getProviderStatus, getPayoutProviderStatus } from 
 import { runPayoutBatch } from '../config/payoutJob.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { calculateMonthlyEarnings } from '../config/earningsJob.js'
+import mongoose from 'mongoose'
+import { ThumbnailVariant } from '../models/ThumbnailVariant.js'
+import { withVariantStats } from '../utils/variantStats.js'
+import { validateVariantImageUrl } from '../utils/variantImage.js'
+import { isExtractionConfigured, buildBunnyMp4Url, generateFrameVariants } from '../services/frameExtraction.js'
 
 // Hard cap for unpaginated admin list endpoints — prevents an unbounded
 // collection scan/response as data grows, without changing the response
@@ -2354,6 +2359,195 @@ router.get('/audit-log', async (req, res, next) => {
     ])
 
     res.json({ actions, total, page: Number(page), pages: Math.ceil(total / limit) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ── Thumbnail variants (artwork A/B foundation) ─────────────────────────────
+// See docs/thumbnail-trailer-pipeline.md. v1 is dormant: variants are seeded and
+// managed here, but nothing is served on browse rails until a later increment
+// wires selection in. Per-variant stats are computed on read from
+// InteractionEvent (no denormalized rollup).
+
+// Only content artwork is served today — the browse rails attach variants for
+// content, not reels. Accepting 'reel' here would create variants that can
+// never appear, so it is rejected until reel serving exists. (The model enum
+// keeps 'reel' for that future.)
+const VARIANT_ITEM_TYPES = ['content']
+
+/**
+ * GET /api/admin/thumbnail-variants?itemType=content&itemId=...
+ * Lists every variant for one item, each enriched with read-time attribution
+ * stats (impressions / plays / completions, plus ctr and cvr) over the
+ * trailing window InteractionEvent retains.
+ */
+router.get('/thumbnail-variants', async (req, res, next) => {
+  try {
+    const itemType = String(req.query.itemType || 'content')
+    const itemId   = req.query.itemId
+    if (!VARIANT_ITEM_TYPES.includes(itemType)) {
+      return res.status(400).json({ error: 'itemType must be "content" (reel artwork is not supported yet)' })
+    }
+    if (!mongoose.Types.ObjectId.isValid(itemId)) {
+      return res.status(400).json({ error: 'A valid itemId is required' })
+    }
+
+    const variants = await ThumbnailVariant.find({ itemType, itemId })
+      .sort({ createdAt: -1 })
+      .lean()
+
+    res.json(await withVariantStats(variants))
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/admin/thumbnail-variants
+ * Seeds a new candidate variant for an item. Body: { itemType, itemId,
+ * imageUrl, label?, seasonNumber?, episodeNumber? }.
+ */
+router.post('/thumbnail-variants', async (req, res, next) => {
+  try {
+    const { itemType = 'content', itemId, imageUrl, label, seasonNumber, episodeNumber } = req.body || {}
+    if (!VARIANT_ITEM_TYPES.includes(itemType)) {
+      return res.status(400).json({ error: 'itemType must be "content" (reel artwork is not supported yet)' })
+    }
+    if (!mongoose.Types.ObjectId.isValid(itemId)) {
+      return res.status(400).json({ error: 'A valid itemId is required' })
+    }
+    const imgCheck = validateVariantImageUrl(imageUrl)
+    if (!imgCheck.ok) {
+      return res.status(400).json({ error: imgCheck.error })
+    }
+
+    const variant = await ThumbnailVariant.create({
+      itemType,
+      itemId,
+      imageUrl:      imgCheck.url,
+      label:         label ? String(label).trim().slice(0, 120) : '',
+      seasonNumber:  seasonNumber  != null ? Number(seasonNumber)  : null,
+      episodeNumber: episodeNumber != null ? Number(episodeNumber) : null,
+      source:        'manual',
+      status:        'candidate',
+      createdBy:     req.user._id,
+    })
+
+    logAdminAction(req, 'create_thumbnail_variant', 'content', mongoose.Types.ObjectId.isValid(itemId) ? itemId : null, variant.label || variant.imageUrl)
+    res.status(201).json(variant)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/admin/thumbnail-variants/extract   Body: { contentId, count? }
+ * Auto-generates candidate variants by grabbing evenly-spaced frames from the
+ * title's source video (frame-first; see docs/thumbnail-trailer-pipeline.md).
+ *
+ * DORMANT unless ARTWORK_EXTRACTION_ENABLED=true and ffmpeg is installed — in
+ * which case it returns { configured: false } and does nothing. Never touches
+ * the upload pipeline.
+ */
+router.post('/thumbnail-variants/extract', async (req, res, next) => {
+  try {
+    if (!isExtractionConfigured()) {
+      return res.json({ configured: false, created: [] })
+    }
+
+    const { contentId, count } = req.body || {}
+    if (!mongoose.Types.ObjectId.isValid(contentId)) {
+      return res.status(400).json({ error: 'A valid contentId is required' })
+    }
+
+    const content = await Content.findById(contentId).select('bunnyVideoId').lean()
+    if (!content?.bunnyVideoId) {
+      return res.status(400).json({ error: 'This title has no source video to extract frames from.' })
+    }
+
+    const videoUrl = buildBunnyMp4Url(content.bunnyVideoId)
+    if (!videoUrl) {
+      return res.status(400).json({ error: 'Bunny CDN pull zone is not configured (BUNNY_CDN_PULL_ZONE).' })
+    }
+
+    // Bunny reports the encoded length (seconds); we need it to space samples.
+    let durationSecs = 0
+    try {
+      const meta = await bunnyRequest(`/library/${process.env.BUNNY_STREAM_LIBRARY_ID}/videos/${content.bunnyVideoId}`)
+      durationSecs = Number(meta?.length || 0)
+    } catch { /* fall through to the guard below */ }
+    if (!durationSecs) {
+      return res.status(400).json({ error: 'Could not determine the video length from Bunny Stream.' })
+    }
+
+    // Run in the background: a full extract is up to ~20 ffmpeg grabs + Cloudinary
+    // uploads and can take minutes — far longer than an HTTP request should hold
+    // a connection open (gateway-timeout risk). The created candidate variants
+    // appear in the review grid on the admin's next refresh.
+    const createdBy = req.user._id
+    generateFrameVariants({
+      itemType:  'content',
+      itemId:    contentId,
+      videoUrl,
+      durationSecs,
+      count:     Number(count) || 8,
+      createdBy,
+    })
+      .then((created) => console.log(`[artwork] extracted ${created.length} frame(s) for content ${contentId}`))
+      .catch((err)   => console.error(`[artwork] frame extraction failed for content ${contentId}:`, err.message))
+
+    logAdminAction(req, 'extract_thumbnail_frames', 'content', contentId, 'started')
+    res.status(202).json({ configured: true, started: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/admin/thumbnail-variants/:id
+ * Updates a variant's status (candidate | live | rejected) and/or label.
+ */
+router.patch('/thumbnail-variants/:id', async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid variant id' })
+    }
+    const patch = {}
+    if (req.body?.status != null) {
+      if (!['candidate', 'live', 'rejected'].includes(req.body.status)) {
+        return res.status(400).json({ error: 'status must be candidate, live, or rejected' })
+      }
+      patch.status = req.body.status
+    }
+    if (req.body?.label != null) patch.label = String(req.body.label).trim().slice(0, 120)
+    if (!Object.keys(patch).length) {
+      return res.status(400).json({ error: 'Nothing to update' })
+    }
+
+    const variant = await ThumbnailVariant.findByIdAndUpdate(req.params.id, { $set: patch }, { new: true })
+    if (!variant) return res.status(404).json({ error: 'Variant not found' })
+
+    logAdminAction(req, 'update_thumbnail_variant', 'content', variant.itemId, `${variant.status}`)
+    res.json(variant)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * DELETE /api/admin/thumbnail-variants/:id
+ */
+router.delete('/thumbnail-variants/:id', async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid variant id' })
+    }
+    const variant = await ThumbnailVariant.findByIdAndDelete(req.params.id)
+    if (!variant) return res.status(404).json({ error: 'Variant not found' })
+
+    logAdminAction(req, 'delete_thumbnail_variant', 'content', variant.itemId, variant.label || variant.imageUrl)
+    res.json({ ok: true })
   } catch (err) {
     next(err)
   }

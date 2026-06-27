@@ -14,6 +14,41 @@ function getRecommendationSessionId() {
   return id
 }
 
+/**
+ * Picks one `live` artwork variant for a content item, deterministically and
+ * stably per browser session, for the thumbnail A/B pipeline
+ * (docs/thumbnail-trailer-pipeline.md). Returns `{ imageUrl, variantId }` or
+ * null when the item has no variants (the dormant default). The session-seeded
+ * hash means the same user keeps seeing the same variant — so impression and
+ * click attribute to one variant — while different sessions spread evenly.
+ */
+export function chooseThumbnailVariant(item) {
+  const variants = item?.variants
+  if (!Array.isArray(variants) || variants.length === 0) return null
+
+  const seed = `${getRecommendationSessionId()}:${item._id ?? item.id ?? ''}`
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (Math.imul(h, 31) + seed.charCodeAt(i)) >>> 0
+  const v = variants[h % variants.length]
+  return v?.imageUrl ? { imageUrl: v.imageUrl, variantId: v._id } : null
+}
+
+/**
+ * Remembers which artwork variant was on the card a user clicked, keyed by
+ * content id (module-level, per tab session). This threads the served variant
+ * across navigation so the downstream play/completion events on the Watch page
+ * can be attributed to it — closing the impression → click → play → completion
+ * funnel. A direct deep-link to Watch (no card click) simply has no remembered
+ * variant, so it's correctly left unattributed.
+ */
+const _shownVariants = new Map()
+export function rememberShownVariant(contentId, variantId) {
+  if (contentId && variantId) _shownVariants.set(String(contentId), variantId)
+}
+export function getShownVariant(contentId) {
+  return contentId ? (_shownVariants.get(String(contentId)) || null) : null
+}
+
 async function authHeaders() {
   const token = await auth.currentUser?.getIdToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
@@ -469,6 +504,48 @@ export async function togglePublishContent(id, publish) {
 
 export async function deleteAdminContent(id) {
   return request(`/api/admin/content/${id}`, { method: 'DELETE' })
+}
+
+// ── Admin: thumbnail variants (artwork A/B) ─────────────────────────────────
+export async function listAdminThumbnailVariants(itemType, itemId) {
+  const qs = new URLSearchParams({ itemType, itemId }).toString()
+  return request(`/api/admin/thumbnail-variants?${qs}`)
+}
+
+export async function createAdminThumbnailVariant(payload) {
+  return request('/api/admin/thumbnail-variants', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function updateAdminThumbnailVariant(id, patch) {
+  return request(`/api/admin/thumbnail-variants/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+}
+
+export async function deleteAdminThumbnailVariant(id) {
+  return request(`/api/admin/thumbnail-variants/${id}`, { method: 'DELETE' })
+}
+
+export async function extractAdminThumbnailFrames(contentId, count) {
+  return request('/api/admin/thumbnail-variants/extract', {
+    method: 'POST',
+    body: JSON.stringify({ contentId, ...(count ? { count } : {}) }),
+  })
+}
+
+// ── Creator: thumbnail variants for own content (artwork A/B) ────────────────
+export async function listCreatorThumbnailVariants(contentId) {
+  return request(`/api/creator/content/${contentId}/thumbnail-variants`)
+}
+
+export async function createCreatorThumbnailVariant(contentId, payload) {
+  return request(`/api/creator/content/${contentId}/thumbnail-variants`, { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function updateCreatorThumbnailVariant(id, patch) {
+  return request(`/api/creator/thumbnail-variants/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+}
+
+export async function deleteCreatorThumbnailVariant(id) {
+  return request(`/api/creator/thumbnail-variants/${id}`, { method: 'DELETE' })
 }
 
 export async function getAdminTransactions(params = {}) {

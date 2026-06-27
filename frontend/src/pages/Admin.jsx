@@ -30,7 +30,9 @@ import {
   listAdminReels, approveAdminReel, rejectAdminReel, deleteAdminReel,
   searchArchive, importFromArchive, getArchiveImportBatch, listArchiveCandidates, listArchiveTasks, dismissArchiveCandidate,
   cancelUploadJob, retryUploadJob, setContentSubtitle,
+  listAdminThumbnailVariants, createAdminThumbnailVariant, updateAdminThumbnailVariant, deleteAdminThumbnailVariant, extractAdminThumbnailFrames,
 } from '../services/api'
+import ThumbnailVariantModal from '../components/ThumbnailVariantModal'
 import styles from './Admin.module.css'
 import { isValidDuration } from '../utils/duration'
 
@@ -664,6 +666,7 @@ export default function Admin() {
   const [adminAllowed, setAdminAllowed]     = useState(false)
   const [sessionError, setSessionError]     = useState('')
   const [activeTab, setActiveTab]           = useState('content')
+  const [artworkItem, setArtworkItem]       = useState(null)   // content item whose artwork A/B modal is open
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const [collections, setCollections]       = useState([])
@@ -2514,6 +2517,13 @@ export default function Admin() {
                       disabled={editBusy && editingId === item._id}
                     >
                       <Pencil size={12} /> Edit
+                    </button>
+                    <button
+                      className={styles.editBtn}
+                      onClick={(e) => { e.currentTarget.blur(); setArtworkItem(item) }}
+                      title="Manage artwork A/B variants"
+                    >
+                      <ImagePlus size={12} /> Artwork
                     </button>
                     <button
                       className={`${styles.deleteBtn} ${confirmDeleteId === item._id ? styles.deleteBtnConfirm : ''}`}
@@ -5450,6 +5460,20 @@ export default function Admin() {
         </div>
         )
       })()}
+
+      {artworkItem && (
+        <ThumbnailVariantModal
+          item={artworkItem}
+          api={{
+            list:    () => listAdminThumbnailVariants('content', artworkItem._id),
+            create:  (p) => createAdminThumbnailVariant({ itemType: 'content', itemId: artworkItem._id, ...p }),
+            update:  updateAdminThumbnailVariant,
+            remove:  deleteAdminThumbnailVariant,
+            extract: () => extractAdminThumbnailFrames(artworkItem._id),
+          }}
+          onClose={() => setArtworkItem(null)}
+        />
+      )}
 
     </main>
   )

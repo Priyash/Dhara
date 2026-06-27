@@ -33,6 +33,7 @@ import { CreatorEarning }   from '../src/models/CreatorEarning.js'
 import { CreatorPayout }    from '../src/models/CreatorPayout.js'
 import { ViewRateConfig }   from '../src/models/ViewRateConfig.js'
 import { CurrencyConfig }   from '../src/models/CurrencyConfig.js'
+import { ThumbnailVariant } from '../src/models/ThumbnailVariant.js'
 
 const MODEL_MAP = {
   content:           Content,
@@ -46,6 +47,7 @@ const MODEL_MAP = {
   creatorPayouts:    CreatorPayout,
   viewRateConfig:    ViewRateConfig,
   currencyConfig:    CurrencyConfig,
+  thumbnailVariants: ThumbnailVariant,
 }
 
 const args    = process.argv.slice(2)
