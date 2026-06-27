@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, List, Crown, Lock, MailCheck, Star, Play, SkipForward, VideoOff, RotateCcw } from 'lucide-react'
 import VideoPlayer from '../components/VideoPlayer'
 import PosterCard from '../components/PosterCard'
-import { fetchContentById, fetchStreamUrl, saveWatchProgress, recordView, fetchContent, rateContent, recordInteractionEvent, sendStreamHeartbeat, endStreamSession } from '../services/api'
+import { fetchContentById, fetchStreamUrl, saveWatchProgress, recordView, fetchContent, rateContent, recordInteractionEvent, getShownVariant, sendStreamHeartbeat, endStreamSession } from '../services/api'
 import { useStore } from '../store/useStore'
 import { cloudinaryTransform } from '../services/cloudinary'
 import styles from './Watch.module.css'
@@ -213,6 +213,9 @@ export default function Watch() {
         source: 'watch',
         seasonNumber:  seNumber,
         episodeNumber: epNumber,
+        // Attribute the watch back to the artwork variant that led here (if any),
+        // closing the impression → click → play → completion funnel.
+        variantId: getShownVariant(id),
         ...extra,
       }).catch(() => {})
     }

@@ -230,8 +230,9 @@ export default function ThumbnailVariantModal({ item, api, onClose }) {
                   {v.label && <span style={{ fontSize: 11, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.label}</span>}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 6, lineHeight: 1.5 }}>
-                  {v.stats.impressions} impr · {v.stats.clicks} clicks<br />
+                  {v.stats.impressions} impr · {v.stats.clicks} clicks · {v.stats.completions} done<br />
                   CTR <strong style={{ color: '#fff' }}>{v.stats.impressions ? pct(v.stats.ctr) : '—'}</strong>
+                  {' · '}CVR <strong style={{ color: '#fff' }}>{v.stats.impressions ? pct(v.stats.cvr) : '—'}</strong>
                 </div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
                   {v.status !== 'live' && (

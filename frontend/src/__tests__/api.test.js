@@ -634,3 +634,20 @@ describe('chooseThumbnailVariant', () => {
     expect(api.chooseThumbnailVariant(item)).toEqual(first)
   })
 })
+
+describe('shown-variant attribution memory', () => {
+  it('remembers and returns the variant shown for a content id', () => {
+    api.rememberShownVariant('c1', 'v7')
+    expect(api.getShownVariant('c1')).toBe('v7')
+  })
+
+  it('returns null for an unseen content id (e.g. a direct deep-link)', () => {
+    expect(api.getShownVariant('never-clicked')).toBeNull()
+  })
+
+  it('ignores empty ids/variantIds', () => {
+    api.rememberShownVariant('', 'v1')
+    api.rememberShownVariant('c2', null)
+    expect(api.getShownVariant('c2')).toBeNull()
+  })
+})

@@ -33,6 +33,22 @@ export function chooseThumbnailVariant(item) {
   return v?.imageUrl ? { imageUrl: v.imageUrl, variantId: v._id } : null
 }
 
+/**
+ * Remembers which artwork variant was on the card a user clicked, keyed by
+ * content id (module-level, per tab session). This threads the served variant
+ * across navigation so the downstream play/completion events on the Watch page
+ * can be attributed to it — closing the impression → click → play → completion
+ * funnel. A direct deep-link to Watch (no card click) simply has no remembered
+ * variant, so it's correctly left unattributed.
+ */
+const _shownVariants = new Map()
+export function rememberShownVariant(contentId, variantId) {
+  if (contentId && variantId) _shownVariants.set(String(contentId), variantId)
+}
+export function getShownVariant(contentId) {
+  return contentId ? (_shownVariants.get(String(contentId)) || null) : null
+}
+
 async function authHeaders() {
   const token = await auth.currentUser?.getIdToken()
   return token ? { Authorization: `Bearer ${token}` } : {}

@@ -508,26 +508,28 @@ A correctness/security pass over increments 1–5. Fixes applied:
   URL falls back to the title's real poster instead of a blank card. Covered by
   new tests.
 
-### Known gaps / recommendations (not yet addressed)
+### Known gaps / recommendations
 
-1. **Creator-set-live moderation + arbitrary external image URLs (highest).**
-   Approved creators can set a variant `live` on their own published title, and
-   the `imageUrl` may be any external `http(s)` URL — which is then served as an
-   `<img>` to all viewers. Blast radius is limited (their own approved title),
-   but two risks remain: an external host could log every viewer's IP (tracking
-   pixel), and the image bypasses poster moderation. **Recommendation:** give the
-   creator modal a Cloudinary upload widget and validate variant `imageUrl`
-   hosts against an allowlist (our Cloudinary cloud + Bunny pull zone) on the
-   creator route, or restrict creators to `candidate` and let admins promote.
-2. **`extract` runs synchronously in the request.** Up to ~20 ffmpeg grabs +
-   Cloudinary uploads can take minutes and risk a gateway timeout. Fine while
-   gated/admin-only; **background it (job queue) before any broad rollout.**
-3. **Reel variants are accepted but never served.** The admin routes accept
-   `itemType: 'reel'`, but only the content rails call `attachLiveVariants`, so a
-   reel variant set live would never appear. Either wire reel serving or reject
-   `reel` until then.
-4. **Downstream play/completion attribution still deferred.** Only impression→
-   click CTR is attributed; `play`/`completion` need the variant threaded across
-   navigation into `Watch.jsx`.
-5. **CTR is sampled only from the popular/Browse rail** (the only rail that
-   attaches variants), so it's a biased-but-consistent sample for v1.
+1. ✅ **RESOLVED — Creator-set-live moderation + arbitrary external image URLs.**
+   `utils/variantImage.js` now restricts variant `imageUrl`s to https + an
+   allowlist (`res.cloudinary.com`, the Bunny pull zone, and
+   `ARTWORK_IMAGE_HOST_ALLOWLIST` extras), enforced on both the admin and creator
+   create routes. The shared modal gained a Cloudinary **Upload** button so users
+   produce an allowed URL directly — closing the tracking-pixel / moderation
+   bypass.
+2. ✅ **RESOLVED — `extract` ran synchronously.** The endpoint now returns `202`
+   immediately and runs `generateFrameVariants` in the background with logging;
+   candidates appear in the grid on the next refresh. (A durable job queue is
+   still the right call before *high-volume* use, but the gateway-timeout risk is
+   gone.)
+3. ✅ **RESOLVED — Reel variants accepted but never served.** The admin variant
+   routes now reject `itemType: 'reel'` (creator routes were already
+   content-only). The model enum keeps `reel` for when reel serving is built.
+4. ✅ **RESOLVED — Downstream play/completion attribution.** `PosterCard`
+   remembers the served variant per content id (`rememberShownVariant`), and
+   `Watch.jsx` attaches it to `play`/`view_*`/`completion` events via
+   `getShownVariant` — closing the impression → click → play → completion funnel.
+   The review grid now shows **CVR** alongside CTR.
+5. **CTR/CVR are sampled only from the popular/Browse rail** (the only rail that
+   attaches variants), so it's a biased-but-consistent sample for v1. *(By design;
+   not a defect.)*

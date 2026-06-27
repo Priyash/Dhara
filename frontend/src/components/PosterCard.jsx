@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo, memo } from 'react'
 import Hls from 'hls.js'
 import { Crown, Star } from 'lucide-react'
 import { cloudinaryTransform } from '../services/cloudinary'
-import { fetchTrailerUrl, recordInteractionEvent, chooseThumbnailVariant } from '../services/api'
+import { fetchTrailerUrl, recordInteractionEvent, chooseThumbnailVariant, rememberShownVariant } from '../services/api'
 import styles from './PosterCard.module.css'
 
 function stripExtension(name = '') {
@@ -44,6 +44,9 @@ function PosterCard({ item, onClick, size = 'normal', isSubscribed = false, sour
     const id = item?._id || item?.id
     if (id && variant?.variantId) {
       recordInteractionEvent({ itemId: id, eventType: 'click', source, variantId: variant.variantId }).catch(() => {})
+      // Remember it so the downstream play/completion on the Watch page can be
+      // attributed to this variant too.
+      rememberShownVariant(id, variant.variantId)
     }
     onClick?.(item)
   }
