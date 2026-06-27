@@ -1332,16 +1332,17 @@
 
 .filterDropdownTrigger {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  gap: 5px;
   padding: 6px 10px 6px 12px;
   border-radius: var(--radius-md);
   border: 1px solid rgba(255,255,255,0.09);
   background: rgba(255,255,255,0.04);
-  color: rgba(255,255,255,0.65);
+  color: rgba(255,255,255,0.75);
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
+  line-height: 1.4;
   cursor: pointer;
   white-space: nowrap;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
@@ -1349,7 +1350,7 @@
 .filterDropdownTrigger:hover {
   border-color: rgba(255,255,255,0.16);
   background: rgba(255,255,255,0.07);
-  color: rgba(255,255,255,0.9);
+  color: #fff;
 }
 .filterDropdownTriggerActive {
   border-color: rgba(219,39,119,0.4);
@@ -1360,25 +1361,32 @@
   background: rgba(219,39,119,0.13);
 }
 
+/* Label uses same font-size as value — only color differs to avoid
+   the baseline-jump caused by mixing 10px and 12.5px in one flex row */
 .filterDropdownLabel {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.3);
+  color: rgba(255,255,255,0.28);
   flex-shrink: 0;
 }
-.filterDropdownTriggerActive .filterDropdownLabel { color: rgba(244,114,182,0.6); }
+.filterDropdownTriggerActive .filterDropdownLabel { color: rgba(244,114,182,0.5); }
 
-.filterDropdownValue { flex: 1; min-width: 0; }
+.filterDropdownValue {
+  font-weight: 500;
+  color: inherit;
+}
 
+/* Align chevron to center since it's an icon, not text */
 .filterDropdownChevron {
   color: rgba(255,255,255,0.3);
   flex-shrink: 0;
+  align-self: center;
   transition: transform 0.18s ease;
 }
 .filterDropdownChevronOpen { transform: rotate(180deg); }
-.filterDropdownTriggerActive .filterDropdownChevron { color: rgba(244,114,182,0.6); }
+.filterDropdownTriggerActive .filterDropdownChevron { color: rgba(244,114,182,0.5); }
 
 /* Floating menu */
 .filterDropdownMenu {
@@ -2391,7 +2399,7 @@
 
   /* Filter row: tighten dropdowns on small screens */
   .contentFilterRow { gap: 6px; margin-bottom: 10px; }
-  .filterDropdownTrigger { padding: 5px 8px 5px 10px; font-size: 12px; }
+  .filterDropdownTrigger { padding: 5px 8px 5px 10px; }
   .showDeletedToggle { margin-left: 0; }
 
   /* Title row: badge stacks under title on very narrow */
