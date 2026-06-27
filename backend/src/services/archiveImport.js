@@ -304,16 +304,24 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
     archiveId:        id,
   })
 
-  const videoUrl = archiveVideoUrl(id, videoFile.name)
-  const bunnyVideoId = await bunnyFetchFromUrl(videoUrl, title, collection.bunnyCollectionId)
-  await UploadJobModel.create({
-    ...jobBase(collection, createdByEmail),
-    title,
-    contentId: doc._id,
-    bunnyVideoId,
-    fileName:  videoFile.name,
-    sourceUrl: videoUrl,
-  })
+  // If the CDN handoff fails, roll the Content doc back. Otherwise it lingers as
+  // a videoless orphan that the dedup check treats as "already imported" — so the
+  // worker's retry would skip it forever instead of re-importing cleanly.
+  try {
+    const videoUrl = archiveVideoUrl(id, videoFile.name)
+    const bunnyVideoId = await bunnyFetchFromUrl(videoUrl, title, collection.bunnyCollectionId)
+    await UploadJobModel.create({
+      ...jobBase(collection, createdByEmail),
+      title,
+      contentId: doc._id,
+      bunnyVideoId,
+      fileName:  videoFile.name,
+      sourceUrl: videoUrl,
+    })
+  } catch (err) {
+    await ContentModel.deleteOne({ _id: doc._id }).catch(() => {})
+    throw err
+  }
 
   return { created: true, id: doc._id, title, jobs: 1 }
 }
@@ -394,19 +402,28 @@ async function queueEpisodic(item, { ContentModel, UploadJobModel, collection, a
   })
 
   // One Bunny fetch + UploadJob per episode; job-sync links each when ready.
-  for (const r of resolved) {
-    const bunnyVideoId = await bunnyFetchFromUrl(r.videoUrl, `${title} S${r.season.number}E${r.ep.number}`, collection.bunnyCollectionId)
-    await UploadJobModel.create({
-      ...jobBase(collection, createdByEmail),
-      title:           `${title} S${r.season.number}E${r.ep.number}`,
-      contentId:       doc._id,
-      seasonNumber:    Number(r.season.number),
-      episodeNumber:   Number(r.ep.number),
-      episodeTitle:    String(r.ep.title || `Episode ${r.ep.number}`),
-      episodeDuration: String(r.ep.duration || ''),
-      bunnyVideoId,
-      sourceUrl:       r.videoUrl,
-    })
+  // Roll back the Content doc AND any jobs already created if a mid-loop fetch
+  // fails — otherwise a partial series orphans the title (dedup would then skip
+  // every retry as "already imported").
+  try {
+    for (const r of resolved) {
+      const bunnyVideoId = await bunnyFetchFromUrl(r.videoUrl, `${title} S${r.season.number}E${r.ep.number}`, collection.bunnyCollectionId)
+      await UploadJobModel.create({
+        ...jobBase(collection, createdByEmail),
+        title:           `${title} S${r.season.number}E${r.ep.number}`,
+        contentId:       doc._id,
+        seasonNumber:    Number(r.season.number),
+        episodeNumber:   Number(r.ep.number),
+        episodeTitle:    String(r.ep.title || `Episode ${r.ep.number}`),
+        episodeDuration: String(r.ep.duration || ''),
+        bunnyVideoId,
+        sourceUrl:       r.videoUrl,
+      })
+    }
+  } catch (err) {
+    await UploadJobModel.deleteMany({ contentId: doc._id }).catch(() => {})
+    await ContentModel.deleteOne({ _id: doc._id }).catch(() => {})
+    throw err
   }
 
   return { created: true, id: doc._id, title, jobs: resolved.length }
@@ -463,16 +480,23 @@ async function queueReel(item, { ReelModel, UploadJobModel, collection, allowUnl
     submissionStatus:  'pending',
   })
 
-  const videoUrl = archiveVideoUrl(id, videoFile.name)
-  const bunnyVideoId = await bunnyFetchFromUrl(videoUrl, title, collection.bunnyCollectionId)
-  await UploadJobModel.create({
-    ...jobBase(collection, createdByEmail),
-    title,
-    reelId:    doc._id,
-    bunnyVideoId,
-    fileName:  videoFile.name,
-    sourceUrl: videoUrl,
-  })
+  // Roll the Reel doc back if the CDN handoff fails — same orphan/dedup-skip
+  // hazard as the Film path.
+  try {
+    const videoUrl = archiveVideoUrl(id, videoFile.name)
+    const bunnyVideoId = await bunnyFetchFromUrl(videoUrl, title, collection.bunnyCollectionId)
+    await UploadJobModel.create({
+      ...jobBase(collection, createdByEmail),
+      title,
+      reelId:    doc._id,
+      bunnyVideoId,
+      fileName:  videoFile.name,
+      sourceUrl: videoUrl,
+    })
+  } catch (err) {
+    await ReelModel.deleteOne({ _id: doc._id }).catch(() => {})
+    throw err
+  }
 
   return { created: true, id: doc._id, title, jobs: 1 }
 }
