@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
-import { X, Plus, Check, Ban, Trash2, ImageIcon, Sparkles } from 'lucide-react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { X, Plus, Check, Ban, Trash2, ImageIcon, Sparkles, Upload } from 'lucide-react'
+import { uploadToCloudinary } from '../services/cloudinary'
 
 /**
  * Grid for managing a title's artwork A/B variants (the thumbnail pipeline's
@@ -31,7 +32,9 @@ export default function ThumbnailVariantModal({ item, api, onClose }) {
   const [busyId,   setBusyId]   = useState(null)
   const [adding,   setAdding]   = useState(false)
   const [extracting, setExtracting] = useState(false)
+  const [uploading,  setUploading]  = useState(false)
   const [notice,     setNotice]     = useState('')
+  const fileRef = useRef(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -65,6 +68,23 @@ export default function ThumbnailVariantModal({ item, api, onClose }) {
       setError(err?.message || 'Failed to add variant.')
     } finally {
       setAdding(false)
+    }
+  }
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (file) e.target.value = ''   // allow re-selecting the same file later
+    if (!file) return
+    setUploading(true); setError(''); setNotice('')
+    try {
+      const secureUrl = await uploadToCloudinary(file, { folder: 'dhara/artwork-variants' })
+      await api.create({ imageUrl: secureUrl, label: newLabel.trim() })
+      setNewLabel('')
+      await load()
+    } catch (err) {
+      setError(err?.message || 'Image upload failed.')
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -164,9 +184,19 @@ export default function ThumbnailVariantModal({ item, api, onClose }) {
           <button
             onClick={handleAdd}
             disabled={adding}
+            title="Add by URL (must be an uploaded/Cloudinary or CDN image)"
             style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#db2777', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
           >
             <Plus size={13} /> {adding ? 'Adding…' : 'Add'}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} style={{ display: 'none' }} />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            title="Upload an image file"
+            style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.18)', background: 'transparent', color: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+          >
+            <Upload size={13} /> {uploading ? 'Uploading…' : 'Upload'}
           </button>
           {typeof api.extract === 'function' && (
             <button

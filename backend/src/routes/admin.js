@@ -37,6 +37,7 @@ import { calculateMonthlyEarnings } from '../config/earningsJob.js'
 import mongoose from 'mongoose'
 import { ThumbnailVariant } from '../models/ThumbnailVariant.js'
 import { withVariantStats } from '../utils/variantStats.js'
+import { validateVariantImageUrl } from '../utils/variantImage.js'
 import { isExtractionConfigured, buildBunnyMp4Url, generateFrameVariants } from '../services/frameExtraction.js'
 
 // Hard cap for unpaginated admin list endpoints — prevents an unbounded
@@ -2412,14 +2413,15 @@ router.post('/thumbnail-variants', async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(itemId)) {
       return res.status(400).json({ error: 'A valid itemId is required' })
     }
-    if (!imageUrl || !/^https?:\/\//i.test(String(imageUrl).trim())) {
-      return res.status(400).json({ error: 'A valid imageUrl (http/https) is required' })
+    const imgCheck = validateVariantImageUrl(imageUrl)
+    if (!imgCheck.ok) {
+      return res.status(400).json({ error: imgCheck.error })
     }
 
     const variant = await ThumbnailVariant.create({
       itemType,
       itemId,
-      imageUrl:      String(imageUrl).trim(),
+      imageUrl:      imgCheck.url,
       label:         label ? String(label).trim().slice(0, 120) : '',
       seasonNumber:  seasonNumber  != null ? Number(seasonNumber)  : null,
       episodeNumber: episodeNumber != null ? Number(episodeNumber) : null,

@@ -11,6 +11,7 @@ import { Reel, REEL_MAX_DURATION_SECS } from '../models/Reel.js'
 import { bunnyRequest } from '../services/bunnyUpload.js'
 import { ThumbnailVariant } from '../models/ThumbnailVariant.js'
 import { withVariantStats } from '../utils/variantStats.js'
+import { validateVariantImageUrl } from '../utils/variantImage.js'
 
 const libraryId = process.env.BUNNY_STREAM_LIBRARY_ID
 
@@ -821,14 +822,15 @@ router.post('/content/:id/thumbnail-variants', requireAuth, requireCreator, asyn
     if (!owns) return res.status(404).json({ error: 'Content not found' })
 
     const { imageUrl, label } = req.body || {}
-    if (!imageUrl || !/^https?:\/\//i.test(String(imageUrl).trim())) {
-      return res.status(400).json({ error: 'A valid imageUrl (http/https) is required' })
+    const imgCheck = validateVariantImageUrl(imageUrl)
+    if (!imgCheck.ok) {
+      return res.status(400).json({ error: imgCheck.error })
     }
 
     const variant = await ThumbnailVariant.create({
       itemType:  'content',
       itemId:    req.params.id,
-      imageUrl:  String(imageUrl).trim(),
+      imageUrl:  imgCheck.url,
       label:     label ? String(label).trim().slice(0, 120) : '',
       source:    'manual',
       status:    'candidate',
