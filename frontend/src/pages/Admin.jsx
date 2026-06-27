@@ -804,6 +804,10 @@ export default function Admin() {
   const [contentStatusFilter, setContentStatusFilter] = useState('all')
   const [showDeleted, setShowDeleted]               = useState(false)
   const [deletedItems, setDeletedItems]             = useState([])
+  const [typeDropdownOpen,   setTypeDropdownOpen]   = useState(false)
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
+  const typeDropdownRef   = useRef(null)
+  const statusDropdownRef = useRef(null)
   const [restoringId, setRestoringId]               = useState(null)
   const [imgUploading, setImgUploading]             = useState({ poster: false, backdrop: false })
   const [imgProgress,  setImgProgress]    = useState({ poster: 0,     backdrop: 0     })
@@ -1485,6 +1489,16 @@ export default function Admin() {
     if (contentStatusFilter === 'no-video')    items = items.filter((c) => !c.bunnyVideoId && !processingContentIds.has(c._id))
     return items
   }, [contentItems, contentSearch, contentTypeFilter, contentStatusFilter, processingContentIds])
+
+  // Close filter dropdowns when clicking outside them
+  useEffect(() => {
+    const onMouseDown = (e) => {
+      if (typeDropdownRef.current && !typeDropdownRef.current.contains(e.target))   setTypeDropdownOpen(false)
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(e.target)) setStatusDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [])
 
   const handleImageUpload = async (field, file) => {
     if (!file) return
@@ -2400,46 +2414,79 @@ export default function Admin() {
             </div>
           </div>
 
-          {/* Filter row */}
+          {/* Filter row — Type + Status dropdowns */}
           <div className={styles.contentFilterRow}>
-            <div className={styles.filterGroup}>
-              <span className={styles.filterGroupLabel}>Type</span>
-              <div className={styles.filterGroupChips}>
-                {['all', 'Film', 'Series', 'Documentary', 'Serial Drama'].map((t) => (
-                  <button
-                    key={t}
-                    className={`${styles.contentFilterChip} ${contentTypeFilter === t ? styles.contentFilterChipActive : ''}`}
-                    onClick={() => setContentTypeFilter(t)}
-                  >
-                    {t === 'all' ? 'All' : t}
-                  </button>
-                ))}
-              </div>
+
+            {/* Type dropdown */}
+            <div className={styles.filterDropdown} ref={typeDropdownRef}>
+              <button
+                className={`${styles.filterDropdownTrigger} ${contentTypeFilter !== 'all' ? styles.filterDropdownTriggerActive : ''}`}
+                onClick={() => { setTypeDropdownOpen((o) => !o); setStatusDropdownOpen(false) }}
+              >
+                <span className={styles.filterDropdownLabel}>Type</span>
+                <span className={styles.filterDropdownValue}>
+                  {contentTypeFilter === 'all' ? 'All' : contentTypeFilter}
+                </span>
+                <ChevronDown size={12} className={`${styles.filterDropdownChevron} ${typeDropdownOpen ? styles.filterDropdownChevronOpen : ''}`} />
+              </button>
+              {typeDropdownOpen && (
+                <div className={styles.filterDropdownMenu}>
+                  {['all', 'Film', 'Series', 'Documentary', 'Serial Drama'].map((t) => (
+                    <button
+                      key={t}
+                      className={`${styles.filterDropdownItem} ${contentTypeFilter === t ? styles.filterDropdownItemActive : ''}`}
+                      onClick={() => { setContentTypeFilter(t); setTypeDropdownOpen(false) }}
+                    >
+                      <span className={styles.filterDropdownItemLabel}>{t === 'all' ? 'All types' : t}</span>
+                      {contentTypeFilter === t && <Check size={12} className={styles.filterDropdownItemCheck} />}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className={styles.contentFilterDivider} />
-
-            <div className={styles.filterGroup}>
-              <span className={styles.filterGroupLabel}>Status</span>
-              <div className={styles.filterGroupChips}>
-                {[
-                  { value: 'all',         label: 'All',         dot: null },
-                  { value: 'published',   label: 'Live',        dot: '#4ade80' },
-                  { value: 'unpublished', label: 'Draft',       dot: 'rgba(255,255,255,0.25)' },
-                  { value: 'processing',  label: 'Transcoding', dot: '#fbbf24' },
-                  { value: 'no-video',    label: 'No video',    dot: '#f87171' },
-                ].map(({ value, label, dot }) => (
+            {/* Status dropdown */}
+            {(() => {
+              const STATUS_OPTS = [
+                { value: 'all',         label: 'All statuses', dot: null },
+                { value: 'published',   label: 'Live',         dot: '#4ade80' },
+                { value: 'unpublished', label: 'Draft',        dot: 'rgba(255,255,255,0.3)' },
+                { value: 'processing',  label: 'Transcoding',  dot: '#fbbf24' },
+                { value: 'no-video',    label: 'No video',     dot: '#f87171' },
+              ]
+              const active = STATUS_OPTS.find((o) => o.value === contentStatusFilter)
+              return (
+                <div className={styles.filterDropdown} ref={statusDropdownRef}>
                   <button
-                    key={value}
-                    className={`${styles.contentFilterChip} ${contentStatusFilter === value ? styles.contentFilterChipActive : ''}`}
-                    onClick={() => setContentStatusFilter(value)}
+                    className={`${styles.filterDropdownTrigger} ${contentStatusFilter !== 'all' ? styles.filterDropdownTriggerActive : ''}`}
+                    onClick={() => { setStatusDropdownOpen((o) => !o); setTypeDropdownOpen(false) }}
                   >
-                    {dot && <span className={styles.filterDot} style={{ background: dot }} />}
-                    {label}
+                    <span className={styles.filterDropdownLabel}>Status</span>
+                    {active?.dot && <span className={styles.filterDot} style={{ background: active.dot }} />}
+                    <span className={styles.filterDropdownValue}>{active?.label ?? 'All'}</span>
+                    <ChevronDown size={12} className={`${styles.filterDropdownChevron} ${statusDropdownOpen ? styles.filterDropdownChevronOpen : ''}`} />
                   </button>
-                ))}
-              </div>
-            </div>
+                  {statusDropdownOpen && (
+                    <div className={styles.filterDropdownMenu}>
+                      {STATUS_OPTS.map(({ value, label, dot }) => (
+                        <button
+                          key={value}
+                          className={`${styles.filterDropdownItem} ${contentStatusFilter === value ? styles.filterDropdownItemActive : ''}`}
+                          onClick={() => { setContentStatusFilter(value); setStatusDropdownOpen(false) }}
+                        >
+                          {dot
+                            ? <span className={styles.filterDot} style={{ background: dot }} />
+                            : <span className={styles.filterDotEmpty} />
+                          }
+                          <span className={styles.filterDropdownItemLabel}>{label}</span>
+                          {contentStatusFilter === value && <Check size={12} className={styles.filterDropdownItemCheck} />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
 
             <label className={styles.showDeletedToggle}>
               <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
