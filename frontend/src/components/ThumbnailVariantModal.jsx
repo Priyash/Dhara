@@ -93,11 +93,11 @@ export default function ThumbnailVariantModal({ item, api, onClose }) {
     try {
       const res = await api.extract()
       if (res?.configured === false) {
-        setNotice('Auto-extraction isn’t enabled on the server yet — add variants by URL for now.')
+        setNotice('Auto-extraction isn’t enabled on the server yet — upload or add by URL for now.')
       } else {
-        const n = res?.created?.length || 0
-        setNotice(n ? `Generated ${n} candidate frame${n > 1 ? 's' : ''} from the video.` : 'No frames could be grabbed from the video.')
-        await load()
+        // Extraction runs in the background server-side; candidates appear shortly.
+        setNotice('Generating candidate frames in the background — they’ll appear here in a moment.')
+        setTimeout(() => { load().catch(() => {}) }, 6000)
       }
     } catch (err) {
       setError(err?.message || 'Frame extraction failed.')

@@ -2477,17 +2477,24 @@ router.post('/thumbnail-variants/extract', async (req, res, next) => {
       return res.status(400).json({ error: 'Could not determine the video length from Bunny Stream.' })
     }
 
-    const created = await generateFrameVariants({
-      itemType:    'content',
-      itemId:      contentId,
+    // Run in the background: a full extract is up to ~20 ffmpeg grabs + Cloudinary
+    // uploads and can take minutes — far longer than an HTTP request should hold
+    // a connection open (gateway-timeout risk). The created candidate variants
+    // appear in the review grid on the admin's next refresh.
+    const createdBy = req.user._id
+    generateFrameVariants({
+      itemType:  'content',
+      itemId:    contentId,
       videoUrl,
       durationSecs,
-      count:       Number(count) || 8,
-      createdBy:   req.user._id,
+      count:     Number(count) || 8,
+      createdBy,
     })
+      .then((created) => console.log(`[artwork] extracted ${created.length} frame(s) for content ${contentId}`))
+      .catch((err)   => console.error(`[artwork] frame extraction failed for content ${contentId}:`, err.message))
 
-    logAdminAction(req, 'extract_thumbnail_frames', 'content', contentId, `${created.length} frame(s)`)
-    res.json({ configured: true, created })
+    logAdminAction(req, 'extract_thumbnail_frames', 'content', contentId, 'started')
+    res.status(202).json({ configured: true, started: true })
   } catch (err) {
     next(err)
   }
