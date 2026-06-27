@@ -336,7 +336,9 @@ router.get('/featured', withCache(60), async (req, res, next) => {
  */
 router.get('/shelves', withCache(60), async (req, res, next) => {
   try {
-    const shelves = await CuratedShelf.find({ isActive: true })
+    // liveFilter drops festival shelves whose activeFrom/activeTo window isn't
+    // current — so an "Utsab" shelf auto-surfaces and retires on its own.
+    const shelves = await CuratedShelf.find(CuratedShelf.liveFilter())
       .sort({ displayOrder: 1 })
       .populate({
         path: 'contentIds',
