@@ -379,8 +379,12 @@ volume, not on a calendar.
   want to switch the feature on.
 - **Bunny MP4 fallback** must be enabled on the library, and egress cost of
   re-pulling encoded video per title should be sized.
-- **ffmpeg in the runtime** — confirm the host image (Render) ships ffmpeg or
-  add it; decide child-process vs `fluent-ffmpeg`.
+- **ffmpeg in the runtime** — ✅ resolved. The backend depends on `ffmpeg-static`,
+  which downloads a prebuilt ffmpeg binary at `npm install` (so it works on
+  Render's `env: node` runtime with no Docker). `frameExtraction.js` resolves the
+  binary as: `FFMPEG_PATH` env override → `ffmpeg-static` path → system `ffmpeg`.
+  If the binary is missing/unrunnable, `ffmpegAvailable()` returns false and the
+  feature stays dormant (never crashes).
 - **Face/aesthetic models** — pick run-in-Node (ONNX) vs a hosted call; keep the
   scorer swappable behind one interface.
 - **Per-session variant stability** — ensure a user sees a consistent variant
