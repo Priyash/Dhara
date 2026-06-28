@@ -810,7 +810,10 @@ function ReelSlide({ reel, isActive, isNearby, userPaused, hlsUrl, muted, liked,
       })
       h.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal) {
-          console.error('[hls:fatal]', reel._id, data.type, data.details)
+          const httpCode = data.response?.code
+          // Surface the real HTTP status (403 = CDN token/auth issue) so a blank
+          // reel is diagnosable instead of a silent "Video not available".
+          console.error('[hls:fatal]', reel._id, data.type, data.details, httpCode ? `HTTP ${httpCode}` : '', data.url || '')
           setHlsError(true)
           h.destroy()
           hlsRef.current = null
