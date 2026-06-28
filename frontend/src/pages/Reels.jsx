@@ -17,6 +17,12 @@ import styles from './Reels.module.css'
 
 const VIEW_THRESHOLD = 5
 
+// Only keep slides within this many positions of the active one mounted. The
+// feed grows unbounded as the user scrolls and auto-loads more pages, so without
+// windowing every slide ever scrolled past would keep its DOM + <video> element
+// alive. A window of 2 still covers the ≤1 neighbour preload (isNearby).
+const SLIDE_WINDOW = 2
+
 function fmt(n) {
   if (!n || n < 1000) return String(n || 0)
   if (n < 1_000_000)  return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}K`
@@ -654,6 +660,7 @@ function ReelPlayer({ startId }) {
         onWheel={handleWheel}
       >
         {reels.map((reel, i) => (
+          Math.abs(i - activeIndex) > SLIDE_WINDOW ? null : (
           <ReelSlide
             key={reel._id}
             reel={reel}
@@ -671,6 +678,7 @@ function ReelPlayer({ startId }) {
             milestoneRef={milestoneRef}
             onViewCounted={(s) => setStats((p) => ({ ...p, [String(reel._id)]: { ...(p[String(reel._id)] || {}), ...s } }))}
           />
+          )
         ))}
 
         {/* Back — "< Reels" label style (YouTube Shorts / TikTok) */}
@@ -913,10 +921,18 @@ function ReelSlide({ reel, isActive, isNearby, userPaused, hlsUrl, muted, liked,
         className={styles.vid}
         muted={muted}
         playsInline
-        loop
         preload={isActive ? 'auto' : 'metadata'}
         poster={reel.thumbnailUrl || undefined}
-        onEnded={() => setLoopCount(c => c + 1)}
+        onEnded={() => {
+          // We restart manually instead of the `loop` attribute so the `ended`
+          // event actually fires — that's what drives the loop-count badge.
+          setLoopCount((c) => c + 1)
+          const v = videoRef.current
+          if (v && isActiveRef.current && !userPausedRef.current) {
+            v.currentTime = 0
+            v.play().catch(() => {})
+          }
+        }}
       />
 
       <div className={styles.scrim} />
