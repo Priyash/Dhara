@@ -344,7 +344,7 @@
 .rightControls {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -354,6 +354,9 @@
 
 .rightControls {
   flex: 0 0 auto;
+  /* A touch more separation so CC · Settings · Fullscreen don't crowd the
+     scrubber / time readout on their left. */
+  margin-left: 6px;
 }
 
 /* Standard control button */

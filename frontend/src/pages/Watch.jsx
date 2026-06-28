@@ -47,60 +47,36 @@ export default function Watch() {
   const viewRecordedRef = useRef(new Set())
   const milestoneRef = useRef(new Set())
 
-  // ── Sticky player lock ────────────────────────────────────────────────────────
-  // When playing starts, playerWrap becomes sticky so it stays visible while
-  // the user reads the description / episode list below it.
-  // Scrolling (wheel / touch) or resizing releases the lock permanently until
-  // the next video load.
+  // ── Player lock ───────────────────────────────────────────────────────────────
+  // While the video is actively playing, the player is pinned and page scroll is
+  // locked (via the body.video-playing class) so it stays put in windowed and
+  // theatre mode instead of scrolling out of view. Pausing releases the lock so
+  // the description / episode list below can be browsed; native fullscreen
+  // handles its own locking.
   const playerWrapRef      = useRef(null)
-  const stickyReleasedRef  = useRef(false)
   const [playerPlaying,    setPlayerPlaying] = useState(false)
 
-  // Reset sticky lock when a new video loads (hlsUrl changes) or user switches season/ep
+  // Reset on a new video load (hlsUrl changes) or season/episode switch
   useEffect(() => {
-    stickyReleasedRef.current = false
     setPlayerPlaying(false)
     setShowEndCard(false)
   }, [hlsUrl])
 
-  // Apply / remove sticky on play state change; hide navbar + lock scroll while playing
+  // Pin the player + lock scroll while playing; release on pause/stop
   useEffect(() => {
     const el = playerWrapRef.current
-    if (!el) return
-    if (playerPlaying && !stickyReleasedRef.current) {
-      el.classList.add(styles.playerWrapLocked)
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    } else {
-      el.classList.remove(styles.playerWrapLocked)
-    }
-
     if (playerPlaying) {
+      el?.classList.add(styles.playerWrapLocked)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
       document.body.classList.add('video-playing')
     } else {
+      el?.classList.remove(styles.playerWrapLocked)
       document.body.classList.remove('video-playing')
     }
   }, [playerPlaying])
 
   // Always clean up the body class on unmount
   useEffect(() => () => { document.body.classList.remove('video-playing') }, [])
-
-  // Release lock on user-initiated scroll or resize
-  useEffect(() => {
-    if (!playerPlaying) return
-    const release = () => {
-      if (stickyReleasedRef.current) return
-      stickyReleasedRef.current = true
-      playerWrapRef.current?.classList.remove(styles.playerWrapLocked)
-    }
-    window.addEventListener('wheel',     release, { passive: true })
-    window.addEventListener('touchmove', release, { passive: true })
-    window.addEventListener('resize',    release)
-    return () => {
-      window.removeEventListener('wheel',     release)
-      window.removeEventListener('touchmove', release)
-      window.removeEventListener('resize',    release)
-    }
-  }, [playerPlaying])
 
   useEffect(() => {
     setLoading(true)
