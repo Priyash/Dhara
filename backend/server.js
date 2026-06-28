@@ -19,6 +19,7 @@ import { startPayoutJob } from './src/config/payoutJob.js'
 import { startArchiveDiscoveryJob, startArchiveReelDiscoveryJob } from './src/config/archiveDiscovery.js'
 import { startArchiveImportWorker } from './src/config/archiveImportWorker.js'
 import { startCdnReconcileJob } from './src/config/cdnReconcile.js'
+import { startUploadJobSync } from './src/config/uploadJobSync.js'
 
 import authRoutes           from './src/routes/auth.js'
 import contentRoutes        from './src/routes/content.js'
@@ -196,6 +197,7 @@ mongoose.connection.on('connected', async () => {
   startArchiveReelDiscoveryJob()
   startArchiveImportWorker()
   startCdnReconcileJob()
+  startUploadJobSync()
 })
 
 connectMongoDB()
