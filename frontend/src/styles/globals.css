@@ -51,6 +51,14 @@ body {
   touch-action: manipulation;
 }
 
+/* While a video is actively playing, lock page scroll so the player stays put
+   (windowed / theatre mode) instead of scrolling out of view. Pausing removes
+   the class and restores scrolling so the details below can be browsed. */
+body.video-playing {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 /* Hide scrollbar globally */
 ::-webkit-scrollbar {
   display: none;
