@@ -59,6 +59,23 @@ export function inferType(meta = {}) {
   return 'Film'
 }
 
+/** Strip HTML tags from a string (descriptions from archive.org are sometimes raw HTML). */
+function stripHtml(str) {
+  if (!str) return ''
+  return String(str).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/** Pick the best poster URL from archive item files, preferring an explicit image over the auto-thumbnail. */
+export function findBestPosterUrl(id, files = []) {
+  const img = files.find((f) => {
+    const name = (f.name || '').toLowerCase()
+    return (name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png')) &&
+           !name.includes('.thumbs/') && !name.startsWith('_') && !name.startsWith('.')
+  })
+  if (img) return `https://archive.org/download/${encodeURIComponent(id)}/${encodeURIComponent(img.name)}`
+  return `https://archive.org/services/img/${encodeURIComponent(id)}`
+}
+
 /** Pick the best MP4 / H.264 file (largest = highest quality) from an item's files. */
 export function pickVideoFile(files = []) {
   const candidates = files.filter(f => {
@@ -107,7 +124,7 @@ export async function searchArchive({ language = 'Bengali', query = '', collecti
     page: String(page),
     output: 'json',
   })
-  for (const f of ['identifier', 'title', 'year', 'licenseurl', 'rights', 'collection']) params.append('fl[]', f)
+  for (const f of ['identifier', 'title', 'year', 'licenseurl', 'rights', 'collection', 'publicdate', 'item_size']) params.append('fl[]', f)
 
   const res = await fetch(`https://archive.org/advancedsearch.php?${params.toString()}`)
   if (!res.ok) throw new Error(`archive.org search HTTP ${res.status}`)
@@ -118,14 +135,16 @@ export async function searchArchive({ language = 'Bengali', query = '', collecti
   const items = docs.map(d => {
     const license = detectLicense(d)
     return {
-      archiveId:   d.identifier,
-      title:       Array.isArray(d.title) ? d.title[0] : d.title,
-      year:        d.year ? Number(String(d.year).slice(0, 4)) : null,
-      type:        inferType(d),
+      archiveId:    d.identifier,
+      title:        Array.isArray(d.title) ? d.title[0] : d.title,
+      year:         d.year ? Number(String(d.year).slice(0, 4)) : null,
+      type:         inferType(d),
       licenseLabel: license.label,
-      licensed:    license.ok,
-      detailUrl:   `https://archive.org/details/${d.identifier}`,
-      thumbUrl:    `https://archive.org/services/img/${d.identifier}`,
+      licensed:     license.ok,
+      detailUrl:    `https://archive.org/details/${d.identifier}`,
+      thumbUrl:     `https://archive.org/services/img/${d.identifier}`,
+      publicdate:   d.publicdate ? String(d.publicdate).slice(0, 10) : null,
+      itemSize:     d.item_size ? Number(d.item_size) : null,
     }
   })
 
@@ -306,7 +325,7 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
 
   const slug = slugify(title)
   let posterUrl = ''
-  try { posterUrl = await uploadPosterFromUrl(`https://archive.org/services/img/${encodeURIComponent(id)}`, slug) }
+  try { posterUrl = await uploadPosterFromUrl(findBestPosterUrl(id, archive.files || []), slug) }
   catch { /* poster is best-effort */ }
 
   // Content created WITHOUT bunnyVideoId — the job-sync links it once ready.
@@ -314,13 +333,14 @@ async function queueFilm(item, { ContentModel, UploadJobModel, collection, allow
   // skips a MISSING field but still indexes an empty string — so writing '' here
   // makes the 2nd+ pending import collide with E11000 (duplicate key) until the
   // first one's real GUID is backfilled.
+  const rawDesc = Array.isArray(meta.description) ? meta.description[0] : meta.description
   const doc = await ContentModel.create({
     ...pickFields(item, CONTENT_PASSTHROUGH),
     type:        item.type === 'Documentary' ? 'Documentary' : 'Film',
     genre:       Array.isArray(item.genre) ? item.genre : [],
     isPremium:   Boolean(item.isPremium),
     title,
-    desc:        item.desc || (Array.isArray(meta.description) ? meta.description[0] : meta.description) || '',
+    desc:        item.desc || stripHtml(rawDesc) || '',
     releaseYear: parseReleaseYear(item, meta),
     posterUrl,
     isPublished:      false,
