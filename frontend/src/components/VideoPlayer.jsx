@@ -403,7 +403,7 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
     const { slow: slowConn } = getConnectionInfo()
     const hls = new Hls({
       enableWorker: true,
-      lowLatencyMode: true,
+      lowLatencyMode: Boolean(isLive),
       backBufferLength: 90,
       maxBufferLength: slowConn ? 30 : 60,
       maxMaxBufferLength: slowConn ? 60 : 120,

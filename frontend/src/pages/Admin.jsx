@@ -471,6 +471,13 @@ const TABS = [
 
 const NEW_CONTENT_ID = '__new__'
 
+function fmtBytes(bytes) {
+  if (!bytes || bytes <= 0) return null
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)} MB`
+  return `${(bytes / 1e3).toFixed(0)} KB`
+}
+
 // ── Video frame extraction helpers (shared with reel upload) ─────────────────
 
 function analyseVideoFrame(file) {
@@ -2776,6 +2783,11 @@ export default function Admin() {
                       <p className={styles.libraryMeta}>
                         {c.year ? `${c.year} · ` : ''}{c.type && c.type !== 'Film' ? `${c.type} · ` : ''}{c.language || ''}
                       </p>
+                      {c.discoveredAt && (
+                        <p className={styles.libraryMeta} style={{ opacity: 0.6 }}>
+                          Discovered {new Date(c.discoveredAt).toLocaleDateString()}
+                        </p>
+                      )}
                     </div>
                     {c.mediaKind === 'reel' && (
                       <span className={styles.archiveBadge}>
@@ -2900,6 +2912,13 @@ export default function Admin() {
                       <p className={styles.libraryMeta}>
                         {r.year ? `${r.year} · ` : ''}{r.type && r.type !== 'Film' ? `${r.type} · ` : ''}{r.archiveId}
                       </p>
+                      {(r.publicdate || r.itemSize) && (
+                        <p className={styles.libraryMeta} style={{ opacity: 0.6 }}>
+                          {r.publicdate ? `Published ${r.publicdate}` : ''}
+                          {r.publicdate && r.itemSize ? ' · ' : ''}
+                          {fmtBytes(r.itemSize) ? `${fmtBytes(r.itemSize)}` : ''}
+                        </p>
+                      )}
                     </div>
                     {r.alreadyImported ? (
                       <span className={`${styles.archiveBadge} ${styles.archiveBadgeDone}`}>Already imported</span>
