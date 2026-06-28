@@ -154,6 +154,40 @@ function tsLabel(secs) {
   return `Frame @ ${m}:${String(s).padStart(2, '0')}`
 }
 
+/**
+ * Probes a remote video URL with ffprobe to read its duration in seconds.
+ * Returns null on any failure (missing binary, timeout, non-video URL, etc.).
+ * Only called as a last-resort fallback when Bunny's metadata reports length=0
+ * despite the video status showing it has finished encoding.
+ */
+export function probeDurationSecs(videoUrl) {
+  return new Promise((resolve) => {
+    let settled = false
+    const done = (val) => { if (!settled) { settled = true; resolve(val) } }
+    const ffprobe = FFMPEG_BIN.replace(/ffmpeg(\.exe)?$/i, 'ffprobe$1')
+    let child
+    try {
+      child = spawn(ffprobe, [
+        '-v', 'error',
+        '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1',
+        videoUrl,
+      ], { stdio: ['ignore', 'pipe', 'ignore'] })
+    } catch {
+      return done(null)
+    }
+    let out = ''
+    child.stdout.on('data', (d) => { out += d.toString() })
+    const timer = setTimeout(() => { try { child.kill('SIGKILL') } catch { /* noop */ } done(null) }, 15_000)
+    child.on('error', () => { clearTimeout(timer); done(null) })
+    child.on('close', () => {
+      clearTimeout(timer)
+      const secs = parseFloat(out.trim())
+      done(Number.isFinite(secs) && secs > 0 ? Math.round(secs) : null)
+    })
+  })
+}
+
 // ── ffmpeg single-frame grab ─────────────────────────────────────────────────
 
 /** Grabs one frame at `ts` seconds to `outPath`. Resolves true on success, false on any failure. */

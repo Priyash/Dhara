@@ -38,7 +38,7 @@ import mongoose from 'mongoose'
 import { ThumbnailVariant } from '../models/ThumbnailVariant.js'
 import { withVariantStats } from '../utils/variantStats.js'
 import { validateVariantImageUrl } from '../utils/variantImage.js'
-import { isExtractionConfigured, resolveBunnyMp4Url, generateFrameVariants } from '../services/frameExtraction.js'
+import { isExtractionConfigured, resolveBunnyMp4Url, generateFrameVariants, probeDurationSecs } from '../services/frameExtraction.js'
 
 // Hard cap for unpaginated admin list endpoints — prevents an unbounded
 // collection scan/response as data grows, without changing the response
@@ -2485,19 +2485,33 @@ router.post('/thumbnail-variants/extract', async (req, res, next) => {
     }
 
     // Bunny reports the encoded length (seconds) and which renditions exist.
+    // status: 0=created, 1=uploaded, 2=processing, 3=transcoding, 4=finished, 5=error
     let durationSecs = 0
     let availableResolutions = ''
+    let bunnyStatus = -1
     try {
       const meta = await bunnyRequest(`/library/${process.env.BUNNY_STREAM_LIBRARY_ID}/videos/${content.bunnyVideoId}`)
       durationSecs         = Number(meta?.length || 0)
       availableResolutions = meta?.availableResolutions || ''
+      bunnyStatus          = Number(meta?.status ?? -1)
     } catch { /* fall through to the guards below */ }
-    if (!durationSecs) {
-      return res.status(400).json({ error: 'Could not determine the video length from Bunny Stream.' })
-    }
 
     // Probe for a reachable, token-signed MP4 rendition (don't hard-guess 720p).
     const videoUrl = await resolveBunnyMp4Url({ bunnyVideoId: content.bunnyVideoId, availableResolutions })
+
+    if (!durationSecs && videoUrl) {
+      // Bunny metadata can lag after encoding — probe the actual MP4 for duration.
+      durationSecs = (await probeDurationSecs(videoUrl)) ?? 0
+    }
+
+    if (!durationSecs) {
+      const stillEncoding = bunnyStatus >= 0 && bunnyStatus < 4
+      return res.status(400).json({
+        error: stillEncoding
+          ? 'This video is still being encoded by Bunny Stream. Please wait a few minutes and try again.'
+          : 'Could not determine the video length from Bunny Stream.',
+      })
+    }
     if (!videoUrl) {
       return res.status(400).json({
         error: 'No downloadable MP4 rendition is reachable for this video. Enable "MP4 Fallback" on the Bunny Stream library (older videos may need re-encoding).',
