@@ -47,6 +47,11 @@ reelSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, createdAt:
 reelSchema.index({ hashtags: 1 })
 reelSchema.index({ creatorId: 1, submissionStatus: 1 })
 reelSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, viewCount: -1 })
-reelSchema.index({ bunnyVideoId: 1 }, { unique: true, sparse: true })
+// Partial (not sparse) so empty-string bunnyVideoId values — left by soft-deletes
+// — don't collide on E11000. See config/bunnyIndexMigration.js.
+reelSchema.index(
+  { bunnyVideoId: 1 },
+  { unique: true, partialFilterExpression: { bunnyVideoId: { $type: 'string', $gt: '' } } }
+)
 
 export const Reel = mongoose.model('Reel', reelSchema)

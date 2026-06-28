@@ -102,7 +102,14 @@ contentSchema.index({ isPublished: 1, isDeleted: 1, submissionStatus: 1, genre: 
 contentSchema.index({ creatorId: 1, submissionStatus: 1 })
 contentSchema.index({ isPublished: 1, isFeatured: 1, featuredOrder: 1 })
 contentSchema.index({ isPublished: 1, badge: 1 })
-// Enforce uniqueness of Bunny video GUID — sparse so null/missing GUIDs don't conflict
-contentSchema.index({ bunnyVideoId: 1 }, { unique: true, sparse: true })
+// Enforce uniqueness of Bunny video GUID. A plain `sparse` index still indexes
+// empty strings (sparse only skips a *missing* field), so multiple docs with
+// bunnyVideoId:'' — e.g. several soft-deleted items — collide on E11000. A
+// partial index covering only non-empty strings sidesteps that entirely.
+// See config/bunnyIndexMigration.js, which drops the legacy sparse index.
+contentSchema.index(
+  { bunnyVideoId: 1 },
+  { unique: true, partialFilterExpression: { bunnyVideoId: { $type: 'string', $gt: '' } } }
+)
 
 export const Content = mongoose.model('Content', contentSchema)

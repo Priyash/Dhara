@@ -20,6 +20,7 @@ import { startArchiveDiscoveryJob, startArchiveReelDiscoveryJob } from './src/co
 import { startArchiveImportWorker } from './src/config/archiveImportWorker.js'
 import { startCdnReconcileJob } from './src/config/cdnReconcile.js'
 import { startUploadJobSync } from './src/config/uploadJobSync.js'
+import { runBunnyIndexMigration } from './src/config/bunnyIndexMigration.js'
 
 import authRoutes           from './src/routes/auth.js'
 import contentRoutes        from './src/routes/content.js'
@@ -190,6 +191,9 @@ mongoose.connection.on('connected', async () => {
   } catch (err) {
     console.error('[startup] syncAdminClaims failed:', err.message)
   }
+  // Repair the bunnyVideoId unique index (legacy sparse → partial) before jobs
+  // that touch content/reels run. Self-guards and never throws.
+  await runBunnyIndexMigration()
   startSubscriptionExpiryJob()
   startEarningsJob()
   startPayoutJob()
