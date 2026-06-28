@@ -112,7 +112,7 @@ const WATERMARK_POSITIONS = [
   { bottom: '22%', left: '50%', transform: 'translateX(-50%)' },
 ]
 
-export default function VideoPlayer({ src, title, poster, storageKey, maxQualityHeight = null, onPlayingChange, onBack, nextEp, onNextEp, introStart, introEnd, subtitleUrl, isLive, theaterMode, onTheaterToggle, onVideoEnded, watermarkText, fillContainer = false }) {
+export default function VideoPlayer({ src, mp4FallbackUrl, title, poster, storageKey, maxQualityHeight = null, onPlayingChange, onBack, nextEp, onNextEp, introStart, introEnd, subtitleUrl, isLive, theaterMode, onTheaterToggle, onVideoEnded, watermarkText, fillContainer = false }) {
   const videoRef    = useRef(null)
   const containerRef= useRef(null)
   const progressRef = useRef(null)
@@ -525,11 +525,16 @@ export default function VideoPlayer({ src, title, poster, storageKey, maxQuality
       if (v.canPlayType('application/vnd.apple.mpegurl')) {
         return attachNativeSource(v, src, 'native-hls')
       }
+      // HLS unsupported — fall back to the MP4 rendition served by Bunny's
+      // MP4 fallback encoding (enabled for older devices / non-HLS browsers).
+      if (mp4FallbackUrl) {
+        return attachNativeSource(v, mp4FallbackUrl, 'mp4-fallback')
+      }
       setPlayerError('This browser cannot play HLS streams.')
       return undefined
     }
     return attachNativeSource(v, src)
-  }, [src, cleanupHls, attachHlsSource, attachNativeSource])
+  }, [src, mp4FallbackUrl, cleanupHls, attachHlsSource, attachNativeSource])
 
   // Clear all thumbnail caches when src changes
   useEffect(() => {

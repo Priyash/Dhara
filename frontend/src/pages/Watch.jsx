@@ -29,6 +29,7 @@ export default function Watch() {
 
   const [content,        setContent]       = useState(null)
   const [hlsUrl,           setHlsUrl]          = useState(null)
+  const [mp4Url,           setMp4Url]           = useState(null)
   const [sessionId,        setSessionId]        = useState(null)
   const [maxQualityHeight, setMaxQualityHeight] = useState(null)
   const [activeSeason,     setActiveSeason]     = useState(0)  // index into content.seasons[]
@@ -157,11 +158,13 @@ export default function Watch() {
     const epNumber = episodes.length > 0 ? (episodes[activeEp]?.number ?? null) : null
 
     setHlsUrl(null)
+    setMp4Url(null)
     setSessionId(null)
     setStreamError(null)
     fetchStreamUrl(id, epNumber, seNumber)
-      .then(({ hlsUrl, sessionId: sid, maxQualityHeight: mqh, tier: t }) => {
+      .then(({ hlsUrl, mp4Url: m4u, sessionId: sid, maxQualityHeight: mqh, tier: t }) => {
         setHlsUrl(hlsUrl)
+        setMp4Url(m4u ?? null)
         setSessionId(sid ?? null)
         setMaxQualityHeight(mqh ?? null)
         setStreamTier(t ?? null)
@@ -570,10 +573,12 @@ export default function Watch() {
                 const seNumber  = curSeason?.number ?? null
                 const epNumber  = curSeason?.episodes?.length > 0 ? (curSeason.episodes[activeEp]?.number ?? null) : null
                 setHlsUrl(null)
+                setMp4Url(null)
                 setSessionId(null)
                 fetchStreamUrl(id, epNumber, seNumber)
-                  .then(({ hlsUrl, sessionId: sid, maxQualityHeight: mqh, tier: t }) => {
+                  .then(({ hlsUrl, mp4Url: m4u, sessionId: sid, maxQualityHeight: mqh, tier: t }) => {
                     setHlsUrl(hlsUrl)
+                    setMp4Url(m4u ?? null)
                     setSessionId(sid ?? null)
                     setMaxQualityHeight(mqh ?? null)
                     setStreamTier(t ?? null)
@@ -594,6 +599,7 @@ export default function Watch() {
           <div style={{ position: 'relative', height: '100%' }}>
             <VideoPlayer
               src={hlsUrl}
+              mp4FallbackUrl={mp4Url}
               title={playerTitle}
               poster={content.posterUrl || null}
               storageKey={id}

@@ -92,6 +92,37 @@ function buildHlsUrl(videoId, sign = false) {
   return `${base}?token=${token}&expires=${expires}`
 }
 
+/**
+ * Builds a Bunny CDN MP4 fallback URL for a video, capped to the plan's max
+ * quality height. Returns null when the CDN pull zone isn't configured.
+ * Resolution picks the highest MP4 rendition Bunny has encoded up to the cap.
+ */
+function buildMp4Url(videoId, sign, maxQualityHeight) {
+  const pullZone = process.env.BUNNY_CDN_PULL_ZONE
+  if (!pullZone || !videoId) return null
+
+  // Pick the highest Bunny-encoded MP4 rendition within the plan's quality cap.
+  const allRes = [1080, 720, 480, 360, 240]
+  const cap    = maxQualityHeight ?? 1080
+  const height = allRes.find((r) => r <= cap) ?? 480
+  const path   = `/${videoId}/play_${height}p.mp4`
+  const base   = `https://${pullZone}${path}`
+
+  if (!sign) return base
+
+  const key = process.env.BUNNY_CDN_TOKEN_AUTH_KEY
+  if (!key) return base   // dev: serve unsigned (same behaviour as HLS)
+
+  const expires = Math.floor(Date.now() / 1000) + 3600
+  const token = createHash('sha256')
+    .update(key + path + expires)
+    .digest('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '')
+  return `${base}?token=${token}&expires=${expires}`
+}
+
 // Never send video GUIDs to public endpoints
 const PUBLIC_FIELDS = '-bunnyVideoId -trailerVideoId -seasons.episodes.bunnyVideoId'
 
@@ -450,6 +481,7 @@ router.get('/:id/stream', requireAuth, streamRateLimit, async (req, res, next) =
 
       return res.json({
         hlsUrl:           buildHlsUrl(videoId, true),
+        mp4Url:           buildMp4Url(videoId, true, limits.maxQualityHeight),
         sessionId,
         maxQualityHeight: limits.maxQualityHeight,
         tier,
@@ -458,9 +490,11 @@ router.get('/:id/stream', requireAuth, streamRateLimit, async (req, res, next) =
 
     // Free content or first-episode preview — unsigned URL, quality capped by user tier
     // (preview always caps at 480p regardless of account status)
+    const freeMaxH = isFirstEpPreview ? 480 : limits.maxQualityHeight
     res.json({
       hlsUrl:           buildHlsUrl(videoId, false),
-      maxQualityHeight: isFirstEpPreview ? 480 : limits.maxQualityHeight,
+      mp4Url:           buildMp4Url(videoId, false, freeMaxH),
+      maxQualityHeight: freeMaxH,
       tier:             isFirstEpPreview ? 'free' : tier,
       ...(isFirstEpPreview && { isFirstEpPreview: true }),
     })
