@@ -578,7 +578,19 @@ const SHELF_ACCENT_COLORS = [
   { hex: '#64748b', name: 'Slate'   },
 ]
 
-const EMPTY_SHELF = { name: '', tagline: '', backdropUrl: '', accentColor: '#db2777', contentIds: [] }
+const EMPTY_SHELF = { name: '', tagline: '', backdropUrl: '', accentColor: '#db2777', contentIds: [], activeFrom: '', activeTo: '', festivalTag: '' }
+
+// Common Bengali festivals for the Utsab-rail tag dropdown.
+const FESTIVAL_TAGS = [
+  { value: '',               label: 'None (always-on shelf)' },
+  { value: 'durga-puja',     label: 'Durga Puja' },
+  { value: 'poila-boishakh', label: 'Poila Boishakh' },
+  { value: 'kali-puja',      label: 'Kali Puja' },
+  { value: 'saraswati-puja', label: 'Saraswati Puja' },
+  { value: 'poush-mela',     label: 'Poush Mela' },
+  { value: 'rabindra-jayanti', label: 'Rabindra Jayanti' },
+  { value: 'eid',            label: 'Eid' },
+]
 
 const statusClass = {
   awaiting_file: styles.statusAwaiting,
@@ -1743,6 +1755,9 @@ export default function Admin() {
       backdropUrl: shelf.backdropUrl || '',
       accentColor: shelf.accentColor || '#db2777',
       contentIds:  (shelf.contentIds || []).map((id) => String(id)),
+      activeFrom:  shelf.activeFrom  ? String(shelf.activeFrom).slice(0, 10) : '',
+      activeTo:    shelf.activeTo    ? String(shelf.activeTo).slice(0, 10)   : '',
+      festivalTag: shelf.festivalTag || '',
     })
     setShelfNotice(''); setShelfError(''); setShelfContentSearch('')
     setShowShelfModal(true)
@@ -3571,6 +3586,35 @@ export default function Admin() {
                           onChange={(e) => setShelfForm((p) => ({ ...p, accentColor: e.target.value }))}
                           className={styles.shelfColorInput}
                           title="Custom colour"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Utsab festival window — optional. A tag + date range makes the
+                        shelf auto-surface and retire on the Bengali calendar. */}
+                    <div className={`${styles.label} ${styles.spanFull}`}>
+                      Festival rail <span className={styles.labelHint}>(optional — leave dates empty for an always-on shelf)</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginTop: 6 }}>
+                        <select
+                          className={styles.input}
+                          value={shelfForm.festivalTag}
+                          onChange={(e) => setShelfForm((p) => ({ ...p, festivalTag: e.target.value }))}
+                        >
+                          {FESTIVAL_TAGS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                        </select>
+                        <input
+                          type="date"
+                          className={styles.input}
+                          value={shelfForm.activeFrom}
+                          onChange={(e) => setShelfForm((p) => ({ ...p, activeFrom: e.target.value }))}
+                          title="Live from"
+                        />
+                        <input
+                          type="date"
+                          className={styles.input}
+                          value={shelfForm.activeTo}
+                          onChange={(e) => setShelfForm((p) => ({ ...p, activeTo: e.target.value }))}
+                          title="Live until"
                         />
                       </div>
                     </div>

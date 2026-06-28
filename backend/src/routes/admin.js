@@ -1342,14 +1342,26 @@ router.get('/shelves', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// Parse a date-ish input into a Date, or null for empty/invalid (so a blank
+// festival window field stores null rather than throwing a CastError).
+function parseDateOrNull(v) {
+  if (v == null || v === '') return null
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 router.post('/shelves', async (req, res, next) => {
   try {
-    const { name, tagline = '', backdropUrl = '', accentColor = '#f59e0b', contentIds = [] } = req.body
+    const { name, tagline = '', backdropUrl = '', accentColor = '#f59e0b', contentIds = [],
+            activeFrom = null, activeTo = null, festivalTag = '' } = req.body
     if (!name?.trim()) return res.status(400).json({ error: 'Name is required' })
     const count = await CuratedShelf.countDocuments()
     const shelf = await CuratedShelf.create({
       name: name.trim(), tagline: tagline.trim(), backdropUrl: backdropUrl.trim(),
       accentColor, contentIds, displayOrder: count,
+      activeFrom: parseDateOrNull(activeFrom),
+      activeTo:   parseDateOrNull(activeTo),
+      festivalTag: String(festivalTag || '').trim(),
     })
     res.status(201).json(shelf)
   } catch (err) { next(err) }
@@ -1369,11 +1381,14 @@ router.patch('/shelves/reorder', async (req, res, next) => {
 
 router.patch('/shelves/:id', async (req, res, next) => {
   try {
-    const ALLOWED = ['name', 'tagline', 'backdropUrl', 'accentColor', 'contentIds', 'isActive', 'displayOrder']
+    const ALLOWED = ['name', 'tagline', 'backdropUrl', 'accentColor', 'contentIds', 'isActive', 'displayOrder', 'festivalTag']
     const updates = {}
     for (const key of ALLOWED) {
       if (key in req.body) updates[key] = req.body[key]
     }
+    // Date-window fields need null-coercion so a cleared field doesn't CastError.
+    if ('activeFrom' in req.body) updates.activeFrom = parseDateOrNull(req.body.activeFrom)
+    if ('activeTo'   in req.body) updates.activeTo   = parseDateOrNull(req.body.activeTo)
     const shelf = await CuratedShelf.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true })
     if (!shelf) return res.status(404).json({ error: 'Shelf not found' })
     res.json(shelf)
