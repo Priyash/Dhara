@@ -382,7 +382,9 @@ export default function VideoPlayer({ src, mp4FallbackUrl, title, poster, storag
       if (saved > 5 && isFinite(saved)) v.currentTime = saved
       didSeek.current = true
     }
-    v.play().catch(() => {})
+    // Autoplay may be blocked until the user interacts — that's expected, so only
+    // log it (don't surface). Real stream failures show via the HLS error handler.
+    v.play().catch((err) => console.warn('[player] autoplay blocked:', err?.name))
   }, [STORAGE_KEY])
 
   const attachNativeSource = useCallback((v, nextSrc, mode = '') => {
@@ -474,8 +476,19 @@ export default function VideoPlayer({ src, mp4FallbackUrl, title, poster, storag
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (!data.fatal) return
 
+      // Always log the real cause — silent failures make CDN/token issues
+      // (403s, expired tokens, wrong pull zone) impossible to diagnose.
+      const httpCode = data.response?.code
+      console.error('[hls:fatal]', data.type, data.details, httpCode ? `HTTP ${httpCode}` : '', data.url || '')
+
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
         clearTimeout(networkRetryTimerRef.current)
+        // A 403/401 won't recover by retrying — the CDN is rejecting the request
+        // (token auth misconfigured, expired link, or unsigned URL). Surface it.
+        if (httpCode === 403 || httpCode === 401) {
+          setPlayerError('This stream was blocked by the CDN (access denied). The link may have expired — please refresh.')
+          return
+        }
         if (networkRetryCountRef.current >= MAX_NETWORK_RETRIES) {
           setPlayerError('Lost connection to the stream. Please retry.')
           return
@@ -991,7 +1004,7 @@ export default function VideoPlayer({ src, mp4FallbackUrl, title, poster, storag
     const v = videoRef.current
     if (!v) return
     setShowSettings(false)
-    if (v.paused) { v.play().catch(() => {}); setPlaying(true) }
+    if (v.paused) { v.play().catch((err) => console.warn('[player] play() rejected:', err?.name, err?.message)); setPlaying(true) }
     else          { v.pause(); setPlaying(false) }
   }
 

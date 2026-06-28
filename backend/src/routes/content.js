@@ -64,23 +64,27 @@ const router = Router()
  *
  * Enable Token Authentication on the pull zone in the Bunny dashboard first.
  */
-function buildHlsUrl(videoId, sign = false) {
+function buildHlsUrl(videoId, { requireSigned = false } = {}) {
   const pullZone = process.env.BUNNY_CDN_PULL_ZONE
   const path     = `/${videoId}/playlist.m3u8`
   const base     = `https://${pullZone}${path}`
 
-  if (!sign) return base
-
   const key = process.env.BUNNY_CDN_TOKEN_AUTH_KEY
   if (!key) {
-    if (process.env.NODE_ENV === 'production') {
-      // Refuse to serve unsigned premium content — throw so the caller returns 503
+    // `requireSigned` marks premium content that must never be served unsigned.
+    if (requireSigned && process.env.NODE_ENV === 'production') {
+      // Throw so the caller returns 503 rather than leaking premium unsigned.
       throw Object.assign(new Error('BUNNY_CDN_TOKEN_AUTH_KEY is not configured'), { status: 503 })
     }
-    console.warn('[CDN] BUNNY_CDN_TOKEN_AUTH_KEY not set — serving premium content unsigned (dev only)')
+    if (requireSigned) console.warn('[CDN] BUNNY_CDN_TOKEN_AUTH_KEY not set — serving premium content unsigned (dev only)')
     return base
   }
 
+  // Always sign when a key is configured. If Token Authentication is enabled on
+  // the pull zone, EVERY request (free, premium, trailers) must carry a valid
+  // token or the CDN returns 403 — that's what breaks "free" titles when token
+  // auth is turned on. Signing is harmless when token auth is off: the CDN
+  // simply ignores the token.
   const expires = Math.floor(Date.now() / 1000) + 3600  // 1-hour window
   const token = createHash('sha256')
     .update(key + path + expires)
@@ -246,7 +250,7 @@ router.get('/:id/trailer', withCache(3600), async (req, res, next) => {
     if (!libraryId) return res.status(404).json({ error: 'No trailer available' })
 
     res.json({
-      hlsUrl:   buildHlsUrl(item.trailerVideoId, false),
+      hlsUrl:   buildHlsUrl(item.trailerVideoId),
       embedUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${item.trailerVideoId}?autoplay=true&muted=true&loop=false&preload=true`,
     })
   } catch (err) {
@@ -480,7 +484,7 @@ router.get('/:id/stream', requireAuth, streamRateLimit, async (req, res, next) =
       await ActiveStream.create({ userId: req.user._id, sessionId, contentId: item._id.toString() })
 
       return res.json({
-        hlsUrl:           buildHlsUrl(videoId, true),
+        hlsUrl:           buildHlsUrl(videoId, { requireSigned: true }),
         mp4Url:           buildMp4Url(videoId, true, limits.maxQualityHeight),
         sessionId,
         maxQualityHeight: limits.maxQualityHeight,
@@ -488,12 +492,14 @@ router.get('/:id/stream', requireAuth, streamRateLimit, async (req, res, next) =
       })
     }
 
-    // Free content or first-episode preview — unsigned URL, quality capped by user tier
-    // (preview always caps at 480p regardless of account status)
+    // Free content or first-episode preview — signed when a token-auth key is
+    // configured (required if the pull zone has Token Authentication enabled),
+    // quality capped by user tier (preview always caps at 480p). HLS and MP4 are
+    // both signed: an unsigned URL 403s the moment token auth is on.
     const freeMaxH = isFirstEpPreview ? 480 : limits.maxQualityHeight
     res.json({
-      hlsUrl:           buildHlsUrl(videoId, false),
-      mp4Url:           buildMp4Url(videoId, false, freeMaxH),
+      hlsUrl:           buildHlsUrl(videoId),
+      mp4Url:           buildMp4Url(videoId, true, freeMaxH),
       maxQualityHeight: freeMaxH,
       tier:             isFirstEpPreview ? 'free' : tier,
       ...(isFirstEpPreview && { isFirstEpPreview: true }),

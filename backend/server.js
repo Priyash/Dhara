@@ -62,6 +62,21 @@ if (isProd) {
   }
 }
 
+// Stream-signing sanity check (all environments). If a pull zone is configured
+// but no token-auth key is, every stream URL goes out UNSIGNED — which works
+// only while Token Authentication is OFF on the pull zone. The moment it's
+// enabled, the CDN returns 403 and nothing plays. This is the single most common
+// "videos suddenly stopped playing" cause, so make it loud in the logs.
+if (process.env.BUNNY_CDN_PULL_ZONE && !process.env.BUNNY_CDN_TOKEN_AUTH_KEY) {
+  console.warn(
+    '[startup] WARNING — BUNNY_CDN_PULL_ZONE is set but BUNNY_CDN_TOKEN_AUTH_KEY is NOT. ' +
+    'All HLS/MP4 stream URLs will be served UNSIGNED. If Token Authentication is enabled on the ' +
+    'pull zone, the CDN will reject them (403) and no content or reels will play. Set ' +
+    'BUNNY_CDN_TOKEN_AUTH_KEY to the pull zone\'s Token Authentication Key, or disable Token ' +
+    'Authentication on the pull zone for local dev.'
+  )
+}
+
 // ── App setup ─────────────────────────────────────────────────────────────────
 const app  = express()
 const PORT = process.env.PORT || 4000
